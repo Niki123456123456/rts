@@ -232,6 +232,9 @@ fn select_unit(
     let scene_filter = |entity| units.contains(entity) || ground.contains(entity);
     let settings = MeshRayCastSettings::default().with_filter(&scene_filter);
     let Some((entity, hit)) = ray_cast.cast_ray(ray, &settings).first() else {
+        if select {
+            selected.0.clear();
+        }
         return;
     };
     if select && units.contains(*entity) {
@@ -271,6 +274,8 @@ fn select_unit(
                     .with_rotation(Quat::from_rotation_arc(Vec3::Y, hit.normal)),
             ));
         }
+    } else if select {
+        selected.0.clear();
     }
 }
 
