@@ -164,10 +164,9 @@ fn setup(
             key_down: KeyCode::KeyS,
             key_left: KeyCode::KeyA,
             key_right: KeyCode::KeyD,
-            // Rotate the camera with right click
-            button_rotate: MouseButton::Right,
-            // Keep the mouse cursor in place when rotating
-            lock_on_rotate: true,
+            // Reserve right click for movement orders; rotate the camera with Q/E.
+            button_rotate: MouseButton::Other(0),
+            lock_on_rotate: false,
             // Drag pan with middle click
             button_drag: Some(MouseButton::Middle),
             // Keep the mouse cursor in place when dragging
@@ -195,7 +194,9 @@ fn select_unit(
     markers: Query<Entity, With<DestinationMarker>>,
     visual: Res<DestinationVisual>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) {
+    let select = mouse.just_pressed(MouseButton::Left);
+    let move_order = mouse.just_pressed(MouseButton::Right);
+    if !select && !move_order {
         return;
     }
     let Some(cursor) = window.cursor_position() else {
@@ -219,9 +220,9 @@ fn select_unit(
     let Some((entity, hit)) = ray_cast.cast_ray(ray, &settings).first() else {
         return;
     };
-    if units.contains(*entity) {
+    if select && units.contains(*entity) {
         selected.0 = Some(*entity);
-    } else if ground.contains(*entity) {
+    } else if move_order && ground.contains(*entity) {
         if let Some(unit) = selected.0.filter(|entity| units.contains(*entity)) {
             commands.entity(unit).insert(MoveTarget(hit.point));
             for marker in &markers {
