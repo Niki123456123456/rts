@@ -1,28 +1,16 @@
-//! A more complex scene with a moving "unit" that demonstrates how to jump to a location or lock
-//! onto a particular entity.
-
-use std::f32::consts::TAU;
+//! A terrain scene with stationary units and an RTS camera.
 
 use bevy::prelude::*;
 
-use bevy_rts_camera::{Ground, RtsCamera, RtsCameraControls, RtsCameraPlugin, RtsCameraSystemSet};
+use bevy_rts_camera::{Ground, RtsCamera, RtsCameraControls, RtsCameraPlugin};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RtsCameraPlugin)
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (move_unit, (lock_or_jump, toggle_controls))
-                .chain()
-                .before(RtsCameraSystemSet),
-        )
         .run();
 }
-
-#[derive(Component)]
-struct Move;
 
 fn setup(
     mut commands: Commands,
@@ -66,14 +54,6 @@ fn setup(
             ));
         }
     }
-    // A moving unit that can be locked onto
-    commands
-        .spawn((
-            Mesh3d(meshes.add(Capsule3d::new(0.25, 1.25))),
-            MeshMaterial3d(terrain_material.clone()),
-            Transform::from_xyz(0.0, 0.75, 0.0),
-        ))
-        .insert(Move);
     // Light
     commands.spawn((
         DirectionalLight {
@@ -87,13 +67,6 @@ fn setup(
             -40.0f32.to_radians(),
             0.0,
         )),
-    ));
-    // Help text
-    commands.spawn(Text::new(
-        "\
-Press K to jump to the moving unit
-Hold L to lock onto the moving unit
-Press T to toggle controls (K and L will still work)",
     ));
     // Camera
     commands.spawn((
@@ -135,50 +108,4 @@ Press T to toggle controls (K and L will still work)",
             ..default()
         },
     ));
-}
-
-// Move a unit in a circle
-fn move_unit(
-    time: Res<Time>,
-    mut cube_q: Query<&mut Transform, With<Move>>,
-    mut angle: Local<f32>,
-) {
-    if let Ok(mut cube_tfm) = cube_q.single_mut() {
-        // Rotate 20 degrees a second, wrapping around to 0 after a full rotation
-        *angle += 20f32.to_radians() * time.delta_secs() % TAU;
-        // Convert angle to position
-        let pos = Vec3::new(angle.sin() * 7.5, 0.75, angle.cos() * 7.5);
-        cube_tfm.translation = pos;
-    }
-}
-
-// Either jump to the moving unit (press K) or lock onto it (hold L)
-fn lock_or_jump(
-    key_input: Res<ButtonInput<KeyCode>>,
-    cube_q: Query<&Transform, With<Move>>,
-    mut cam_q: Query<&mut RtsCamera>,
-) {
-    for cube in cube_q.iter() {
-        for mut cam in cam_q.iter_mut() {
-            if key_input.pressed(KeyCode::KeyL) {
-                cam.target_focus.translation = cube.translation;
-                cam.snap = true;
-            }
-            if key_input.just_pressed(KeyCode::KeyK) {
-                cam.target_focus.translation = cube.translation;
-                cam.target_zoom = 0.4;
-            }
-        }
-    }
-}
-
-fn toggle_controls(
-    mut controls_q: Query<&mut RtsCameraControls>,
-    key_input: Res<ButtonInput<KeyCode>>,
-) {
-    for mut controls in controls_q.iter_mut() {
-        if key_input.just_pressed(KeyCode::KeyT) {
-            controls.enabled = !controls.enabled;
-        }
-    }
 }
