@@ -11,7 +11,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins((MeshPickingPlugin, EguiPlugin::default()))
         .add_plugins(RtsCameraPlugin)
-        .init_resource::<SelectedUnit>()
+        .init_resource::<SelectedUnits>()
         .init_resource::<SelectionPanel>()
         .add_systems(Startup, setup)
         .add_systems(
@@ -49,7 +49,20 @@ const UNIT_SPEED: f32 = 3.0;
 const UNIT_HEIGHT: f32 = 0.75;
 
 #[derive(Resource, Default)]
-struct SelectedUnit(Option<Entity>);
+struct SelectedUnits(Vec<Entity>);
+
+impl SelectedUnits {
+    fn select(&mut self, entity: Entity, additive: bool) {
+        if !additive {
+            self.0.clear();
+            self.0.push(entity);
+        } else if let Some(index) = self.0.iter().position(|selected| *selected == entity) {
+            self.0.remove(index);
+        } else {
+            self.0.push(entity);
+        }
+    }
+}
 
 #[derive(Resource, Default)]
 struct SelectionPanel(Option<egui::Rect>);
@@ -183,11 +196,12 @@ fn setup(
 fn select_unit(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
     mut ray_cast: MeshRayCast,
-    units: Query<(), With<Unit>>,
-    mut selected: ResMut<SelectedUnit>,
+    units: Query<&Transform, With<Unit>>,
+    mut selected: ResMut<SelectedUnits>,
     mut contexts: EguiContexts,
     panel: Res<SelectionPanel>,
     ground: Query<(), With<Ground>>,
@@ -221,10 +235,31 @@ fn select_unit(
         return;
     };
     if select && units.contains(*entity) {
-        selected.0 = Some(*entity);
+        let cmd_keys = [KeyCode::SuperLeft, KeyCode::SuperRight];
+        let additive = keys.any_pressed(cmd_keys) || keys.any_just_pressed(cmd_keys);
+        selected.select(*entity, additive);
     } else if move_order && ground.contains(*entity) {
-        if let Some(unit) = selected.0.filter(|entity| units.contains(*entity)) {
-            commands.entity(unit).insert(MoveTarget(hit.point));
+        let selected_units: Vec<_> = selected
+            .0
+            .iter()
+            .filter_map(|entity| {
+                units
+                    .get(*entity)
+                    .ok()
+                    .map(|transform| (*entity, transform.translation))
+            })
+            .collect();
+        if !selected_units.is_empty() {
+            let center = selected_units
+                .iter()
+                .map(|(_, position)| *position)
+                .sum::<Vec3>()
+                / selected_units.len() as f32;
+            for (unit, position) in selected_units {
+                // Keep the group's spacing rather than stacking every unit at one point.
+                let offset = (position - center).with_y(0.0);
+                commands.entity(unit).insert(MoveTarget(hit.point + offset));
+            }
             for marker in &markers {
                 commands.entity(marker).despawn();
             }
@@ -301,7 +336,7 @@ fn expire_destination_markers(
 }
 
 fn highlight_selection(
-    selected: Res<SelectedUnit>,
+    selected: Res<SelectedUnits>,
     materials: Res<UnitMaterials>,
     mut units: Query<(Entity, &mut MeshMaterial3d<StandardMaterial>), With<Unit>>,
 ) {
@@ -309,7 +344,7 @@ fn highlight_selection(
         return;
     }
     for (entity, mut material) in &mut units {
-        material.0 = if selected.0 == Some(entity) {
+        material.0 = if selected.0.contains(&entity) {
             materials.selected.clone()
         } else {
             materials.normal.clone()
@@ -319,7 +354,7 @@ fn highlight_selection(
 
 fn selection_ui(
     mut contexts: EguiContexts,
-    selected: Res<SelectedUnit>,
+    selected: Res<SelectedUnits>,
     units: Query<&Unit>,
     mut controls: Query<&mut RtsCameraControls>,
     mut panel: ResMut<SelectionPanel>,
@@ -340,25 +375,38 @@ fn selection_ui(
             ui.horizontal(|ui| {
                 ui.heading("Auswahl");
                 ui.separator();
-                if let Some(unit) = selected.0.and_then(|entity| units.get(entity).ok()) {
-                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                if selected.0.is_empty() {
+                    ui.label("Klicke auf eine Einheit. Cmd + Klick für Mehrfachauswahl.");
+                } else {
+                    egui::ScrollArea::horizontal().show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            // A capsule portrait matching the units in the scene.
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(44.0, 64.0), egui::Sense::hover());
-                            ui.painter().rect_filled(
-                                rect.shrink2(egui::vec2(10.0, 4.0)),
-                                12.0,
-                                egui::Color32::from_rgb(255, 191, 38),
-                            );
-                            ui.vertical(|ui| {
-                                ui.strong(format!("Einheit {}", unit.number));
-                                ui.label("Ausgewählt");
-                            });
+                            for entity in &selected.0 {
+                                let Ok(unit) = units.get(*entity) else {
+                                    continue;
+                                };
+                                ui.push_id(unit.number, |ui| {
+                                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            // A capsule portrait matching the units in the scene.
+                                            let (rect, _) = ui.allocate_exact_size(
+                                                egui::vec2(44.0, 64.0),
+                                                egui::Sense::hover(),
+                                            );
+                                            ui.painter().rect_filled(
+                                                rect.shrink2(egui::vec2(10.0, 4.0)),
+                                                12.0,
+                                                egui::Color32::from_rgb(255, 191, 38),
+                                            );
+                                            ui.vertical(|ui| {
+                                                ui.strong(format!("Einheit {}", unit.number));
+                                                ui.label("Ausgewählt");
+                                            });
+                                        });
+                                    });
+                                });
+                            }
                         });
                     });
-                } else {
-                    ui.label("Klicke auf eine Einheit, um sie auszuwählen.");
                 }
             });
         });
@@ -457,6 +505,22 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn cmd_selection_adds_and_toggles_units_and_normal_click_replaces_it() {
+        let mut world = World::new();
+        let first = world.spawn_empty().id();
+        let second = world.spawn_empty().id();
+        let third = world.spawn_empty().id();
+        let mut selected = SelectedUnits::default();
+        selected.select(first, false);
+        selected.select(second, true);
+        assert_eq!(selected.0, vec![first, second]);
+        selected.select(first, true);
+        assert_eq!(selected.0, vec![second]);
+        selected.select(third, false);
+        assert_eq!(selected.0, vec![third]);
     }
 
     #[test]
