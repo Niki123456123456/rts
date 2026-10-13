@@ -1,4 +1,4 @@
-//! A terrain scene with stationary units and an RTS camera.
+//! A terrain scene with selectable, movable units and an RTS camera.
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -14,7 +14,16 @@ fn main() {
         .init_resource::<SelectedUnit>()
         .init_resource::<SelectionPanel>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (select_unit, highlight_selection).chain())
+        .add_systems(
+            Update,
+            (
+                select_unit,
+                move_units,
+                expire_destination_markers,
+                highlight_selection,
+            )
+                .chain(),
+        )
         .add_systems(EguiPrimaryContextPass, selection_ui)
         .run();
 }
@@ -23,6 +32,21 @@ fn main() {
 struct Unit {
     number: usize,
 }
+
+#[derive(Component)]
+struct MoveTarget(Vec3);
+
+#[derive(Component)]
+struct DestinationMarker(Timer);
+
+#[derive(Resource)]
+struct DestinationVisual {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+
+const UNIT_SPEED: f32 = 3.0;
+const UNIT_HEIGHT: f32 = 0.75;
 
 #[derive(Resource, Default)]
 struct SelectedUnit(Option<Entity>);
@@ -41,6 +65,15 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    commands.insert_resource(DestinationVisual {
+        mesh: meshes.add(Torus::new(0.3, 0.4)),
+        material: materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.8, 0.1),
+            emissive: LinearRgba::new(1.0, 0.6, 0.0, 1.0),
+            unlit: true,
+            ..default()
+        }),
+    });
     // Ground
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 80.0))),
@@ -149,6 +182,7 @@ fn setup(
 }
 
 fn select_unit(
+    mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
@@ -157,6 +191,9 @@ fn select_unit(
     mut selected: ResMut<SelectedUnit>,
     mut contexts: EguiContexts,
     panel: Res<SelectionPanel>,
+    ground: Query<(), With<Ground>>,
+    markers: Query<Entity, With<DestinationMarker>>,
+    visual: Res<DestinationVisual>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
         return;
@@ -177,9 +214,31 @@ fn select_unit(
         return;
     };
     // Cast against the actual visible geometry, independent of egui's picking events.
-    selected.0 = unit_at_ray(ray, &mut ray_cast, &units);
+    let scene_filter = |entity| units.contains(entity) || ground.contains(entity);
+    let settings = MeshRayCastSettings::default().with_filter(&scene_filter);
+    let Some((entity, hit)) = ray_cast.cast_ray(ray, &settings).first() else {
+        return;
+    };
+    if units.contains(*entity) {
+        selected.0 = Some(*entity);
+    } else if ground.contains(*entity) {
+        if let Some(unit) = selected.0.filter(|entity| units.contains(*entity)) {
+            commands.entity(unit).insert(MoveTarget(hit.point));
+            for marker in &markers {
+                commands.entity(marker).despawn();
+            }
+            commands.spawn((
+                DestinationMarker(Timer::from_seconds(0.8, TimerMode::Once)),
+                Mesh3d(visual.mesh.clone()),
+                MeshMaterial3d(visual.material.clone()),
+                Transform::from_translation(hit.point + hit.normal * 0.06)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Y, hit.normal)),
+            ));
+        }
+    }
 }
 
+#[cfg(test)]
 fn unit_at_ray(
     ray: Ray3d,
     ray_cast: &mut MeshRayCast,
@@ -190,6 +249,54 @@ fn unit_at_ray(
         .first()
         .map(|(entity, _)| *entity)
         .filter(|entity| units.contains(*entity))
+}
+
+fn move_units(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut units: Query<(Entity, &mut Transform, &MoveTarget), With<Unit>>,
+    ground: Query<(), With<Ground>>,
+    mut ray_cast: MeshRayCast,
+) {
+    for (entity, mut transform, target) in &mut units {
+        let destination = Vec3::new(target.0.x, transform.translation.y, target.0.z);
+        transform.translation = step_towards(
+            transform.translation,
+            destination,
+            UNIT_SPEED * time.delta_secs(),
+        );
+        // Follow the terrain height as the unit crosses the scene.
+        let ray = Ray3d::new(transform.translation.with_y(100.0), Dir3::NEG_Y);
+        let ground_filter = |entity| ground.contains(entity);
+        let settings = MeshRayCastSettings::default().with_filter(&ground_filter);
+        if let Some((_, hit)) = ray_cast.cast_ray(ray, &settings).first() {
+            transform.translation.y = hit.point.y + UNIT_HEIGHT;
+        }
+        if transform.translation.xz().distance(target.0.xz()) < 0.001 {
+            commands.entity(entity).remove::<MoveTarget>();
+        }
+    }
+}
+
+fn step_towards(position: Vec3, destination: Vec3, distance: f32) -> Vec3 {
+    let delta = destination - position;
+    if delta.length() <= distance {
+        destination
+    } else {
+        position + delta.normalize_or_zero() * distance
+    }
+}
+
+fn expire_destination_markers(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut markers: Query<(Entity, &mut DestinationMarker)>,
+) {
+    for (entity, mut marker) in &mut markers {
+        if marker.0.tick(time.delta()).is_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 fn highlight_selection(
@@ -211,7 +318,7 @@ fn highlight_selection(
 
 fn selection_ui(
     mut contexts: EguiContexts,
-    mut selected: ResMut<SelectedUnit>,
+    selected: Res<SelectedUnit>,
     units: Query<&Unit>,
     mut controls: Query<&mut RtsCameraControls>,
     mut panel: ResMut<SelectionPanel>,
@@ -249,9 +356,6 @@ fn selection_ui(
                             });
                         });
                     });
-                    if ui.button("Auswahl aufheben").clicked() {
-                        selected.0 = None;
-                    }
                 } else {
                     ui.label("Klicke auf eine Einheit, um sie auszuwählen.");
                 }
@@ -352,5 +456,16 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn movement_advances_at_the_requested_speed_and_stops_at_the_target() {
+        let target = Vec3::new(3.0, UNIT_HEIGHT, 4.0);
+        let start = Vec3::new(0.0, UNIT_HEIGHT, 0.0);
+        let next = step_towards(start, target, 1.5);
+        assert!((next.distance(start) - 1.5).abs() < 0.0001);
+        assert!(next.distance(target) < start.distance(target));
+        assert_eq!(step_towards(next, target, 10.0), target);
+        assert_eq!(step_towards(target, target, 1.0), target);
     }
 }
