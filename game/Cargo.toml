@@ -8,4 +8,5 @@ license = "MIT"
 
 [dependencies]
 bevy = "0.20"
+bevy_egui = { version = "0.43.1", default-features = false, features = ["default_fonts", "render", "picking"] }
 bevy_rts_camera = { git = "https://github.com/Plonq/bevy_rts_camera", rev = "0bbe143b15d82438ced33808e878ba00595f01b9" }
