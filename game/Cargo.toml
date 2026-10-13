@@ -1,0 +1,11 @@
+[package]
+name = "stronghold-game"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97.1"
+publish = false
+license = "MIT"
+
+[dependencies]
+bevy = "0.20"
+bevy_rts_camera = { git = "https://github.com/Plonq/bevy_rts_camera", rev = "0bbe143b15d82438ced33808e878ba00595f01b9" }
