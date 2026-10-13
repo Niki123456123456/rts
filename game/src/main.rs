@@ -7,9 +7,21 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass, PrimaryE
 use bevy_rts_camera::{Ground, RtsCamera, RtsCameraControls, RtsCameraPlugin};
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins((MeshPickingPlugin, EguiPlugin::default()))
+    let mut app = App::new();
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(DefaultPlugins);
+    #[cfg(target_arch = "wasm32")]
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Stronghold".into(),
+            canvas: Some("#game".into()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
+            ..default()
+        }),
+        ..default()
+    }));
+    app.add_plugins((MeshPickingPlugin, EguiPlugin::default()))
         .add_plugins(RtsCameraPlugin)
         .init_resource::<SelectedUnits>()
         .init_resource::<SelectionPanel>()
