@@ -6,6 +6,7 @@ pub(crate) struct BuildingInteraction {
     pub placing: bool,
     pub selected: Option<u64>,
     pub consumed: bool,
+    attack_hover: Option<Vec2>,
 }
 #[derive(Component)]
 pub(crate) struct Building(pub network::Building);
@@ -222,6 +223,7 @@ pub(crate) fn building_input(
     assets: Res<BuildingAssets>,
 ) {
     state.consumed = false;
+    state.attack_hover = None;
     commands.entity(assets.preview).insert(Visibility::Hidden);
     commands
         .entity(assets.preview_footprint)
@@ -291,20 +293,29 @@ pub(crate) fn building_input(
         return;
     }
     if let Ok(collider) = colliders.get(*entity) {
+        let Some(building) = multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .find(|b| b.id == collider.0)
+        else {
+            return;
+        };
+        let (id, owned) = (building.id, building.owned);
+        if !owned
+            && !drag.dragging
+            && !mouse.pressed(MouseButton::Left)
+            && units
+                .iter()
+                .any(|(entity, unit)| unit.owned && selected.0.contains(&entity))
+        {
+            state.attack_hover = Some(cursor);
+        }
         let select_building = mouse.just_pressed(MouseButton::Left);
         let attack_building = mouse.just_pressed(MouseButton::Right);
         if select_building || attack_building {
             state.consumed = true;
             *drag = default();
-            let Some(building) = multiplayer
-                .snapshot
-                .buildings
-                .iter()
-                .find(|b| b.id == collider.0)
-            else {
-                return;
-            };
-            let (id, owned) = (building.id, building.owned);
             if select_building {
                 state.selected = Some(id);
                 selected.0.clear();
@@ -325,6 +336,65 @@ pub(crate) fn building_input(
     } else if mouse.just_pressed(MouseButton::Left) || mouse.just_pressed(MouseButton::Right) {
         state.selected = None;
     }
+}
+
+pub(crate) fn attack_hover_ui(
+    mut contexts: EguiContexts,
+    window: Single<&Window, With<PrimaryWindow>>,
+    interaction: Res<BuildingInteraction>,
+    selected: Res<SelectedUnits>,
+) -> Result {
+    let Some(cursor) = interaction.attack_hover.filter(|_| !selected.0.is_empty()) else {
+        return Ok(());
+    };
+    let ctx = contexts.ctx_mut()?;
+    let scale = window.scale_factor() / ctx.pixels_per_point();
+    let viewport = ctx.viewport_rect();
+    let cursor = egui::pos2(cursor.x, cursor.y) * scale;
+    let center = egui::pos2(
+        (cursor.x + 32.0).clamp(
+            viewport.left() + 90.0,
+            viewport.right().max(viewport.left() + 180.0) - 90.0,
+        ),
+        (cursor.y - 32.0).max(viewport.top() + 20.0),
+    );
+    // A painter overlay cannot intercept the right click that issues the order.
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("building_attack_hover"),
+    ));
+    painter.circle_filled(center, 19.0, egui::Color32::from_rgb(70, 18, 18));
+    painter.circle_stroke(
+        center,
+        19.0,
+        egui::Stroke::new(2.0, egui::Color32::LIGHT_RED),
+    );
+    // Crossed swords, drawn as geometry so no platform-specific emoji font is needed.
+    for direction in [egui::vec2(1.0, -1.0), egui::vec2(-1.0, -1.0)] {
+        let direction = direction.normalized();
+        let side = egui::vec2(-direction.y, direction.x);
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                center + direction * 14.0,
+                center - direction * 4.0 + side * 2.0,
+                center - direction * 4.0 - side * 2.0,
+            ],
+            egui::Color32::WHITE,
+            egui::Stroke::NONE,
+        ));
+        painter.line_segment(
+            [center - direction * 6.0, center - direction * 13.0],
+            egui::Stroke::new(3.0, egui::Color32::GOLD),
+        );
+        painter.line_segment(
+            [
+                center - direction * 5.0 - side * 5.0,
+                center - direction * 5.0 + side * 5.0,
+            ],
+            egui::Stroke::new(2.5, egui::Color32::GOLD),
+        );
+    }
+    Ok(())
 }
 pub(crate) fn granary_button(ui: &mut egui::Ui, active: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(66.0, 70.0), egui::Sense::click());

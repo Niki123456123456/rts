@@ -60,7 +60,13 @@ fn main() {
         )
         .add_systems(
             EguiPrimaryContextPass,
-            (lobby_ui, selection_ui, selection_rectangle_ui).chain(),
+            (
+                lobby_ui,
+                selection_ui,
+                selection_rectangle_ui,
+                buildings::attack_hover_ui,
+            )
+                .chain(),
         )
         .run();
 }

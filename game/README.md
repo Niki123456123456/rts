@@ -41,7 +41,9 @@ verwendet dieselbe Kollisionsfläche wie die serverseitige Wegfindung.
 Linksklick auf ein Gebäude wählt es aus. Eigene Gebäude lassen sich mit
 **Remove building** unter **Auswahl** entfernen. Rechtsklick auf ein feindliches Gebäude befiehlt den
 ausgewählten eigenen Einheiten den Angriff. Sie laufen zum Gebäude und verursachen
-in Reichweite Schaden. Granaries starten mit Gesundheit `1.0` und verschwinden bei
+in Reichweite Schaden. Beim Zeigen auf ein feindliches Gebäude erscheint mit ausgewählten
+eigenen Einheiten ein Symbol mit gekreuzten Schwertern.
+Granaries starten mit Gesundheit `1.0` und verschwinden bei
 `0.0`. Die Anzeige unter **Auswahl** zeigt die aktuelle Gesundheit.
 
 Der Server berechnet kürzeste Wege um Gebäude mit Abstand für die Einheiten.
