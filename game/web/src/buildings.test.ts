@@ -44,6 +44,14 @@ try {
   const buildings = () => Array.from(a.db.building.iter()).filter(x => x.gameId === game);
   const own = () => Array.from(a.db.armyUnit.iter()).filter(u => u.gameId === game && u.owner.toHexString() === a.connectionId.toHexString());
   await until(() => own().length === 20, 'Own army arrives');
+  const assertSpacing = () => {
+    const units = Array.from(a.db.armyUnit.iter()).filter(u => u.gameId === game);
+    for (let i = 0; i < units.length; i++) for (let j = i + 1; j < units.length; j++) {
+      assert.ok(Math.hypot(units[i].x - units[j].x, units[i].z - units[j].z) >= 0.5499, 'Units from either player never overlap');
+    }
+  };
+  assertSpacing();
+  a.db.armyUnit.onUpdate(assertSpacing);
   const build = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuildGranary(cb), () => db.reducers.buildGranary(x, z));
   const remove = (db: DbConnection, id: bigint) => status(db, cb => db.reducers.onRemoveBuilding(cb), () => db.reducers.removeBuilding(id));
   const attack = (db: DbConnection, ids: bigint[], id: bigint) => status(db, cb => db.reducers.onAttackBuilding(cb), () => db.reducers.attackBuilding(ids, id));
@@ -63,6 +71,11 @@ try {
   const enemy = Array.from(a.db.armyUnit.iter()).find(u => u.owner.toHexString() === b.connectionId.toHexString())!;
   assert.equal(await attack(a, [unit.id, enemy.id], granary.id), 'Failed', 'Mixed ownership rejected atomically');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 0, 9)), 'Failed', 'Blocked target rejected');
+  assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], enemy.x, enemy.z)), 'Committed');
+  const allocated = a.db.armyUnit.id.find(unit.id)!;
+  for (const peer of Array.from(a.db.armyUnit.iter()).filter(u => u.gameId === game && u.id !== unit.id)) {
+    assert.ok(Math.hypot(allocated.targetX - peer.x, allocated.targetZ - peer.z) >= 0.5499, 'Occupied destinations are moved to free ground');
+  }
   let walkedAround = false;
   let tracking = true;
   a.db.armyUnit.onUpdate((_ctx, _old, u) => {
@@ -86,6 +99,12 @@ try {
     if (row.id === granary.id) { assert.ok(row.health >= 0 && row.health < old.health); damaged = true; }
   });
   assert.equal(await attack(a, own().map(u => u.id), granary.id), 'Committed');
+  const targets = own().map(u => [u.targetX, u.targetZ]);
+  for (let i = 0; i < targets.length; i++) for (let j = i + 1; j < targets.length; j++) {
+    assert.ok(Math.hypot(targets[i][0] - targets[j][0], targets[i][1] - targets[j][1]) >= 0.55, 'Attack destinations are distinct');
+  }
+  assert.ok(targets.some(([x]) => x < -3) && targets.some(([x]) => x > 3)
+    && targets.some(([, z]) => z < 6) && targets.some(([, z]) => z > 12), 'Attackers assigned around all four walls');
   await until(() => !a.db.building.id.find(granary.id), 'Attack reduces health to zero and removes building');
   assert.ok(damaged, 'Damage was replicated');
   await until(() => !b.db.building.id.find(granary.id), 'Destruction replicated to owner');
@@ -125,7 +144,7 @@ try {
   await until(() => buildings().length === 0, 'Leave removes owned buildings');
   assert.equal(await build(b, 0, 25), 'Committed');
   b.disconnect(); await until(() => buildings().length === 0, 'Disconnect removes owned buildings');
-  console.log('Building integration passed: placement, overlap, ownership, shortest routes, live replanning, attack damage, destruction, game isolation, browser bridge and cleanup.');
+  console.log('Building integration passed: placement, overlap, ownership, shortest routes, live replanning, unit separation, surrounding attacks, attack damage, destruction, game isolation, browser bridge and cleanup.');
 } finally {
   strongholdNetwork.disconnect();
   for (const db of clients) db.disconnect();

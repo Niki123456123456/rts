@@ -467,16 +467,24 @@ mod backend {
                 ),
             }));
             until(&mut network, |s| s.game_id.is_some() && s.units.len() == 20);
-            let id = network.snapshot.units[0].id;
+            // A perimeter unit has a route out; interior units are physically
+            // enclosed while their neighbours remain stationary.
+            let id = network
+                .snapshot
+                .units
+                .iter()
+                .find(|u| u.number == 1)
+                .unwrap()
+                .id;
             assert!(network.send(Action::Targets {
                 unit_ids: vec![id],
-                x: 1.0,
-                z: 1.0
+                x: 3.0,
+                z: 3.0
             }));
             until(&mut network, |s| {
                 s.units
                     .iter()
-                    .any(|u| u.id == id && u.x == 1.0 && u.z == 1.0)
+                    .any(|u| u.id == id && u.x == 3.0 && u.z == 3.0)
             });
             assert!(network.send(Action::BuildGranary { x: -27.0, z: 15.0 }));
             until(&mut network, |s| s.buildings.len() == 1);

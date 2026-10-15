@@ -70,7 +70,7 @@ try {
   assert.equal(a.db.armyUnit.id.find(unit.id)!.targetX, unit.x);
   assert.equal((await status(cb => a.reducers.onJoinGame(cb), () => a.reducers.joinGame(gameId))).tag, 'Committed');
   assert.equal(ownUnits().length, 20, 'Joining twice must not duplicate an army');
-  const targetX = unit.x + 1;
+  const targetX = -3;
   assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], targetX, unit.z))).tag, 'Committed');
   await until(() => a.db.armyUnit.id.find(unit.id)?.x === targetX, 'Server movement must reach target');
   await until(() => b.db.armyUnit.id.find(unit.id)?.x === targetX, 'Both clients receive server movement');
@@ -115,7 +115,7 @@ try {
   bridgeSend({ action: 'join', game_id: gameId.toString() });
   await until(() => snapshot().units.length === 20, 'Bridge subscribes to the joined game');
   assert.equal(snapshot().game_id, gameId.toString());
-  const bridgeUnit = snapshot().units[0];
+  const bridgeUnit = snapshot().units.find((u: {number: number}) => u.number === 1);
   assert.ok(snapshot().units.every((u: {owned: boolean; health: number}) => u.owned && u.health === 1));
   bridgeSend({ action: 'targets', unit_ids: [bridgeUnit.id], x: 3, z: 3 });
   await until(() => snapshot().units.find((u: { id: string; x: number }) => u.id === bridgeUnit.id)?.x === 3, 'Bridge receives authoritative movement');

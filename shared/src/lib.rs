@@ -6,7 +6,40 @@ pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 pub const MAP_LIMIT: f32 = 39.0;
 pub const CLEARANCE: f32 = 0.27;
+pub const UNIT_SPACING: f32 = 0.55;
+pub const ATTACK_RANGE: f32 = 0.8;
 pub type Point = (f32, f32);
+
+#[derive(Clone, Copy)]
+pub struct AttackPosition {
+    pub point: Point,
+    pub side: usize,
+    pub ring: usize,
+}
+
+/// Spaced positions on all four sides. Outer rings hold reinforcements when the
+/// attacking perimeter is full; they never deal damage from outside melee range.
+pub fn attack_positions(target: Obstacle) -> Vec<AttackPosition> {
+    let mut positions = Vec::new();
+    for ring in 0..4 {
+        let extra = ring as f32 * 0.75;
+        for side in 0..4 {
+            let half = if side < 2 { HALF_Z } else { HALF_X } + extra;
+            let intervals = (half * 2.0 / 0.7).floor() as usize;
+            for index in 0..=intervals {
+                let along = -half + half * 2.0 * index as f32 / intervals as f32;
+                let point = match side {
+                    0 => (target.x - HALF_X - 0.6 - extra, target.z + along),
+                    1 => (target.x + HALF_X + 0.6 + extra, target.z + along),
+                    2 => (target.x + along, target.z - HALF_Z - 0.6 - extra),
+                    _ => (target.x + along, target.z + HALF_Z + 0.6 + extra),
+                };
+                positions.push(AttackPosition { point, side, ring });
+            }
+        }
+    }
+    positions
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Obstacle {
@@ -37,14 +70,25 @@ pub fn distance(a: Point, b: Point) -> f32 {
     (a.0 - b.0).hypot(a.1 - b.1)
 }
 pub fn free(p: Point, obstacles: &[Obstacle]) -> bool {
+    free_with_clearance(p, obstacles, CLEARANCE)
+}
+fn free_with_clearance(p: Point, obstacles: &[Obstacle], clearance: f32) -> bool {
     p.0.is_finite()
         && p.1.is_finite()
         && p.0.abs() <= MAP_LIMIT
         && p.1.abs() <= MAP_LIMIT
-        && !obstacles.iter().any(|b| b.contains(p, CLEARANCE))
+        && !obstacles.iter().any(|b| b.contains(p, clearance))
 }
 // Slab intersection against an open rectangle. Touching its boundary is allowed.
 pub fn segment_clear(a: Point, b: Point, obstacles: &[Obstacle]) -> bool {
+    segment_clear_with_clearance(a, b, obstacles, CLEARANCE)
+}
+fn segment_clear_with_clearance(
+    a: Point,
+    b: Point,
+    obstacles: &[Obstacle],
+    clearance: f32,
+) -> bool {
     !obstacles.iter().any(|o| {
         let mut lo = 0.0_f32;
         let mut hi = 1.0_f32;
@@ -52,14 +96,14 @@ pub fn segment_clear(a: Point, b: Point, obstacles: &[Obstacle]) -> bool {
             (
                 a.0,
                 b.0 - a.0,
-                o.x - HALF_X - CLEARANCE,
-                o.x + HALF_X + CLEARANCE,
+                o.x - HALF_X - clearance,
+                o.x + HALF_X + clearance,
             ),
             (
                 a.1,
                 b.1 - a.1,
-                o.z - HALF_Z - CLEARANCE,
-                o.z + HALF_Z + CLEARANCE,
+                o.z - HALF_Z - clearance,
+                o.z + HALF_Z + clearance,
             ),
         ] {
             if d.abs() < 1e-7 {
@@ -79,28 +123,50 @@ pub fn segment_clear(a: Point, b: Point, obstacles: &[Obstacle]) -> bool {
 /// Visibility graph + Dijkstra gives the shortest polyline around axis-aligned
 /// building footprints, with unit-radius clearance (no diagonal corner cutting).
 pub fn shortest_path(start: Point, goal: Point, obstacles: &[Obstacle]) -> Option<Vec<Point>> {
-    if !free(start, obstacles) || !free(goal, obstacles) {
+    shortest_path_with_clearance(start, goal, obstacles, CLEARANCE)
+}
+pub fn shortest_path_with_clearance(
+    start: Point,
+    goal: Point,
+    obstacles: &[Obstacle],
+    clearance: f32,
+) -> Option<Vec<Point>> {
+    if !free_with_clearance(start, obstacles, clearance)
+        || !free_with_clearance(goal, obstacles, clearance)
+    {
         return None;
     }
-    if segment_clear(start, goal, obstacles) {
+    if segment_clear_with_clearance(start, goal, obstacles, clearance) {
         return Some(vec![goal]);
     }
     let mut nodes = vec![start, goal];
     for b in obstacles {
         for x in [
-            b.x - HALF_X - CLEARANCE - 0.001,
-            b.x + HALF_X + CLEARANCE + 0.001,
+            b.x - HALF_X - clearance - 0.001,
+            b.x + HALF_X + clearance + 0.001,
         ] {
             for z in [
-                b.z - HALF_Z - CLEARANCE - 0.001,
-                b.z + HALF_Z + CLEARANCE + 0.001,
+                b.z - HALF_Z - clearance - 0.001,
+                b.z + HALF_Z + clearance + 0.001,
             ] {
-                if free((x, z), obstacles) {
+                if free_with_clearance((x, z), obstacles, clearance) {
                     nodes.push((x, z));
                 }
             }
         }
     }
+    visibility_path(&nodes, |a, b| {
+        segment_clear_with_clearance(a, b, obstacles, clearance)
+    })
+}
+
+/// Shared shortest-path search over visibility vertices. Start and goal are the
+/// first two vertices; callers supply static or dynamic collision checks.
+pub fn visibility_path(
+    nodes: &[Point],
+    clear: impl Fn(Point, Point) -> bool,
+) -> Option<Vec<Point>> {
+    let goal = *nodes.get(1)?;
     let n = nodes.len();
     let mut costs = vec![f32::INFINITY; n];
     let mut prev = vec![0; n];
@@ -126,7 +192,7 @@ pub fn shortest_path(start: Point, goal: Point, obstacles: &[Obstacle]) -> Optio
         visited[u] = true;
         for v in 1..n {
             let next = costs[u] + distance(nodes[u], nodes[v]);
-            if !visited[v] && next < costs[v] && segment_clear(nodes[u], nodes[v], obstacles) {
+            if !visited[v] && next < costs[v] && clear(nodes[u], nodes[v]) {
                 costs[v] = next;
                 prev[v] = u;
             }
@@ -134,6 +200,7 @@ pub fn shortest_path(start: Point, goal: Point, obstacles: &[Obstacle]) -> Optio
     }
     None
 }
+
 pub fn attack_path(start: Point, target: Obstacle, obstacles: &[Obstacle]) -> Option<Vec<Point>> {
     let mut candidates = Vec::new();
     for x in [target.x - HALF_X - 0.6, target.x + HALF_X + 0.6] {

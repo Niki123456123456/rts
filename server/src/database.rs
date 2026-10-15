@@ -1,4 +1,4 @@
-use crate::simulation::{step_towards, terrain_height};
+use crate::simulation::{can_skip_corner, move_separated, plan_attack, terrain_height};
 use spacetimedb::{Identity, ReducerContext, ScheduleAt, Table};
 use std::time::Duration;
 
@@ -167,7 +167,14 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         let mut x = origin_x + ((number - 1) % 5) as f32 * 0.7;
         let mut z = origin_z + ((number - 1) / 5) as f32 * 0.7;
         let obstacles = obstacles(ctx, game_id);
-        if !map::free((x, z), &obstacles) {
+        if !map::free((x, z), &obstacles)
+            || ctx
+                .db
+                .army_unit()
+                .game_id()
+                .filter(game_id)
+                .any(|u| map::distance((x, z), (u.x, u.z)) < map::UNIT_SPACING)
+        {
             let p = (-55..=55)
                 .flat_map(|i| (-55..=55).map(move |j| (i as f32 * 0.7, j as f32 * 0.7)))
                 .filter(|p| map::free(*p, &obstacles))
@@ -176,7 +183,7 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
                         .army_unit()
                         .game_id()
                         .filter(game_id)
-                        .any(|u| map::distance(*p, (u.x, u.z)) < 0.6)
+                        .any(|u| map::distance(*p, (u.x, u.z)) < map::UNIT_SPACING)
                 })
                 .min_by(|a, b| map::distance(*a, (x, z)).total_cmp(&map::distance(*b, (x, z))))
                 .ok_or("No room for this army.")?;
@@ -249,12 +256,29 @@ pub fn set_targets(
     let player = participant(ctx)?;
     let units = owned_units(ctx, &player, unit_ids)?;
     let obstacles = obstacles(ctx, player.game_id);
+    let selected: std::collections::HashSet<_> = units.iter().map(|u| u.id).collect();
+    let mut reserved = ctx
+        .db
+        .army_unit()
+        .game_id()
+        .filter(player.game_id)
+        .filter(|u| !selected.contains(&u.id))
+        .flat_map(|u| [(u.x, u.z), (u.target_x, u.target_z)])
+        .collect::<Vec<_>>();
     let center_x = units.iter().map(|u| u.x).sum::<f32>() / units.len() as f32;
     let center_z = units.iter().map(|u| u.z).sum::<f32>() / units.len() as f32;
     for mut unit in units {
         // Formation offsets use authoritative positions, never client positions.
         unit.target_x = (target_x + unit.x - center_x).clamp(-MAP_LIMIT, MAP_LIMIT);
         unit.target_z = (target_z + unit.z - center_z).clamp(-MAP_LIMIT, MAP_LIMIT);
+        if !map::free((unit.target_x, unit.target_z), &obstacles) {
+            return Err("Target is blocked or unreachable. Choose open ground.".into());
+        }
+        let target = free_destination((unit.target_x, unit.target_z), &reserved, &obstacles)
+            .ok_or("There is no free space at this destination.")?;
+        unit.target_x = target.0;
+        unit.target_z = target.1;
+        reserved.push(target);
         let path = map::shortest_path((unit.x, unit.z), (unit.target_x, unit.target_z), &obstacles)
             .ok_or("Target is blocked or unreachable. Choose open ground.")?;
         save_order(ctx, &unit, None, path);
@@ -310,7 +334,11 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 x: building.x,
                 z: building.z,
             };
-            if map::distance((unit.x, unit.z), shape.closest((unit.x, unit.z))) <= 0.8 {
+            if order.waypoints.is_empty()
+                && map::distance((unit.x, unit.z), (unit.target_x, unit.target_z)) < 0.05
+                && map::distance((unit.x, unit.z), shape.closest((unit.x, unit.z)))
+                    <= map::ATTACK_RANGE
+            {
                 building.health = (building.health - 0.05 * TICK_SECONDS).max(0.0);
                 if building.health <= 0.0 {
                     ctx.db.building().id().delete(id);
@@ -323,15 +351,35 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 continue;
             }
         }
+        let peers = ctx
+            .db
+            .army_unit()
+            .game_id()
+            .filter(unit.game_id)
+            .filter(|u| u.id != unit.id)
+            .map(|u| (u.x, u.z))
+            .collect::<Vec<_>>();
+        let obstacles = obstacles(ctx, unit.game_id);
         let mut budget = UNIT_SPEED * TICK_SECONDS;
-        while order.waypoints.len() >= 2 && budget > 0.0 {
+        while order.waypoints.len() >= 2 && budget > 0.00001 {
+            while order.waypoints.len() >= 4
+                && can_skip_corner(
+                    (unit.x, unit.z),
+                    (order.waypoints[0], order.waypoints[1]),
+                    (order.waypoints[2], order.waypoints[3]),
+                    &obstacles,
+                )
+            {
+                order.waypoints.drain(..2);
+            }
+
             let goal = (order.waypoints[0], order.waypoints[1]);
-            let distance = map::distance((unit.x, unit.z), goal);
-            let (x, z) = step_towards(unit.x, unit.z, goal.0, goal.1, budget);
+            let start = (unit.x, unit.z);
+            let (x, z) = move_separated(start, goal, budget, &peers, &obstacles);
             unit.x = x;
             unit.z = z;
-            budget -= distance;
-            if distance <= UNIT_SPEED * TICK_SECONDS && (x, z) == goal {
+            budget -= map::distance(start, (x, z));
+            if map::distance((x, z), goal) < 0.00001 {
                 order.waypoints.drain(..2);
             } else {
                 break;
@@ -415,8 +463,87 @@ fn stop_unit(ctx: &ReducerContext, mut u: ArmyUnit) {
     u.target_z = u.z;
     ctx.db.army_unit().id().update(u);
 }
+fn free_destination(
+    desired: map::Point,
+    reserved: &[map::Point],
+    obstacles: &[Obstacle],
+) -> Option<map::Point> {
+    let available = |p: map::Point| {
+        map::free(p, obstacles)
+            && reserved
+                .iter()
+                .all(|q| map::distance(p, *q) >= map::UNIT_SPACING)
+    };
+    if available(desired) {
+        return Some(desired);
+    }
+    for ring in 1..=12 {
+        let radius = ring as f32 * 0.6;
+        for i in 0..32 {
+            let angle = i as f32 * std::f32::consts::TAU / 32.0;
+            let p = (
+                desired.0 + angle.cos() * radius,
+                desired.1 + angle.sin() * radius,
+            );
+            if available(p) {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn attack_plans(
+    ctx: &ReducerContext,
+    units: &[ArmyUnit],
+    b: &Building,
+    keep: bool,
+) -> Option<Vec<(u64, Vec<map::Point>)>> {
+    let ids: std::collections::HashSet<_> = units.iter().map(|u| u.id).collect();
+    let occupied = ctx
+        .db
+        .army_unit()
+        .game_id()
+        .filter(b.game_id)
+        .filter(|u| !ids.contains(&u.id))
+        .map(|u| (u.x, u.z))
+        .collect::<Vec<_>>();
+    let reserved = ctx
+        .db
+        .unit_order()
+        .game_id()
+        .filter(b.game_id)
+        .filter(|o| o.attack_building == Some(b.id) && !ids.contains(&o.unit_id))
+        .filter_map(|o| ctx.db.army_unit().id().find(o.unit_id))
+        .map(|u| (u.target_x, u.target_z))
+        .collect::<Vec<_>>();
+    let starts = units
+        .iter()
+        .map(|u| (u.id, (u.x, u.z), keep.then_some((u.target_x, u.target_z))))
+        .collect::<Vec<_>>();
+    plan_attack(
+        &starts,
+        Obstacle { x: b.x, z: b.z },
+        &obstacles(ctx, b.game_id),
+        &reserved,
+        &occupied,
+    )
+}
+fn apply_attack_plans(ctx: &ReducerContext, building_id: u64, plans: Vec<(u64, Vec<map::Point>)>) {
+    for (id, path) in plans {
+        if let Some(mut unit) = ctx.db.army_unit().id().find(id) {
+            if let Some(goal) = path.last() {
+                unit.target_x = goal.0;
+                unit.target_z = goal.1;
+            }
+            save_order(ctx, &unit, Some(building_id), path);
+            ctx.db.army_unit().id().update(unit);
+        }
+    }
+}
 fn replan(ctx: &ReducerContext, game_id: u64) {
     let obstacles = obstacles(ctx, game_id);
+    let mut attacks = std::collections::BTreeMap::<u64, Vec<ArmyUnit>>::new();
     for order in ctx
         .db
         .unit_order()
@@ -424,27 +551,34 @@ fn replan(ctx: &ReducerContext, game_id: u64) {
         .filter(game_id)
         .collect::<Vec<_>>()
     {
-        let Some(mut u) = ctx.db.army_unit().id().find(order.unit_id) else {
+        let Some(u) = ctx.db.army_unit().id().find(order.unit_id) else {
             ctx.db.unit_order().unit_id().delete(order.unit_id);
             continue;
         };
-        let path =
-            if let Some(id) = order.attack_building {
-                ctx.db.building().id().find(id).and_then(|b| {
-                    map::attack_path((u.x, u.z), Obstacle { x: b.x, z: b.z }, &obstacles)
-                })
-            } else {
-                map::shortest_path((u.x, u.z), (u.target_x, u.target_z), &obstacles)
-            };
-        if let Some(path) = path {
-            if let Some(goal) = path.last() {
-                u.target_x = goal.0;
-                u.target_z = goal.1;
-            }
-            save_order(ctx, &u, order.attack_building, path);
-            ctx.db.army_unit().id().update(u);
+        if let Some(id) = order.attack_building {
+            attacks.entry(id).or_default().push(u);
+            continue;
+        }
+        if let Some(path) = map::shortest_path((u.x, u.z), (u.target_x, u.target_z), &obstacles) {
+            save_order(ctx, &u, None, path);
         } else {
             stop_unit(ctx, u);
+        }
+    }
+    for (id, mut units) in attacks {
+        units.sort_by_key(|u| u.id);
+        let plans = ctx
+            .db
+            .building()
+            .id()
+            .find(id)
+            .and_then(|b| attack_plans(ctx, &units, &b, true));
+        if let Some(plans) = plans {
+            apply_attack_plans(ctx, id, plans);
+        } else {
+            for unit in units {
+                stop_unit(ctx, unit);
+            }
         }
     }
 }
@@ -531,17 +665,9 @@ pub fn attack_building(
     if b.game_id != player.game_id || b.owner == player.connection_id {
         return Err("Choose an enemy building in your game.".into());
     }
-    let obstacles = obstacles(ctx, player.game_id);
-    for mut u in units {
-        let path = map::attack_path((u.x, u.z), Obstacle { x: b.x, z: b.z }, &obstacles)
-            .ok_or("This building is unreachable.")?;
-        if let Some(goal) = path.last() {
-            u.target_x = goal.0;
-            u.target_z = goal.1;
-        }
-        save_order(ctx, &u, Some(building_id), path);
-        ctx.db.army_unit().id().update(u);
-    }
+    let plans =
+        attack_plans(ctx, &units, &b, false).ok_or("No reachable space around this building.")?;
+    apply_attack_plans(ctx, building_id, plans);
     start_tick(ctx);
     Ok(())
 }

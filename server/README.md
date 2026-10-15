@@ -105,10 +105,21 @@ A visibility graph with Dijkstra computes shortest polylines around footprints
 expanded by the unit radius plus clearance. Unreachable/blocked orders are rejected.
 Construction and demolition replan active orders; units stop if a destination becomes
 unreachable. `attack_building` accepts only owned units and an enemy building in the
-same game, routes to the perimeter, and applies 0.05 health damage per unit per second
-within 0.8 world units of the footprint. At zero health the building is deleted and
-routes are updated. Movement orders replace attack orders. Clients cannot set damage,
-health or movement paths. The simulation timer stops when there are no active orders.
+same game, assigns distinct positions around all four reachable walls, and applies
+0.05 health
+damage per unit per second only after reaching the assigned position within 0.8
+world units of the footprint. Attack routes pass outside the occupied perimeter
+before approaching their wall. Additional attackers wait in spaced outer rings
+when the melee perimeter is full. At zero health the building is deleted and
+routes are updated. Movement orders replace attack orders.
+
+Units keep at least 0.55 world units between their centres, including units owned
+by different players. Swept-circle checks prevent crossing through another unit,
+local visibility routing finds ways around nearby bodies, and virtual route corners
+can be passed without every unit converging on the same point. Spawning checks
+occupied positions. Movement destinations reserve free space and adjust destinations
+that would overlap another unit or an existing destination.
+Clients cannot set damage, health or movement paths. The simulation timer stops when there are no active orders.
 
 ## Development and checks
 
