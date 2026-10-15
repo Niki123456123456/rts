@@ -1,0 +1,103 @@
+import { DbConnection, type ReducerEventContext } from './module_bindings';
+
+type Action =
+  | { action: 'connect'; uri: string; database: string }
+  | { action: 'create'; title: string }
+  | { action: 'join'; game_id: string }
+  | { action: 'leave' }
+  | { action: 'targets'; unit_ids: string[]; x: number; z: number };
+
+let conn: DbConnection | undefined;
+let connected = false;
+let ready = false;
+let error: string | null = null;
+let activeGame: bigint | undefined;
+let unitSubscription: ReturnType<ReturnType<DbConnection['subscriptionBuilder']>['subscribe']> | undefined;
+
+function result(ctx: ReducerEventContext) {
+  if (ctx.event.callerConnectionId?.toHexString() !== conn?.connectionId.toHexString()) return;
+  const status = ctx.event.status;
+  error = status.tag === 'Failed' ? status.value : status.tag === 'OutOfEnergy' ? 'Server is out of energy.' : null;
+}
+
+function connect(uri: string, database: string) {
+  // Ignore callbacks from a connection replaced by a reconnect.
+  conn?.disconnect();
+  connected = false;
+  ready = false;
+  activeGame = undefined;
+  unitSubscription = undefined;
+  const connection = DbConnection.builder()
+    .withUri(uri)
+    .withModuleName(database)
+    .onConnect((db) => {
+      if (conn !== db) return;
+      connected = true;
+      db.subscriptionBuilder()
+        .onApplied(() => { if (conn === db) ready = true; })
+        .onError((ctx) => { if (conn === db) error = String(ctx.event); })
+        .subscribe(['SELECT * FROM game', 'SELECT * FROM player']);
+    })
+    .onConnectError((_ctx, err) => {
+      if (conn !== connection) return;
+      connected = ready = false;
+      error = String(err);
+    })
+    .onDisconnect((_ctx, err) => {
+      if (conn !== connection) return;
+      connected = ready = false;
+      error = err ? String(err) : 'Disconnected from server.';
+    })
+    .build();
+  conn = connection;
+  connection.reducers.onCreateGame(result);
+  connection.reducers.onJoinGame(result);
+  connection.reducers.onLeaveGame(result);
+  connection.reducers.onSetTargets(result);
+}
+
+export const strongholdNetwork = {
+  disconnect() {
+    const previous = conn;
+    conn = undefined;
+    connected = ready = false;
+    activeGame = undefined;
+    unitSubscription = undefined;
+    previous?.disconnect();
+  },
+  send(json: string) {
+    const action: Action = JSON.parse(json);
+    error = null;
+    if (action.action === 'connect') { connect(action.uri, action.database); return; }
+    if (!conn || !ready || !connected) throw new Error('Connect to a server first.');
+    switch (action.action) {
+      case 'create': conn.reducers.createGame(action.title); break;
+      case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
+      case 'leave': conn.reducers.leaveGame(); break;
+      case 'targets': conn.reducers.setTargets(action.unit_ids.map(BigInt), action.x, action.z); break;
+    }
+  },
+  snapshot() {
+    const player = connected && ready && conn ? Array.from(conn.db.player.iter())
+      .find(p => p.connectionId.toHexString() === conn!.connectionId.toHexString()) : undefined;
+    const gameId = player?.gameId;
+    if (conn && connected && ready && gameId !== activeGame) {
+      unitSubscription?.unsubscribe();
+      activeGame = gameId;
+      unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
+        .onError((ctx) => { error = String(ctx.event); })
+        .subscribe(`SELECT * FROM unit WHERE game_id = ${gameId}`);
+    }
+    return JSON.stringify({
+      connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
+      games: ready && connected && conn ? Array.from(conn.db.game.iter())
+        .sort((a, b) => a.id < b.id ? -1 : 1)
+        .map(g => ({ id: g.id.toString(), title: g.title })) : [],
+      units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.unit.iter())
+        .filter(u => u.gameId === gameId)
+        .map(u => ({ id: u.id.toString(), number: u.number, x: u.x, y: u.y, z: u.z })) : [],
+    });
+  },
+};
+
+Object.assign(globalThis, { strongholdNetwork });

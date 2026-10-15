@@ -1,0 +1,20 @@
+{
+  "name": "stronghold-network",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/network.ts --bundle --format=esm --target=es2022 --outfile=dist/network.js",
+    "check": "tsc --noEmit",
+    "test:multiplayer": "tsx src/multiplayer.test.ts"
+  },
+  "dependencies": {
+    "@clockworklabs/spacetimedb-sdk": "1.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "@types/node": "22.19.0"
+  }
+}

@@ -10,6 +10,14 @@ license = "MIT"
 bevy = "0.20"
 bevy_egui = { version = "0.43.1", default-features = false, features = ["default_fonts", "render", "picking"] }
 bevy_rts_camera = { git = "https://github.com/Plonq/bevy_rts_camera", rev = "0bbe143b15d82438ced33808e878ba00595f01b9" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+spacetimedb-sdk = "=1.1.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 
 [profile.web-release]
 inherits = "release"

@@ -16,6 +16,7 @@
     <main id="game-container"><canvas id="game" tabindex="0" aria-label="Stronghold Spiel"></canvas></main>
     <div id="status" role="status">Spiel wird geladen …</div>
     <script type="module">
+      import "./network.js";
       import init from "./stronghold_game.js";
       const canvas = document.querySelector("#game");
       const status = document.querySelector("#status");

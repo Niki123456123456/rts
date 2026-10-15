@@ -2,10 +2,19 @@
 
 ## Lokal spielen
 
+Das Spiel benötigt jetzt den Multiplayer-Server. Starte und veröffentliche zuerst
+das SpacetimeDB-Modul wie in [server/README.md](../server/README.md) beschrieben.
+
 ```sh
+bash server/generate-bindings.sh
 cd game
 cargo run
 ```
+
+Beim Start erscheint die Games-Lobby. Gib einen Titel ein und klicke auf **Create
+Game**, oder bewege die Maus über ein vorhandenes Spiel und klicke auf **Join**.
+Mehrere Clients im selben Spiel sehen und steuern dieselben Einheiten. Der Client
+sendet nur Zielpositionen; Bewegung und Terrainhöhe berechnet der Server.
 
 Linksklick wählt eine Einheit aus, Cmd + Linksklick fügt Einheiten zur Auswahl
 hinzu oder entfernt sie. Ein Linksklick auf freie Fläche leert die Auswahl.
@@ -14,6 +23,10 @@ die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
 die Kamera per Ziehen.
 
 ## Browser-Version
+
+Voraussetzungen: Node.js (20 oder neuer), npm, SpacetimeDB CLI 1.1.2 und ein
+erreichbarer SpacetimeDB-Server. Das Build-Skript generiert die Rust- und
+TypeScript-Bindings automatisch aus dem Server-Modul.
 
 ```sh
 bash game/build-web.sh

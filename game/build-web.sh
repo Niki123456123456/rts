@@ -7,6 +7,13 @@ mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd)"
 cd "$game_dir"
 
+bash "$game_dir/../server/generate-bindings.sh"
+
+npm --prefix web ci
+npm --prefix web run check
+npm --prefix web run build
+cp web/dist/network.js "$output_dir/network.js"
+
 # The CLI must match the version linked into the game, including after lockfile updates.
 bindgen_version="$(awk '/name = "wasm-bindgen"/ { found = 1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' Cargo.lock)"
 if [[ -z "$bindgen_version" ]]; then

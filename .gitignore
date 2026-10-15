@@ -1,5 +1,11 @@
 /assets/
 /data/
 /game/target/
+/game/src/module_bindings/
+/game/web/src/module_bindings/
 /public/
 /source_data/
+/server/target/
+/server/.spacetime/
+/game/web/node_modules/
+/game/web/dist/

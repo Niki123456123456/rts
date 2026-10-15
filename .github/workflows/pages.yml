@@ -17,6 +17,11 @@ jobs:
       - name: Install Rust
         working-directory: game
         run: rustup show active-toolchain
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: game/web/package-lock.json
       - name: Cache Rust dependencies and builds
         uses: actions/cache@v4
         with:
@@ -27,7 +32,22 @@ jobs:
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             game/target
-          key: ${{ runner.os }}-web-${{ hashFiles('game/Cargo.lock', 'game/Cargo.toml', 'game/rust-toolchain.toml') }}
+            server/target
+          key: ${{ runner.os }}-web-${{ hashFiles('game/Cargo.lock', 'game/Cargo.toml', 'server/Cargo.lock', 'server/Cargo.toml', 'game/rust-toolchain.toml') }}
+      - name: Check multiplayer server
+        working-directory: server
+        run: cargo fmt --check && cargo test --lib --locked && cargo build --locked --release --target wasm32-unknown-unknown
+      - name: Install SpacetimeDB 1.1.2 code generator
+        run: |
+          mkdir -p "$RUNNER_TEMP/spacetime"
+          curl --fail --show-error --location --retry 3 \
+            https://github.com/clockworklabs/SpacetimeDB/releases/download/v1.1.2/spacetime-x86_64-unknown-linux-gnu.tar.gz \
+            --output "$RUNNER_TEMP/spacetime.tar.gz"
+          tar -xzf "$RUNNER_TEMP/spacetime.tar.gz" -C "$RUNNER_TEMP/spacetime"
+          ln -s "$RUNNER_TEMP/spacetime/spacetimedb-cli" "$RUNNER_TEMP/spacetime/spacetime"
+          echo "$RUNNER_TEMP/spacetime" >> "$GITHUB_PATH"
+      - name: Generate client bindings
+        run: bash server/generate-bindings.sh
       - name: Check formatting and test
         working-directory: game
         env:

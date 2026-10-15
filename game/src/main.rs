@@ -1,4 +1,10 @@
-//! A terrain scene with selectable, movable units and an RTS camera.
+//! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
+
+#[cfg(not(target_arch = "wasm32"))]
+mod module_bindings;
+mod network;
+
+use network::{Action, Multiplayer};
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -25,28 +31,27 @@ fn main() {
         .add_plugins(RtsCameraPlugin)
         .init_resource::<SelectedUnits>()
         .init_resource::<SelectionPanel>()
-        .add_systems(Startup, setup)
+        .init_resource::<Multiplayer>()
+        .add_systems(Startup, (setup, connect_multiplayer))
         .add_systems(
             Update,
             (
+                sync_multiplayer,
                 select_unit,
-                move_units,
                 expire_destination_markers,
                 highlight_selection,
             )
                 .chain(),
         )
-        .add_systems(EguiPrimaryContextPass, selection_ui)
+        .add_systems(EguiPrimaryContextPass, (lobby_ui, selection_ui).chain())
         .run();
 }
 
 #[derive(Component)]
 struct Unit {
+    id: u64,
     number: usize,
 }
-
-#[derive(Component)]
-struct MoveTarget(Vec3);
 
 #[derive(Component)]
 struct DestinationMarker(Timer);
@@ -56,9 +61,6 @@ struct DestinationVisual {
     mesh: Handle<Mesh>,
     material: Handle<StandardMaterial>,
 }
-
-const UNIT_SPEED: f32 = 3.0;
-const UNIT_HEIGHT: f32 = 0.75;
 
 #[derive(Resource, Default)]
 struct SelectedUnits(Vec<Entity>);
@@ -83,6 +85,16 @@ struct SelectionPanel(Option<egui::Rect>);
 struct UnitMaterials {
     normal: Handle<StandardMaterial>,
     selected: Handle<StandardMaterial>,
+    mesh: Handle<Mesh>,
+}
+
+fn connect_multiplayer(mut multiplayer: ResMut<Multiplayer>) {
+    let uri = std::env::var("SPACETIMEDB_URI").unwrap_or_else(|_| multiplayer.uri.clone());
+    let database =
+        std::env::var("SPACETIMEDB_DATABASE").unwrap_or_else(|_| multiplayer.database.clone());
+    multiplayer.uri = uri.clone();
+    multiplayer.database = database.clone();
+    multiplayer.send(Action::Connect { uri, database });
 }
 
 fn setup(
@@ -135,19 +147,8 @@ fn setup(
     commands.insert_resource(UnitMaterials {
         normal: terrain_material.clone(),
         selected: selected_material,
+        mesh: meshes.add(Capsule3d::new(0.25, 1.25)),
     });
-    for x in -5..5 {
-        for z in -5..5 {
-            commands.spawn((
-                Unit {
-                    number: ((x + 5) * 10 + (z + 5) + 1) as usize,
-                },
-                Mesh3d(meshes.add(Capsule3d::new(0.25, 1.25))),
-                MeshMaterial3d(terrain_material.clone()),
-                Transform::from_xyz(x as f32 * 0.7, 0.75, z as f32 * 0.7),
-            ));
-        }
-    }
     // Light
     commands.spawn((
         DirectionalLight {
@@ -212,7 +213,8 @@ fn select_unit(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
     mut ray_cast: MeshRayCast,
-    units: Query<&Transform, With<Unit>>,
+    units: Query<(&Transform, &Unit)>,
+    mut multiplayer: ResMut<Multiplayer>,
     mut selected: ResMut<SelectedUnits>,
     mut contexts: EguiContexts,
     panel: Res<SelectionPanel>,
@@ -220,6 +222,9 @@ fn select_unit(
     markers: Query<Entity, With<DestinationMarker>>,
     visual: Res<DestinationVisual>,
 ) {
+    if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
+        return;
+    }
     let select = mouse.just_pressed(MouseButton::Left);
     let move_order = mouse.just_pressed(MouseButton::Right);
     if !select && !move_order {
@@ -232,7 +237,8 @@ fn select_unit(
     if let Ok(ctx) = contexts.ctx_mut() {
         let ui_position =
             egui::pos2(cursor.x, cursor.y) * (window.scale_factor() / ctx.pixels_per_point());
-        if panel.0.is_some_and(|rect| rect.contains(ui_position)) {
+        if ctx.egui_wants_pointer_input() || panel.0.is_some_and(|rect| rect.contains(ui_position))
+        {
             return;
         }
     }
@@ -257,23 +263,15 @@ fn select_unit(
         let selected_units: Vec<_> = selected
             .0
             .iter()
-            .filter_map(|entity| {
-                units
-                    .get(*entity)
-                    .ok()
-                    .map(|transform| (*entity, transform.translation))
-            })
+            .filter_map(|entity| units.get(*entity).ok().map(|(_, unit)| unit.id))
             .collect();
         if !selected_units.is_empty() {
-            let center = selected_units
-                .iter()
-                .map(|(_, position)| *position)
-                .sum::<Vec3>()
-                / selected_units.len() as f32;
-            for (unit, position) in selected_units {
-                // Keep the group's spacing rather than stacking every unit at one point.
-                let offset = (position - center).with_y(0.0);
-                commands.entity(unit).insert(MoveTarget(hit.point + offset));
+            if !multiplayer.send(Action::Targets {
+                unit_ids: selected_units,
+                x: hit.point.x,
+                z: hit.point.z,
+            }) {
+                return;
             }
             for marker in &markers {
                 commands.entity(marker).despawn();
@@ -304,40 +302,184 @@ fn unit_at_ray(
         .filter(|entity| units.contains(*entity))
 }
 
-fn move_units(
+fn sync_multiplayer(
     mut commands: Commands,
-    time: Res<Time>,
-    mut units: Query<(Entity, &mut Transform, &MoveTarget), With<Unit>>,
-    ground: Query<(), With<Ground>>,
-    mut ray_cast: MeshRayCast,
+    mut multiplayer: ResMut<Multiplayer>,
+    mut selected: ResMut<SelectedUnits>,
+    mut units: Query<(Entity, &Unit, &mut Transform)>,
+    materials: Res<UnitMaterials>,
+    markers: Query<Entity, With<DestinationMarker>>,
+    mut previous_game: Local<Option<u64>>,
 ) {
-    for (entity, mut transform, target) in &mut units {
-        let destination = Vec3::new(target.0.x, transform.translation.y, target.0.z);
-        transform.translation = step_towards(
-            transform.translation,
-            destination,
-            UNIT_SPEED * time.delta_secs(),
-        );
-        // Follow the terrain height as the unit crosses the scene.
-        let ray = Ray3d::new(transform.translation.with_y(100.0), Dir3::NEG_Y);
-        let ground_filter = |entity| ground.contains(entity);
-        let settings = MeshRayCastSettings::default().with_filter(&ground_filter);
-        if let Some((_, hit)) = ray_cast.cast_ray(ray, &settings).first() {
-            transform.translation.y = hit.point.y + UNIT_HEIGHT;
+    multiplayer.poll();
+    let snapshot = &multiplayer.snapshot;
+    let game_id = snapshot.game_id.filter(|_| snapshot.connected);
+    if game_id != *previous_game {
+        selected.0.clear();
+        for marker in &markers {
+            commands.entity(marker).despawn();
         }
-        if transform.translation.xz().distance(target.0.xz()) < 0.001 {
-            commands.entity(entity).remove::<MoveTarget>();
+        *previous_game = game_id;
+    }
+    let mut remaining: std::collections::HashMap<_, _> = snapshot
+        .units
+        .iter()
+        .filter(|_| game_id.is_some())
+        .map(|unit| (unit.id, unit))
+        .collect();
+    for (entity, unit, mut transform) in &mut units {
+        if let Some(row) = remaining.remove(&unit.id) {
+            // Rendering only: the client never advances or predicts movement.
+            transform.translation = Vec3::new(row.x, row.y, row.z);
+        } else {
+            commands.entity(entity).despawn();
+            selected.0.retain(|selected| *selected != entity);
         }
+    }
+    for row in remaining.values() {
+        commands.spawn((
+            Unit {
+                id: row.id,
+                number: row.number,
+            },
+            Mesh3d(materials.mesh.clone()),
+            MeshMaterial3d(materials.normal.clone()),
+            Transform::from_xyz(row.x, row.y, row.z),
+        ));
     }
 }
 
-fn step_towards(position: Vec3, destination: Vec3, distance: f32) -> Vec3 {
-    let delta = destination - position;
-    if delta.length() <= distance {
-        destination
-    } else {
-        position + delta.normalize_or_zero() * distance
+fn lobby_ui(
+    mut contexts: EguiContexts,
+    mut multiplayer: ResMut<Multiplayer>,
+    mut controls: Query<&mut RtsCameraControls>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    if multiplayer.snapshot.game_id.is_some() && multiplayer.snapshot.connected {
+        egui::Window::new("Game").resizable(false).show(ctx, |ui| {
+            let title = multiplayer
+                .snapshot
+                .games
+                .iter()
+                .find(|game| Some(game.id) == multiplayer.snapshot.game_id)
+                .map(|game| game.title.as_str())
+                .unwrap_or("Game");
+            ui.strong(title);
+            if let Some(error) = &multiplayer.snapshot.error {
+                ui.colored_label(egui::Color32::LIGHT_RED, error);
+            }
+            if ui.button("Leave game").clicked() {
+                multiplayer.send(Action::Leave);
+            }
+        });
+        return Ok(());
     }
+    for mut control in &mut controls {
+        control.enabled = false;
+    }
+    egui::Window::new("Stronghold — Multiplayer")
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .resizable(false)
+        .collapsible(false)
+        .default_width(460.0)
+        .show(ctx, |ui| {
+            ui.heading("Games");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label("Server");
+                ui.text_edit_singleline(&mut multiplayer.uri);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Database");
+                ui.text_edit_singleline(&mut multiplayer.database);
+            });
+            let connected = multiplayer.snapshot.connected && multiplayer.snapshot.ready;
+            if ui
+                .button(if connected { "Reconnect" } else { "Connect" })
+                .clicked()
+            {
+                let uri = multiplayer.uri.clone();
+                let database = multiplayer.database.clone();
+                multiplayer.send(Action::Connect { uri, database });
+            }
+            ui.label(if connected {
+                "Connected"
+            } else {
+                "Connect to SpacetimeDB to list games."
+            });
+            if let Some(error) = &multiplayer.snapshot.error {
+                ui.colored_label(egui::Color32::LIGHT_RED, error);
+            }
+            ui.separator();
+            let games = multiplayer.snapshot.games.clone();
+            egui::ScrollArea::vertical()
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    if connected && games.is_empty() {
+                        ui.label("No games yet. Create the first one below.");
+                    }
+                    for game in games {
+                        ui.push_id(game.id, |ui| {
+                            let (rect, row) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width(), 38.0),
+                                egui::Sense::hover(),
+                            );
+                            let hovered = row.hovered()
+                                || ctx
+                                    .pointer_hover_pos()
+                                    .is_some_and(|pos| rect.contains(pos));
+                            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                                ui.horizontal_centered(|ui| {
+                                    ui.label(&game.title);
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if hovered
+                                                && ui
+                                                    .add_enabled(
+                                                        connected && !multiplayer.pending,
+                                                        egui::Button::new("Join"),
+                                                    )
+                                                    .clicked()
+                                            {
+                                                multiplayer.send(Action::Join { game_id: game.id });
+                                            }
+                                        },
+                                    );
+                                });
+                            });
+                        });
+                    }
+                });
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut multiplayer.title)
+                        .hint_text("Game title")
+                        .char_limit(60),
+                );
+                if ui
+                    .add_enabled(
+                        connected && !multiplayer.pending && !multiplayer.title.trim().is_empty(),
+                        egui::Button::new("Create Game"),
+                    )
+                    .clicked()
+                {
+                    let title = multiplayer.title.clone();
+                    multiplayer.send(Action::Create { title });
+                }
+            });
+            if !connected {
+                ui.small(
+                    "Create Game requires a connection to the published SpacetimeDB database.",
+                );
+            } else if multiplayer.pending {
+                ui.small("Waiting for the server …");
+            } else if multiplayer.title.trim().is_empty() {
+                ui.small("Enter a game title to enable Create Game.");
+            }
+        });
+    Ok(())
 }
 
 fn expire_destination_markers(
@@ -375,7 +517,12 @@ fn selection_ui(
     units: Query<&Unit>,
     mut controls: Query<&mut RtsCameraControls>,
     mut panel: ResMut<SelectionPanel>,
+    multiplayer: Res<Multiplayer>,
 ) -> Result {
+    if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
+        panel.0 = None;
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
         ctx.clone(),
@@ -477,13 +624,13 @@ mod tests {
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, 0.0),
         );
-        world.entity_mut(near).insert(Unit { number: 1 });
+        world.entity_mut(near).insert(Unit { id: 1, number: 1 });
         let far = spawn_mesh(
             &mut world,
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, -2.0),
         );
-        world.entity_mut(far).insert(Unit { number: 2 });
+        world.entity_mut(far).insert(Unit { id: 2, number: 2 });
         assert_eq!(
             pick(
                 &mut world,
@@ -509,7 +656,7 @@ mod tests {
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, 0.0),
         );
-        world.entity_mut(unit).insert(Unit { number: 1 });
+        world.entity_mut(unit).insert(Unit { id: 1, number: 1 });
         spawn_mesh(
             &mut world,
             Cuboid::new(2.0, 2.0, 1.0).mesh().build(),
@@ -538,16 +685,5 @@ mod tests {
         assert_eq!(selected.0, vec![second]);
         selected.select(third, false);
         assert_eq!(selected.0, vec![third]);
-    }
-
-    #[test]
-    fn movement_advances_at_the_requested_speed_and_stops_at_the_target() {
-        let target = Vec3::new(3.0, UNIT_HEIGHT, 4.0);
-        let start = Vec3::new(0.0, UNIT_HEIGHT, 0.0);
-        let next = step_towards(start, target, 1.5);
-        assert!((next.distance(start) - 1.5).abs() < 0.0001);
-        assert!(next.distance(target) < start.distance(target));
-        assert_eq!(step_towards(next, target, 10.0), target);
-        assert_eq!(step_towards(target, target, 1.0), target);
     }
 }
