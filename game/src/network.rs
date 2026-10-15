@@ -24,6 +24,9 @@ pub struct Unit {
     #[serde(deserialize_with = "id")]
     pub id: u64,
     pub number: usize,
+    pub color: u32,
+    pub health: f32,
+    pub owned: bool,
     pub x: f32,
     pub y: f32,
     pub z: f32,
@@ -213,7 +216,7 @@ mod backend {
                             .on_error(move |_, error| {
                                 sub_error.lock().unwrap().error = Some(error.to_string())
                             })
-                            .subscribe(["SELECT * FROM game", "SELECT * FROM player"]);
+                            .subscribe(["SELECT * FROM game", "SELECT * FROM participant"]);
                     })
                     .on_connect_error(move |_, error| {
                         connect_error.lock().unwrap().error = Some(error.to_string());
@@ -293,7 +296,7 @@ mod backend {
             snapshot.games.sort_by_key(|g| g.id);
             snapshot.game_id = conn
                 .db
-                .player()
+                .participant()
                 .connection_id()
                 .find(&conn.connection_id())
                 .map(|p| p.game_id);
@@ -309,18 +312,21 @@ mod backend {
                             .on_error(move |_, error| {
                                 errors.lock().unwrap().error = Some(error.to_string())
                             })
-                            .subscribe(format!("SELECT * FROM unit WHERE game_id = {id}")),
+                            .subscribe(format!("SELECT * FROM army_unit WHERE game_id = {id}")),
                     );
                 }
             }
             snapshot.units = conn
                 .db
-                .unit()
+                .army_unit()
                 .iter()
                 .filter(|u| Some(u.game_id) == snapshot.game_id)
                 .map(|u| super::Unit {
                     id: u.id,
                     number: u.number as usize,
+                    color: u.color,
+                    health: u.health,
+                    owned: u.owner == conn.connection_id(),
                     x: u.x,
                     y: u.y,
                     z: u.z,
@@ -369,7 +375,11 @@ mod backend {
                 }
                 assert!(
                     Instant::now() < deadline,
-                    "Timed out waiting for native network state"
+                    "Timed out: connected={}, ready={}, game={:?}, units={}",
+                    network.snapshot.connected,
+                    network.snapshot.ready,
+                    network.snapshot.game_id,
+                    network.snapshot.units.len()
                 );
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -393,9 +403,7 @@ mod backend {
                         .as_nanos()
                 ),
             }));
-            until(&mut network, |s| {
-                s.game_id.is_some() && s.units.len() == 100
-            });
+            until(&mut network, |s| s.game_id.is_some() && s.units.len() == 20);
             let id = network.snapshot.units[0].id;
             assert!(network.send(Action::Targets {
                 unit_ids: vec![id],

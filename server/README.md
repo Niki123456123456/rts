@@ -16,7 +16,7 @@ The game defaults to the deployed Maincloud database:
 - Endpoint: `https://maincloud.spacetimedb.com` (browser connections use WSS).
 - Database: `stronghold-niki123456123456`.
 - Identity: `c200894545848c3e5c08b3cb805ab368e24ab6e292974790a6ba1656cb95371b`.
-- Example game: `GameA`, with 100 shared units.
+- Example game: `GameA`; each joining player receives 20 units.
 
 Maincloud has a [Free plan](https://spacetimedb.com/pricing) with 2,500 TeV/month
 of usage credit. This deployment did not select a paid plan or enable billing.
@@ -62,8 +62,7 @@ SPACETIMEDB_URI=http://127.0.0.1:3000 SPACETIMEDB_DATABASE=stronghold cargo run 
 The command above overrides the game's Maincloud defaults to use the local server.
 Players can change these fields and click Connect/Reconnect. The server must already
 be running and the module published. Run two clients or browser tabs, create a game
-in one, and join that game in the other. Every player in a game can command its
-shared 100 units. Games persist even when everyone leaves.
+in one, and join that game in the other. Each player receives 20 units in a distinct color and can command only their own army. Games persist even when everyone leaves.
 
 For another server/database, set `SPACETIMEDB_URI` and `SPACETIMEDB_DATABASE` when
 publishing and running the native game. Set them when building the web game to
@@ -74,12 +73,17 @@ GitHub Pages only hosts the client, so run the database separately.
 ## State and authority
 
 - `game`: unique title and ID.
-- `unit`: game ID, unit number, current `x/y/z`, and target `x/z`.
-- `player`: one active game per client connection; removed on leave/disconnect.
+- `army_unit`: game ID, owner connection, color, unit number, `health: f32` initially
+  `1.0`, current `x/y/z`, and target `x/z`.
+- `participant`: one active game and color per connection; its army is removed on
+  leave, disconnect or game switch. Rejoining the same game does not duplicate units.
+- Legacy `unit` and `player` tables remain only to allow a non-destructive upgrade
+  of the existing hosted database; the new client does not use them.
 - Private `movement_tick`: 50 ms server schedule, active only while units move.
 
-`create_game` seeds units and joins the creator. `join_game` changes membership.
-`set_targets` accepts only IDs and a destination. It checks membership, map bounds,
+`create_game` creates the lobby entry and joins the creator. `join_game` allocates
+a player color and spawns a 5×4 army of 20 units.
+`set_targets` accepts only IDs and a destination. It checks membership, unit ownership, map bounds,
 finite coordinates, and unit count, then calculates formation offsets from server
 positions. Clients cannot set current positions, speed, or tick duration.
 The protected scheduler advances units at 3 world units/second and computes terrain
@@ -87,7 +91,7 @@ height. Clients subscribe to the lobby and only their active game's units, and r
 the received positions without simulating movement. Movement continues without clients.
 When all units reach their targets, the schedule stops until the next movement order,
 so idle databases do not continuously consume cloud function calls.
-There is no combat, unit ownership, or obstacle pathfinding yet.
+Health starts at `1.0`; combat and obstacle pathfinding are not implemented.
 
 ## Development and checks
 
@@ -134,4 +138,5 @@ cargo test --locked native_client_receives_server_movement -- --ignored
 ```
 
 The integration test uses two real connections to verify the shared lobby, movement,
-game isolation, input validation, scheduler protection, leaving, and disconnect cleanup.
+20-unit armies, colors, initial health, ownership and game isolation, input validation,
+scheduler protection, leaving, and disconnect cleanup.

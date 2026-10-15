@@ -12,12 +12,16 @@ cd game
 cargo run
 ```
 
-Beim Start erscheint die Games-Lobby. Gib einen Titel ein und klicke auf **Create
+Beim Start erscheint die Stronghold-Lobby mit Verbindungsanzeige. Server-Einstellungen
+sind unter **Connection settings** eingeklappt. Gib einen Titel ein und klicke auf **Create
 Game**, oder bewege die Maus über ein vorhandenes Spiel und klicke auf **Join**.
-Mehrere Clients im selben Spiel sehen und steuern dieselben Einheiten. Der Client
+Jeder Spieler erhält 20 Einheiten in seiner Farbe und kann nur seine eigenen
+Einheiten auswählen und bewegen. Jede Einheit startet mit Gesundheit `1.0`. Der Client
 sendet nur Zielpositionen; Bewegung und Terrainhöhe berechnet der Server.
 
-Linksklick wählt eine Einheit aus, Cmd + Linksklick fügt Einheiten zur Auswahl
+Über **Leave game** unter **Auswahl** kannst du das Spiel verlassen.
+
+Linksklick wählt eine eigene Einheit aus, Cmd + Linksklick fügt Einheiten zur Auswahl
 hinzu oder entfernt sie. Ein Linksklick auf freie Fläche leert die Auswahl.
 Rechtsklick auf den Boden bewegt die ausgewählten Einheiten. WASD verschiebt
 die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt

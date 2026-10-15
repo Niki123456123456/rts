@@ -40,7 +40,7 @@ function connect(uri: string, database: string) {
       db.subscriptionBuilder()
         .onApplied(() => { if (conn === db) ready = true; })
         .onError((ctx) => { if (conn === db) error = String(ctx.event); })
-        .subscribe(['SELECT * FROM game', 'SELECT * FROM player']);
+        .subscribe(['SELECT * FROM game', 'SELECT * FROM participant']);
     })
     .onConnectError((_ctx, err) => {
       if (conn !== connection) return;
@@ -82,7 +82,7 @@ export const strongholdNetwork = {
     }
   },
   snapshot() {
-    const player = connected && ready && conn ? Array.from(conn.db.player.iter())
+    const player = connected && ready && conn ? Array.from(conn.db.participant.iter())
       .find(p => p.connectionId.toHexString() === conn!.connectionId.toHexString()) : undefined;
     const gameId = player?.gameId;
     if (conn && connected && ready && gameId !== activeGame) {
@@ -90,16 +90,16 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe(`SELECT * FROM unit WHERE game_id = ${gameId}`);
+        .subscribe(`SELECT * FROM army_unit WHERE game_id = ${gameId}`);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
       games: ready && connected && conn ? Array.from(conn.db.game.iter())
         .sort((a, b) => a.id < b.id ? -1 : 1)
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
-      units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.unit.iter())
+      units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.armyUnit.iter())
         .filter(u => u.gameId === gameId)
-        .map(u => ({ id: u.id.toString(), number: u.number, x: u.x, y: u.y, z: u.z })) : [],
+        .map(u => ({ id: u.id.toString(), number: u.number, color: u.color, health: u.health, owned: u.owner.toHexString() === conn!.connectionId.toHexString(), x: u.x, y: u.y, z: u.z })) : [],
     });
   },
 };

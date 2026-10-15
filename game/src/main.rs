@@ -15,7 +15,13 @@ use bevy_rts_camera::{Ground, RtsCamera, RtsCameraControls, RtsCameraPlugin};
 fn main() {
     let mut app = App::new();
     #[cfg(not(target_arch = "wasm32"))]
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Stronghold".into(),
+            ..default()
+        }),
+        ..default()
+    }));
     #[cfg(target_arch = "wasm32")]
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -47,10 +53,13 @@ fn main() {
         .run();
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 struct Unit {
     id: u64,
     number: usize,
+    color: u32,
+    health: f32,
+    owned: bool,
 }
 
 #[derive(Component)]
@@ -83,9 +92,36 @@ struct SelectionPanel(Option<egui::Rect>);
 
 #[derive(Resource)]
 struct UnitMaterials {
+    colors: std::collections::HashMap<u32, UnitPalette>,
+    mesh: Handle<Mesh>,
+}
+
+struct UnitPalette {
     normal: Handle<StandardMaterial>,
     selected: Handle<StandardMaterial>,
-    mesh: Handle<Mesh>,
+}
+
+fn player_color(index: u32) -> Color {
+    Color::hsl((210.0 + index as f32 * 137.507_77) % 360.0, 0.8, 0.55)
+}
+
+impl UnitMaterials {
+    fn palette(&mut self, index: u32, assets: &mut Assets<StandardMaterial>) -> &UnitPalette {
+        self.colors.entry(index).or_insert_with(|| {
+            let color = player_color(index);
+            UnitPalette {
+                normal: assets.add(StandardMaterial {
+                    base_color: color,
+                    ..default()
+                }),
+                selected: assets.add(StandardMaterial {
+                    base_color: color,
+                    emissive: LinearRgba::from(color) * 0.6,
+                    ..default()
+                }),
+            }
+        })
+    }
 }
 
 fn connect_multiplayer(mut multiplayer: ResMut<Multiplayer>) {
@@ -138,15 +174,8 @@ fn setup(
         Transform::from_xyz(0.0, 0.0, -23.0),
         Ground,
     ));
-    // Some generic units that are not part of the 'Ground' (ignored for height calculation)
-    let selected_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.75, 0.15),
-        emissive: LinearRgba::new(0.3, 0.15, 0.0, 1.0),
-        ..default()
-    });
     commands.insert_resource(UnitMaterials {
-        normal: terrain_material.clone(),
-        selected: selected_material,
+        colors: default(),
         mesh: meshes.add(Capsule3d::new(0.25, 1.25)),
     });
     // Light
@@ -255,7 +284,7 @@ fn select_unit(
         }
         return;
     };
-    if select && units.contains(*entity) {
+    if select && units.get(*entity).is_ok_and(|(_, unit)| unit.owned) {
         let cmd_keys = [KeyCode::SuperLeft, KeyCode::SuperRight];
         let additive = keys.any_pressed(cmd_keys) || keys.any_just_pressed(cmd_keys);
         selected.select(*entity, additive);
@@ -263,7 +292,13 @@ fn select_unit(
         let selected_units: Vec<_> = selected
             .0
             .iter()
-            .filter_map(|entity| units.get(*entity).ok().map(|(_, unit)| unit.id))
+            .filter_map(|entity| {
+                units
+                    .get(*entity)
+                    .ok()
+                    .filter(|(_, unit)| unit.owned)
+                    .map(|(_, unit)| unit.id)
+            })
             .collect();
         if !selected_units.is_empty() {
             if !multiplayer.send(Action::Targets {
@@ -306,8 +341,9 @@ fn sync_multiplayer(
     mut commands: Commands,
     mut multiplayer: ResMut<Multiplayer>,
     mut selected: ResMut<SelectedUnits>,
-    mut units: Query<(Entity, &Unit, &mut Transform)>,
-    materials: Res<UnitMaterials>,
+    mut units: Query<(Entity, &mut Unit, &mut Transform)>,
+    mut materials: ResMut<UnitMaterials>,
+    mut assets: ResMut<Assets<StandardMaterial>>,
     markers: Query<Entity, With<DestinationMarker>>,
     mut previous_game: Local<Option<u64>>,
 ) {
@@ -327,23 +363,29 @@ fn sync_multiplayer(
         .filter(|_| game_id.is_some())
         .map(|unit| (unit.id, unit))
         .collect();
-    for (entity, unit, mut transform) in &mut units {
+    for (entity, mut unit, mut transform) in &mut units {
         if let Some(row) = remaining.remove(&unit.id) {
             // Rendering only: the client never advances or predicts movement.
             transform.translation = Vec3::new(row.x, row.y, row.z);
+            unit.health = row.health;
+            unit.owned = row.owned;
         } else {
             commands.entity(entity).despawn();
             selected.0.retain(|selected| *selected != entity);
         }
     }
     for row in remaining.values() {
+        let material = materials.palette(row.color, &mut assets).normal.clone();
         commands.spawn((
             Unit {
                 id: row.id,
                 number: row.number,
+                color: row.color,
+                health: row.health,
+                owned: row.owned,
             },
             Mesh3d(materials.mesh.clone()),
-            MeshMaterial3d(materials.normal.clone()),
+            MeshMaterial3d(material),
             Transform::from_xyz(row.x, row.y, row.z),
         ));
     }
@@ -356,57 +398,60 @@ fn lobby_ui(
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if multiplayer.snapshot.game_id.is_some() && multiplayer.snapshot.connected {
-        egui::Window::new("Game").resizable(false).show(ctx, |ui| {
-            let title = multiplayer
-                .snapshot
-                .games
-                .iter()
-                .find(|game| Some(game.id) == multiplayer.snapshot.game_id)
-                .map(|game| game.title.as_str())
-                .unwrap_or("Game");
-            ui.strong(title);
-            if let Some(error) = &multiplayer.snapshot.error {
-                ui.colored_label(egui::Color32::LIGHT_RED, error);
-            }
-            if ui.button("Leave game").clicked() {
-                multiplayer.send(Action::Leave);
-            }
-        });
         return Ok(());
     }
     for mut control in &mut controls {
         control.enabled = false;
     }
-    egui::Window::new("Stronghold — Multiplayer")
+    egui::Window::new("Stronghold")
+        .title_bar(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .resizable(false)
         .collapsible(false)
         .default_width(460.0)
         .show(ctx, |ui| {
-            ui.heading("Games");
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.label("Server");
-                ui.text_edit_singleline(&mut multiplayer.uri);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Database");
-                ui.text_edit_singleline(&mut multiplayer.database);
-            });
             let connected = multiplayer.snapshot.connected && multiplayer.snapshot.ready;
-            if ui
-                .button(if connected { "Reconnect" } else { "Connect" })
-                .clicked()
-            {
-                let uri = multiplayer.uri.clone();
-                let database = multiplayer.database.clone();
-                multiplayer.send(Action::Connect { uri, database });
-            }
-            ui.label(if connected {
-                "Connected"
-            } else {
-                "Connect to SpacetimeDB to list games."
+            ui.horizontal(|ui| {
+                ui.heading("Stronghold");
+                let (rect, light) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 20.0), egui::Sense::hover());
+                ui.painter().circle_filled(
+                    rect.center(),
+                    4.0,
+                    if connected {
+                        egui::Color32::GREEN
+                    } else {
+                        egui::Color32::RED
+                    },
+                );
+                light.on_hover_text(if connected {
+                    "Connected"
+                } else {
+                    "Disconnected"
+                });
             });
+            ui.add_space(8.0);
+            egui::CollapsingHeader::new("Connection settings")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Server");
+                        ui.text_edit_singleline(&mut multiplayer.uri);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Database");
+                        ui.text_edit_singleline(&mut multiplayer.database);
+                    });
+                    if ui
+                        .button(if connected { "Reconnect" } else { "Connect" })
+                        .clicked()
+                    {
+                        let uri = multiplayer.uri.clone();
+                        let database = multiplayer.database.clone();
+                        multiplayer.send(Action::Connect { uri, database });
+                    }
+                });
+            ui.heading("Games");
             if let Some(error) = &multiplayer.snapshot.error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);
             }
@@ -453,21 +498,22 @@ fn lobby_ui(
                 });
             ui.separator();
             ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut multiplayer.title)
-                        .hint_text("Game title")
-                        .char_limit(60),
-                );
-                if ui
-                    .add_enabled(
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let create = ui.add_enabled(
                         connected && !multiplayer.pending && !multiplayer.title.trim().is_empty(),
                         egui::Button::new("Create Game"),
-                    )
-                    .clicked()
-                {
-                    let title = multiplayer.title.clone();
-                    multiplayer.send(Action::Create { title });
-                }
+                    );
+                    ui.add_sized(
+                        egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+                        egui::TextEdit::singleline(&mut multiplayer.title)
+                            .hint_text("Game title")
+                            .char_limit(60),
+                    );
+                    if create.clicked() {
+                        let title = multiplayer.title.clone();
+                        multiplayer.send(Action::Create { title });
+                    }
+                });
             });
             if !connected {
                 ui.small(
@@ -497,16 +543,19 @@ fn expire_destination_markers(
 fn highlight_selection(
     selected: Res<SelectedUnits>,
     materials: Res<UnitMaterials>,
-    mut units: Query<(Entity, &mut MeshMaterial3d<StandardMaterial>), With<Unit>>,
+    mut units: Query<(Entity, &Unit, &mut MeshMaterial3d<StandardMaterial>)>,
 ) {
     if !selected.is_changed() {
         return;
     }
-    for (entity, mut material) in &mut units {
+    for (entity, unit, mut material) in &mut units {
+        let Some(palette) = materials.colors.get(&unit.color) else {
+            continue;
+        };
         material.0 = if selected.0.contains(&entity) {
-            materials.selected.clone()
+            palette.selected.clone()
         } else {
-            materials.normal.clone()
+            palette.normal.clone()
         };
     }
 }
@@ -517,7 +566,7 @@ fn selection_ui(
     units: Query<&Unit>,
     mut controls: Query<&mut RtsCameraControls>,
     mut panel: ResMut<SelectionPanel>,
-    multiplayer: Res<Multiplayer>,
+    mut multiplayer: ResMut<Multiplayer>,
 ) -> Result {
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
         panel.0 = None;
@@ -537,7 +586,12 @@ fn selection_ui(
         .show(&mut viewport_ui, |ui| {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.heading("Auswahl");
+                ui.vertical(|ui| {
+                    ui.heading("Auswahl");
+                    if ui.button("Leave game").clicked() {
+                        multiplayer.send(Action::Leave);
+                    }
+                });
                 ui.separator();
                 if selected.0.is_empty() {
                     ui.label("Klicke auf eine Einheit. Cmd + Klick für Mehrfachauswahl.");
@@ -559,11 +613,25 @@ fn selection_ui(
                                             ui.painter().rect_filled(
                                                 rect.shrink2(egui::vec2(10.0, 4.0)),
                                                 12.0,
-                                                egui::Color32::from_rgb(255, 191, 38),
+                                                {
+                                                    let color = player_color(unit.color).to_srgba();
+                                                    egui::Color32::from_rgb(
+                                                        (color.red * 255.0) as u8,
+                                                        (color.green * 255.0) as u8,
+                                                        (color.blue * 255.0) as u8,
+                                                    )
+                                                },
                                             );
                                             ui.vertical(|ui| {
                                                 ui.strong(format!("Einheit {}", unit.number));
-                                                ui.label("Ausgewählt");
+                                                ui.add(
+                                                    egui::ProgressBar::new(unit.health)
+                                                        .text(format!(
+                                                            "Health {:.0}%",
+                                                            unit.health * 100.0
+                                                        ))
+                                                        .desired_width(95.0),
+                                                );
                                             });
                                         });
                                     });
@@ -573,6 +641,9 @@ fn selection_ui(
                     });
                 }
             });
+            if let Some(error) = &multiplayer.snapshot.error {
+                ui.colored_label(egui::Color32::LIGHT_RED, error);
+            }
         });
     panel.0 = Some(response.response.rect);
 
@@ -624,13 +695,21 @@ mod tests {
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, 0.0),
         );
-        world.entity_mut(near).insert(Unit { id: 1, number: 1 });
+        world.entity_mut(near).insert(Unit {
+            id: 1,
+            number: 1,
+            ..default()
+        });
         let far = spawn_mesh(
             &mut world,
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, -2.0),
         );
-        world.entity_mut(far).insert(Unit { id: 2, number: 2 });
+        world.entity_mut(far).insert(Unit {
+            id: 2,
+            number: 2,
+            ..default()
+        });
         assert_eq!(
             pick(
                 &mut world,
@@ -656,7 +735,11 @@ mod tests {
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, 0.0),
         );
-        world.entity_mut(unit).insert(Unit { id: 1, number: 1 });
+        world.entity_mut(unit).insert(Unit {
+            id: 1,
+            number: 1,
+            ..default()
+        });
         spawn_mesh(
             &mut world,
             Cuboid::new(2.0, 2.0, 1.0).mesh().build(),

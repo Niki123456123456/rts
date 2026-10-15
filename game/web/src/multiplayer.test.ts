@@ -21,7 +21,7 @@ async function connect() {
         clients.push(db);
         db.subscriptionBuilder().onApplied(() => resolve(db))
           .onError(ctx => reject(ctx.event))
-          .subscribe(['SELECT * FROM game', 'SELECT * FROM player', 'SELECT * FROM unit']);
+          .subscribe(['SELECT * FROM game', 'SELECT * FROM participant', 'SELECT * FROM army_unit']);
       })
       .onConnectError((_ctx, err) => reject(err)).build();
     setTimeout(() => reject(new Error('Connection timed out')), 8000).unref();
@@ -42,7 +42,7 @@ function status(register: (cb: (ctx: ReducerEventContext) => void) => void, call
   });
 }
 function membership(db: DbConnection) {
-  return Array.from(db.db.player.iter()).find(p => p.connectionId.toHexString() === db.connectionId.toHexString());
+  return Array.from(db.db.participant.iter()).find(p => p.connectionId.toHexString() === db.connectionId.toHexString());
 }
 
 try {
@@ -52,23 +52,36 @@ try {
   assert.equal((await status(cb => a.reducers.onCreateGame(cb), () => a.reducers.createGame(title))).tag, 'Committed');
   await until(() => !!membership(a) && Array.from(b.db.game.iter()).some(g => g.title === title), 'Game must appear on both clients');
   const gameId = membership(a)!.gameId;
-  const gameUnits = () => Array.from(a.db.unit.iter()).filter(u => u.gameId === gameId);
-  assert.equal(gameUnits().length, 100);
+  const gameUnits = () => Array.from(a.db.armyUnit.iter()).filter(u => u.gameId === gameId);
+  assert.equal(gameUnits().length, 20);
+  assert.ok(gameUnits().every(u => u.health === 1 && u.owner.toHexString() === a.connectionId.toHexString()));
+  const aColor = membership(a)!.color;
   assert.equal((await status(cb => b.reducers.onJoinGame(cb), () => b.reducers.joinGame(gameId))).tag, 'Committed');
   await until(() => membership(b)?.gameId === gameId, 'Second client joins the same game');
-  const unit = gameUnits()[0];
+  await until(() => gameUnits().length === 40, 'Each player gets 20 units');
+  assert.notEqual(membership(b)!.color, aColor);
+  const ownUnits = () => gameUnits().filter(u => u.owner.toHexString() === a.connectionId.toHexString());
+  assert.equal(ownUnits().length, 20);
+  assert.ok(ownUnits().every(u => u.color === aColor && u.health === 1));
+  const unit = ownUnits()[0];
+  const enemy = gameUnits().find(u => u.owner.toHexString() === b.connectionId.toHexString())!;
+  assert.equal((await status(cb => b.reducers.onSetTargets(cb), () => b.reducers.setTargets([unit.id], 5, 5))).tag, 'Failed');
+  assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id, enemy.id], 5, 5))).tag, 'Failed');
+  assert.equal(a.db.armyUnit.id.find(unit.id)!.targetX, unit.x);
+  assert.equal((await status(cb => a.reducers.onJoinGame(cb), () => a.reducers.joinGame(gameId))).tag, 'Committed');
+  assert.equal(ownUnits().length, 20, 'Joining twice must not duplicate an army');
   const targetX = unit.x + 1;
   assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], targetX, unit.z))).tag, 'Committed');
-  await until(() => a.db.unit.id.find(unit.id)?.x === targetX, 'Server movement must reach target');
-  await until(() => b.db.unit.id.find(unit.id)?.x === targetX, 'Both clients receive server movement');
-  assert.equal(a.db.unit.id.find(unit.id)?.z, unit.z);
+  await until(() => a.db.armyUnit.id.find(unit.id)?.x === targetX, 'Server movement must reach target');
+  await until(() => b.db.armyUnit.id.find(unit.id)?.x === targetX, 'Both clients receive server movement');
+  assert.equal(a.db.armyUnit.id.find(unit.id)?.z, unit.z);
 
-  const pair = gameUnits().slice(0, 2);
+  const pair = ownUnits().slice(0, 2);
   const centerX = (pair[0].x + pair[1].x) / 2;
   const centerZ = (pair[0].z + pair[1].z) / 2;
   assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets(pair.map(u => u.id), 2, 2))).tag, 'Committed');
   for (const original of pair) {
-    const updated = a.db.unit.id.find(original.id)!;
+    const updated = a.db.armyUnit.id.find(original.id)!;
     assert.ok(Math.abs(updated.targetX - (2 + original.x - centerX)) < 0.00001);
     assert.ok(Math.abs(updated.targetZ - (2 + original.z - centerZ)) < 0.00001);
   }
@@ -80,18 +93,18 @@ try {
 
   // Client B changes games; orders against the previous game must be rejected.
   assert.equal((await status(cb => b.reducers.onCreateGame(cb), () => b.reducers.createGame(`${title} other`))).tag, 'Committed');
-  await until(() => membership(b)?.gameId !== gameId, 'Switch games');
+  await until(() => membership(b)?.gameId !== gameId && gameUnits().length === 20, 'Switch games removes the previous army');
   assert.equal((await status(cb => b.reducers.onSetTargets(cb), () => b.reducers.setTargets([unit.id], 5, 5))).tag, 'Failed');
 
   // A forged call cannot speed up or teleport units by running the scheduler.
   assert.equal((await status(cb => a.reducers.onMoveUnits(cb), () => a.reducers.moveUnits({ scheduledId: 1n, scheduledAt: { tag: 'Interval', value: 50000n } } as never))).tag, 'Failed');
 
   assert.equal((await status(cb => a.reducers.onLeaveGame(cb), () => a.reducers.leaveGame())).tag, 'Committed');
-  await until(() => !membership(a), 'Leave removes membership');
+  await until(() => !membership(a) && gameUnits().length === 0, 'Leave removes membership and army');
   assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 5, 5))).tag, 'Failed');
   const bId = b.connectionId.toHexString();
   b.disconnect();
-  await until(() => !Array.from(a.db.player.iter()).some(p => p.connectionId.toHexString() === bId), 'Disconnect removes membership');
+  await until(() => !Array.from(a.db.participant.iter()).some(p => p.connectionId.toHexString() === bId), 'Disconnect removes membership');
 
   // Exercise the exact browser/WASM bridge, including scoped subscriptions.
   const bridgeSend = (action: object) => strongholdNetwork.send(JSON.stringify(action));
@@ -100,16 +113,18 @@ try {
   await until(() => snapshot().ready, 'Browser bridge connects and subscribes');
   assert.equal(snapshot().units.length, 0);
   bridgeSend({ action: 'join', game_id: gameId.toString() });
-  await until(() => snapshot().units.length === 100, 'Bridge subscribes to the joined game');
+  await until(() => snapshot().units.length === 20, 'Bridge subscribes to the joined game');
   assert.equal(snapshot().game_id, gameId.toString());
-  bridgeSend({ action: 'targets', unit_ids: [unit.id.toString()], x: 3, z: 3 });
-  await until(() => snapshot().units.find((u: { id: string; x: number }) => u.id === unit.id.toString())?.x === 3, 'Bridge receives authoritative movement');
+  const bridgeUnit = snapshot().units[0];
+  assert.ok(snapshot().units.every((u: {owned: boolean; health: number}) => u.owned && u.health === 1));
+  bridgeSend({ action: 'targets', unit_ids: [bridgeUnit.id], x: 3, z: 3 });
+  await until(() => snapshot().units.find((u: { id: string; x: number }) => u.id === bridgeUnit.id)?.x === 3, 'Bridge receives authoritative movement');
   bridgeSend({ action: 'leave' });
   await until(() => snapshot().game_id === null && snapshot().units.length === 0, 'Bridge clears units when leaving');
   bridgeSend({ action: 'connect', uri, database });
   await until(() => snapshot().ready, 'Bridge reconnects');
   assert.equal(snapshot().game_id, null);
-  console.log('PASS: live lobby, 100 units/game, two-client movement, formations, game isolation, invalid orders, scheduler protection, leave, disconnect and browser bridge.');
+  console.log('PASS: live lobby, 20 owned units/player, unique colors, health, enemy-order rejection, two-client movement, formations, game isolation, invalid orders, scheduler protection, leave, disconnect and browser bridge.');
 } finally {
   strongholdNetwork.disconnect();
   for (const client of clients) client.disconnect();
