@@ -23,6 +23,9 @@ sendet nur Zielpositionen; Bewegung und Terrainhöhe berechnet der Server.
 
 Linksklick wählt eine eigene Einheit aus, Cmd + Linksklick fügt Einheiten zur Auswahl
 hinzu oder entfernt sie. Ein Linksklick auf freie Fläche leert die Auswahl.
+Halte die linke Maustaste gedrückt und ziehe einen Rahmen, um beim Loslassen
+alle eigenen Einheiten darin auszuwählen. Cmd + Ziehen ergänzt die bestehende
+Auswahl. Escape bricht die Rechteckauswahl ab.
 Rechtsklick auf den Boden bewegt die ausgewählten Einheiten. WASD verschiebt
 die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
 die Kamera per Ziehen.

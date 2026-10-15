@@ -37,6 +37,7 @@ fn main() {
         .add_plugins(RtsCameraPlugin)
         .init_resource::<SelectedUnits>()
         .init_resource::<SelectionPanel>()
+        .init_resource::<SelectionDrag>()
         .init_resource::<Multiplayer>()
         .add_systems(Startup, (setup, connect_multiplayer))
         .add_systems(
@@ -49,7 +50,10 @@ fn main() {
             )
                 .chain(),
         )
-        .add_systems(EguiPrimaryContextPass, (lobby_ui, selection_ui).chain())
+        .add_systems(
+            EguiPrimaryContextPass,
+            (lobby_ui, selection_ui, selection_rectangle_ui).chain(),
+        )
         .run();
 }
 
@@ -75,6 +79,24 @@ struct DestinationVisual {
 struct SelectedUnits(Vec<Entity>);
 
 impl SelectedUnits {
+    fn select_rectangle(
+        &mut self,
+        start: Vec2,
+        end: Vec2,
+        additive: bool,
+        candidates: impl IntoIterator<Item = (Entity, bool, Vec2)>,
+    ) {
+        let rect = Rect::from_corners(start, end);
+        if !additive {
+            self.0.clear();
+        }
+        for (entity, owned, position) in candidates {
+            if owned && rect.contains(position) && !self.0.contains(&entity) {
+                self.0.push(entity);
+            }
+        }
+    }
+
     fn select(&mut self, entity: Entity, additive: bool) {
         if !additive {
             self.0.clear();
@@ -89,6 +111,14 @@ impl SelectedUnits {
 
 #[derive(Resource, Default)]
 struct SelectionPanel(Option<egui::Rect>);
+
+#[derive(Resource, Default)]
+struct SelectionDrag {
+    start: Option<Vec2>,
+    current: Vec2,
+    dragging: bool,
+    additive: bool,
+}
 
 #[derive(Resource)]
 struct UnitMaterials {
@@ -242,7 +272,7 @@ fn select_unit(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
     mut ray_cast: MeshRayCast,
-    units: Query<(&Transform, &Unit)>,
+    units: Query<(Entity, &Transform, &Unit)>,
     mut multiplayer: ResMut<Multiplayer>,
     mut selected: ResMut<SelectedUnits>,
     mut contexts: EguiContexts,
@@ -250,26 +280,72 @@ fn select_unit(
     ground: Query<(), With<Ground>>,
     markers: Query<Entity, With<DestinationMarker>>,
     visual: Res<DestinationVisual>,
+    mut drag: ResMut<SelectionDrag>,
 ) {
-    if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
+    if multiplayer.snapshot.game_id.is_none()
+        || !multiplayer.snapshot.connected
+        || !window.focused
+        || keys.just_pressed(KeyCode::Escape)
+    {
+        *drag = default();
         return;
     }
-    let select = mouse.just_pressed(MouseButton::Left);
-    let move_order = mouse.just_pressed(MouseButton::Right);
-    if !select && !move_order {
-        return;
-    }
-    let Some(cursor) = window.cursor_position() else {
+    let Some(mut cursor) = window.cursor_position() else {
+        *drag = default();
         return;
     };
-    // UI clicks must not change the selection in the world behind the panel.
-    if let Ok(ctx) = contexts.ctx_mut() {
+    let over_ui = contexts.ctx_mut().is_ok_and(|ctx| {
         let ui_position =
             egui::pos2(cursor.x, cursor.y) * (window.scale_factor() / ctx.pixels_per_point());
-        if ctx.egui_wants_pointer_input() || panel.0.is_some_and(|rect| rect.contains(ui_position))
-        {
+        ctx.egui_wants_pointer_input() || panel.0.is_some_and(|rect| rect.contains(ui_position))
+    });
+    let move_order = mouse.just_pressed(MouseButton::Right);
+    if move_order {
+        *drag = default();
+    }
+    if mouse.just_pressed(MouseButton::Left) && !over_ui && !move_order {
+        let cmd_keys = [KeyCode::SuperLeft, KeyCode::SuperRight];
+        *drag = SelectionDrag {
+            start: Some(cursor),
+            current: cursor,
+            dragging: false,
+            additive: keys.any_pressed(cmd_keys) || keys.any_just_pressed(cmd_keys),
+        };
+    }
+    let mut select = false;
+    let mut additive = false;
+    if let Some(start) = drag.start {
+        drag.current = cursor;
+        // A small mouse movement is still a normal click.
+        drag.dragging |= start.distance_squared(cursor) >= 16.0;
+        if mouse.just_released(MouseButton::Left) {
+            let completed = std::mem::take(&mut *drag);
+            if completed.dragging {
+                let (camera, camera_transform) = *camera;
+                selected.select_rectangle(
+                    start,
+                    cursor,
+                    completed.additive,
+                    units.iter().filter_map(|(entity, transform, unit)| {
+                        camera
+                            .world_to_viewport(camera_transform, transform.translation)
+                            .ok()
+                            .map(|position| (entity, unit.owned, position))
+                    }),
+                );
+                return;
+            }
+            cursor = start;
+            select = true;
+            additive = completed.additive;
+        } else if mouse.pressed(MouseButton::Left) {
             return;
+        } else {
+            *drag = default();
         }
+    }
+    if !select && (!move_order || over_ui) {
+        return;
     }
     let (camera, transform) = *camera;
     let Ok(ray) = camera.viewport_to_world(transform, cursor) else {
@@ -284,9 +360,7 @@ fn select_unit(
         }
         return;
     };
-    if select && units.get(*entity).is_ok_and(|(_, unit)| unit.owned) {
-        let cmd_keys = [KeyCode::SuperLeft, KeyCode::SuperRight];
-        let additive = keys.any_pressed(cmd_keys) || keys.any_just_pressed(cmd_keys);
+    if select && units.get(*entity).is_ok_and(|(_, _, unit)| unit.owned) {
         selected.select(*entity, additive);
     } else if move_order && ground.contains(*entity) {
         let selected_units: Vec<_> = selected
@@ -296,8 +370,8 @@ fn select_unit(
                 units
                     .get(*entity)
                     .ok()
-                    .filter(|(_, unit)| unit.owned)
-                    .map(|(_, unit)| unit.id)
+                    .filter(|(_, _, unit)| unit.owned)
+                    .map(|(_, _, unit)| unit.id)
             })
             .collect();
         if !selected_units.is_empty() {
@@ -346,12 +420,14 @@ fn sync_multiplayer(
     mut assets: ResMut<Assets<StandardMaterial>>,
     markers: Query<Entity, With<DestinationMarker>>,
     mut previous_game: Local<Option<u64>>,
+    mut drag: ResMut<SelectionDrag>,
 ) {
     multiplayer.poll();
     let snapshot = &multiplayer.snapshot;
     let game_id = snapshot.game_id.filter(|_| snapshot.connected);
     if game_id != *previous_game {
         selected.0.clear();
+        *drag = default();
         for marker in &markers {
             commands.entity(marker).despawn();
         }
@@ -567,6 +643,7 @@ fn selection_ui(
     mut controls: Query<&mut RtsCameraControls>,
     mut panel: ResMut<SelectionPanel>,
     mut multiplayer: ResMut<Multiplayer>,
+    drag: Res<SelectionDrag>,
 ) -> Result {
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
         panel.0 = None;
@@ -652,9 +729,43 @@ fn selection_ui(
         .pointer_interact_pos()
         .is_some_and(|position| response.response.rect.contains(position));
     for mut controls in &mut controls {
-        controls.enabled =
-            !over_panel && !ctx.egui_wants_pointer_input() && !ctx.egui_wants_keyboard_input();
+        controls.enabled = !drag.dragging
+            && !over_panel
+            && !ctx.egui_wants_pointer_input()
+            && !ctx.egui_wants_keyboard_input();
     }
+    Ok(())
+}
+
+fn selection_rectangle_ui(
+    mut contexts: EguiContexts,
+    window: Single<&Window, With<PrimaryWindow>>,
+    drag: Res<SelectionDrag>,
+) -> Result {
+    let Some(start) = drag.start.filter(|_| drag.dragging) else {
+        return Ok(());
+    };
+    let ctx = contexts.ctx_mut()?;
+    let scale = window.scale_factor() / ctx.pixels_per_point();
+    let rect = egui::Rect::from_two_pos(
+        egui::pos2(start.x, start.y) * scale,
+        egui::pos2(drag.current.x, drag.current.y) * scale,
+    );
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("selection_rectangle"),
+    ));
+    painter.rect_filled(
+        rect,
+        0.0,
+        egui::Color32::from_rgba_unmultiplied(80, 180, 255, 30),
+    );
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 180, 255)),
+        egui::StrokeKind::Inside,
+    );
     Ok(())
 }
 
@@ -768,5 +879,51 @@ mod tests {
         assert_eq!(selected.0, vec![second]);
         selected.select(third, false);
         assert_eq!(selected.0, vec![third]);
+    }
+
+    #[test]
+    fn rectangle_selects_only_owned_units_in_all_drag_directions() {
+        let mut world = World::new();
+        let inside = world.spawn_empty().id();
+        let enemy = world.spawn_empty().id();
+        let outside = world.spawn_empty().id();
+        let boundary = world.spawn_empty().id();
+        for (start, end) in [
+            (Vec2::ZERO, Vec2::splat(10.0)),
+            (Vec2::splat(10.0), Vec2::ZERO),
+            (Vec2::new(0.0, 10.0), Vec2::new(10.0, 0.0)),
+            (Vec2::new(10.0, 0.0), Vec2::new(0.0, 10.0)),
+        ] {
+            let mut selected = SelectedUnits(vec![outside]);
+            selected.select_rectangle(
+                start,
+                end,
+                false,
+                [
+                    (inside, true, Vec2::splat(5.0)),
+                    (enemy, false, Vec2::splat(5.0)),
+                    (outside, true, Vec2::new(20.0, 5.0)),
+                    (boundary, true, Vec2::new(0.0, 10.0)),
+                ],
+            );
+            assert_eq!(selected.0, vec![inside, boundary]);
+        }
+    }
+
+    #[test]
+    fn cmd_rectangle_adds_without_toggling_or_duplicating_selected_units() {
+        let mut world = World::new();
+        let previous = world.spawn_empty().id();
+        let inside = world.spawn_empty().id();
+        let mut selected = SelectedUnits(vec![previous, inside]);
+        selected.select_rectangle(
+            Vec2::ZERO,
+            Vec2::splat(10.0),
+            true,
+            [(inside, true, Vec2::splat(5.0))],
+        );
+        assert_eq!(selected.0, vec![previous, inside]);
+        selected.select_rectangle(Vec2::ZERO, Vec2::splat(10.0), false, []);
+        assert!(selected.0.is_empty());
     }
 }
