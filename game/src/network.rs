@@ -10,6 +10,8 @@ pub struct Snapshot {
     pub game_id: Option<u64>,
     pub games: Vec<Game>,
     pub units: Vec<Unit>,
+    #[serde(default)]
+    pub buildings: Vec<Building>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -24,6 +26,18 @@ pub struct Unit {
     #[serde(deserialize_with = "id")]
     pub id: u64,
     pub number: usize,
+    pub color: u32,
+    pub health: f32,
+    pub owned: bool,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Building {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
     pub color: u32,
     pub health: f32,
     pub owned: bool,
@@ -68,6 +82,20 @@ pub enum Action {
         game_id: u64,
     },
     Leave,
+    BuildGranary {
+        x: f32,
+        z: f32,
+    },
+    RemoveBuilding {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+    },
+    AttackBuilding {
+        #[serde(serialize_with = "serialize_ids")]
+        unit_ids: Vec<u64>,
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+    },
     Targets {
         #[serde(serialize_with = "serialize_ids")]
         unit_ids: Vec<u64>,
@@ -245,6 +273,15 @@ mod backend {
                 let errors = self.status.clone();
                 conn.reducers
                     .on_set_targets(move |ctx, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_build_granary(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_remove_building(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_attack_building(move |ctx, _, _| record_status(&errors, ctx));
                 self.connection = Some(conn);
                 return Ok(());
             }
@@ -257,6 +294,14 @@ mod backend {
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
+                Action::BuildGranary { x, z } => conn.reducers.build_granary(x, z),
+                Action::RemoveBuilding { building_id } => {
+                    conn.reducers.remove_building(building_id)
+                }
+                Action::AttackBuilding {
+                    unit_ids,
+                    building_id,
+                } => conn.reducers.attack_building(unit_ids, building_id),
                 Action::Targets { unit_ids, x, z } => conn.reducers.set_targets(unit_ids, x, z),
                 Action::Connect { .. } => unreachable!(),
             }
@@ -312,7 +357,10 @@ mod backend {
                             .on_error(move |_, error| {
                                 errors.lock().unwrap().error = Some(error.to_string())
                             })
-                            .subscribe(format!("SELECT * FROM army_unit WHERE game_id = {id}")),
+                            .subscribe([
+                                format!("SELECT * FROM army_unit WHERE game_id = {id}"),
+                                format!("SELECT * FROM building WHERE game_id = {id}"),
+                            ]),
                     );
                 }
             }
@@ -330,6 +378,21 @@ mod backend {
                     x: u.x,
                     y: u.y,
                     z: u.z,
+                })
+                .collect();
+            snapshot.buildings = conn
+                .db
+                .building()
+                .iter()
+                .filter(|b| Some(b.game_id) == snapshot.game_id)
+                .map(|b| super::Building {
+                    id: b.id,
+                    color: b.color,
+                    health: b.health,
+                    owned: b.owner == conn.connection_id(),
+                    x: b.x,
+                    y: b.y,
+                    z: b.z,
                 })
                 .collect();
             snapshot
@@ -415,6 +478,14 @@ mod backend {
                     .iter()
                     .any(|u| u.id == id && u.x == 1.0 && u.z == 1.0)
             });
+            assert!(network.send(Action::BuildGranary { x: -27.0, z: 15.0 }));
+            until(&mut network, |s| s.buildings.len() == 1);
+            let building = network.snapshot.buildings[0].clone();
+            assert!(building.owned && building.health == 1.0);
+            assert!(network.send(Action::RemoveBuilding {
+                building_id: building.id
+            }));
+            until(&mut network, |s| s.buildings.is_empty());
             assert!(network.send(Action::Leave));
             until(&mut network, |s| s.game_id.is_none() && s.units.is_empty());
         }

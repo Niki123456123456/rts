@@ -9,3 +9,5 @@
 /server/.spacetime/
 /game/web/node_modules/
 /game/web/dist/
+
+/shared/target/

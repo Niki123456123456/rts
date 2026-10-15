@@ -6196,8 +6196,13 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb-sdk",
+ "stronghold-map",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "stronghold-map"
+version = "0.1.0"
 
 [[package]]
 name = "strsim"

@@ -79,7 +79,10 @@ GitHub Pages only hosts the client, so run the database separately.
   leave, disconnect or game switch. Rejoining the same game does not duplicate units.
 - Legacy `unit` and `player` tables remain only to allow a non-destructive upgrade
   of the existing hosted database; the new client does not use them.
-- Private `movement_tick`: 50 ms server schedule, active only while units move.
+- `building`: game ID, owner connection, player color, kind (`granary`), `x/y/z`,
+  and `health: f32` initially `1.0`.
+- Private `unit_order`: unit ID, game ID, waypoint list and optional attack target.
+- Private `movement_tick`: 50 ms server schedule, active only while units move or attack.
 
 `create_game` creates the lobby entry and joins the creator. `join_game` allocates
 a player color and spawns a 5×4 army of 20 units.
@@ -87,11 +90,25 @@ a player color and spawns a 5×4 army of 20 units.
 finite coordinates, and unit count, then calculates formation offsets from server
 positions. Clients cannot set current positions, speed, or tick duration.
 The protected scheduler advances units at 3 world units/second and computes terrain
-height. Clients subscribe to the lobby and only their active game's units, and render
+height. Clients subscribe to the lobby and only their active game's units and buildings, and render
 the received positions without simulating movement. Movement continues without clients.
-When all units reach their targets, the schedule stops until the next movement order,
+When all units finish moving and attacking, the schedule stops until the next order,
 so idle databases do not continuously consume cloud function calls.
-Health starts at `1.0`; combat and obstacle pathfinding are not implemented.
+`build_granary` validates membership, finite coordinates, full footprint within the
+map, level terrain, no overlapping buildings and no units in the footprint. There
+is a 128-building limit per game. `remove_building` only accepts the owner's buildings.
+Buildings are removed with their owner's army on leave, disconnect or game switch.
+
+The supplied `granary_collision.glb` has an axis-aligned rectangular XZ footprint.
+`shared/` stores its bounds at scale 0.01, used by both preview and server navigation.
+A visibility graph with Dijkstra computes shortest polylines around footprints
+expanded by the unit radius plus clearance. Unreachable/blocked orders are rejected.
+Construction and demolition replan active orders; units stop if a destination becomes
+unreachable. `attack_building` accepts only owned units and an enemy building in the
+same game, routes to the perimeter, and applies 0.05 health damage per unit per second
+within 0.8 world units of the footprint. At zero health the building is deleted and
+routes are updated. Movement orders replace attack orders. Clients cannot set damage,
+health or movement paths. The simulation timer stops when there are no active orders.
 
 ## Development and checks
 
@@ -109,6 +126,7 @@ bash server/generate-bindings.sh
 cd server
 cargo fmt --check
 cargo test --lib --locked
+cargo test --manifest-path ../shared/Cargo.toml --locked
 cargo build --locked --release --target wasm32-unknown-unknown
 cd ../game
 cargo fmt --check
@@ -132,6 +150,7 @@ bash server/generate-bindings.sh
 cd game/web
 npm ci
 npm run test:multiplayer
+npm run test:buildings
 # Optional native SDK round-trip against the same disposable database:
 cd ..
 cargo test --locked native_client_receives_server_movement -- --ignored
@@ -139,4 +158,6 @@ cargo test --locked native_client_receives_server_movement -- --ignored
 
 The integration test uses two real connections to verify the shared lobby, movement,
 20-unit armies, colors, initial health, ownership and game isolation, input validation,
-scheduler protection, leaving, and disconnect cleanup.
+scheduler protection, leaving, and disconnect cleanup. The building test additionally
+checks placement, overlap, ownership, route safety, live replanning, damage, destruction,
+game isolation and browser building actions.

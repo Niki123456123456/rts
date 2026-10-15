@@ -1,8 +1,10 @@
 //! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
 
+mod buildings;
 #[cfg(not(target_arch = "wasm32"))]
 mod module_bindings;
 mod network;
+use buildings::BuildingInteraction;
 
 use network::{Action, Multiplayer};
 
@@ -39,11 +41,17 @@ fn main() {
         .init_resource::<SelectionPanel>()
         .init_resource::<SelectionDrag>()
         .init_resource::<Multiplayer>()
-        .add_systems(Startup, (setup, connect_multiplayer))
+        .init_resource::<BuildingInteraction>()
+        .add_systems(
+            Startup,
+            (setup, buildings::setup_buildings, connect_multiplayer),
+        )
         .add_systems(
             Update,
             (
                 sync_multiplayer,
+                buildings::sync_buildings,
+                buildings::building_input,
                 select_unit,
                 expire_destination_markers,
                 highlight_selection,
@@ -281,7 +289,12 @@ fn select_unit(
     markers: Query<Entity, With<DestinationMarker>>,
     visual: Res<DestinationVisual>,
     mut drag: ResMut<SelectionDrag>,
+    building_interaction: Res<BuildingInteraction>,
 ) {
+    if building_interaction.placing || building_interaction.consumed {
+        *drag = default();
+        return;
+    }
     if multiplayer.snapshot.game_id.is_none()
         || !multiplayer.snapshot.connected
         || !window.focused
@@ -644,6 +657,7 @@ fn selection_ui(
     mut panel: ResMut<SelectionPanel>,
     mut multiplayer: ResMut<Multiplayer>,
     drag: Res<SelectionDrag>,
+    mut building_interaction: ResMut<BuildingInteraction>,
 ) -> Result {
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
         panel.0 = None;
@@ -670,7 +684,44 @@ fn selection_ui(
                     }
                 });
                 ui.separator();
-                if selected.0.is_empty() {
+                if buildings::granary_button(ui, building_interaction.placing) {
+                    building_interaction.placing = !building_interaction.placing;
+                    building_interaction.selected = None;
+                }
+                ui.separator();
+                if building_interaction.placing {
+                    ui.label("Place granary on green ground. Right click / Esc to cancel.");
+                } else if let Some(building) = building_interaction
+                    .selected
+                    .and_then(|id| multiplayer.snapshot.buildings.iter().find(|b| b.id == id))
+                    .cloned()
+                {
+                    ui.vertical(|ui| {
+                        let color = player_color(building.color).to_srgba();
+                        ui.colored_label(
+                            egui::Color32::from_rgb(
+                                (color.red * 255.0) as u8,
+                                (color.green * 255.0) as u8,
+                                (color.blue * 255.0) as u8,
+                            ),
+                            if building.owned {
+                                "Your granary"
+                            } else {
+                                "Enemy granary"
+                            },
+                        );
+                        ui.add(
+                            egui::ProgressBar::new(building.health)
+                                .text(format!("Health {:.0}%", building.health * 100.0))
+                                .desired_width(160.0),
+                        );
+                        if building.owned && ui.button("Remove building").clicked() {
+                            multiplayer.send(Action::RemoveBuilding {
+                                building_id: building.id,
+                            });
+                        }
+                    });
+                } else if selected.0.is_empty() {
                     ui.label("Klicke auf eine Einheit. Cmd + Klick für Mehrfachauswahl.");
                 } else {
                     egui::ScrollArea::horizontal().show(ui, |ui| {

@@ -6,7 +6,8 @@
   "scripts": {
     "build": "esbuild src/network.ts --bundle --format=esm --target=es2022 --outfile=dist/network.js",
     "check": "tsc --noEmit",
-    "test:multiplayer": "tsx src/multiplayer.test.ts"
+    "test:multiplayer": "tsx src/multiplayer.test.ts",
+    "test:buildings": "tsx src/buildings.test.ts"
   },
   "dependencies": {
     "@clockworklabs/spacetimedb-sdk": "1.1.0"

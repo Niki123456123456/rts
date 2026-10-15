@@ -36,7 +36,7 @@ jobs:
           key: ${{ runner.os }}-web-${{ hashFiles('game/Cargo.lock', 'game/Cargo.toml', 'server/Cargo.lock', 'server/Cargo.toml', 'game/rust-toolchain.toml') }}
       - name: Check multiplayer server
         working-directory: server
-        run: cargo fmt --check && cargo test --lib --locked && cargo build --locked --release --target wasm32-unknown-unknown
+        run: cargo fmt --check && cargo test --lib --locked && cargo fmt --manifest-path ../shared/Cargo.toml --check && cargo test --manifest-path ../shared/Cargo.toml --locked && cargo build --locked --release --target wasm32-unknown-unknown
       - name: Install SpacetimeDB 1.1.2 code generator
         run: |
           mkdir -p "$RUNNER_TEMP/spacetime"

@@ -28,6 +28,8 @@ rustup target add wasm32-unknown-unknown
 cargo build --locked --profile web-release --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-name stronghold_game --out-dir "$output_dir" \
     "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/web-release/stronghold-game.wasm"
+mkdir -p "$output_dir/assets"
+cp -R assets/. "$output_dir/assets/"
 cp web/index.html "$output_dir/index.html"
 touch "$output_dir/.nojekyll"
 echo "Web build: $output_dir"

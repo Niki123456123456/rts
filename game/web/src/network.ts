@@ -5,6 +5,9 @@ type Action =
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
+  | { action: 'build_granary'; x: number; z: number }
+  | { action: 'remove_building'; building_id: string }
+  | { action: 'attack_building'; unit_ids: string[]; building_id: string }
   | { action: 'targets'; unit_ids: string[]; x: number; z: number };
 
 let conn: DbConnection | undefined;
@@ -58,6 +61,9 @@ function connect(uri: string, database: string) {
   connection.reducers.onJoinGame(result);
   connection.reducers.onLeaveGame(result);
   connection.reducers.onSetTargets(result);
+  connection.reducers.onBuildGranary(result);
+  connection.reducers.onRemoveBuilding(result);
+  connection.reducers.onAttackBuilding(result);
 }
 
 export const strongholdNetwork = {
@@ -78,6 +84,9 @@ export const strongholdNetwork = {
       case 'create': conn.reducers.createGame(action.title); break;
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
+      case 'build_granary': conn.reducers.buildGranary(action.x, action.z); break;
+      case 'remove_building': conn.reducers.removeBuilding(BigInt(action.building_id)); break;
+      case 'attack_building': conn.reducers.attackBuilding(action.unit_ids.map(BigInt), BigInt(action.building_id)); break;
       case 'targets': conn.reducers.setTargets(action.unit_ids.map(BigInt), action.x, action.z); break;
     }
   },
@@ -90,13 +99,16 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe(`SELECT * FROM army_unit WHERE game_id = ${gameId}`);
+        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
       games: ready && connected && conn ? Array.from(conn.db.game.iter())
         .sort((a, b) => a.id < b.id ? -1 : 1)
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
+      buildings: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.building.iter())
+        .filter(b => b.gameId === gameId)
+        .map(b => ({ id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],
       units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.armyUnit.iter())
         .filter(u => u.gameId === gameId)
         .map(u => ({ id: u.id.toString(), number: u.number, color: u.color, health: u.health, owned: u.owner.toHexString() === conn!.connectionId.toHexString(), x: u.x, y: u.y, z: u.z })) : [],

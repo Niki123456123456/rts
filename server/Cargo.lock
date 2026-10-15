@@ -631,10 +631,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stronghold-map"
+version = "0.1.0"
+
+[[package]]
 name = "stronghold-server"
 version = "0.1.0"
 dependencies = [
  "spacetimedb",
+ "stronghold-map",
 ]
 
 [[package]]
