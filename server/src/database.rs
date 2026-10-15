@@ -47,14 +47,6 @@ pub struct MovementTick {
     pub scheduled_at: ScheduleAt,
 }
 
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    ctx.db.movement_tick().insert(MovementTick {
-        scheduled_id: 0,
-        scheduled_at: Duration::from_millis(50).into(),
-    });
-}
-
 #[spacetimedb::reducer]
 pub fn create_game(ctx: &ReducerContext, title: String) -> Result<(), String> {
     let title = title.trim().to_owned();
@@ -156,14 +148,22 @@ pub fn set_targets(
         unit.target_z = (target_z + unit.z - center_z).clamp(-MAP_LIMIT, MAP_LIMIT);
         ctx.db.unit().id().update(unit);
     }
+    // No background calls while idle: important for usage-based cloud hosting.
+    if ctx.db.movement_tick().iter().next().is_none() {
+        ctx.db.movement_tick().insert(MovementTick {
+            scheduled_id: 0,
+            scheduled_at: Duration::from_millis(50).into(),
+        });
+    }
     Ok(())
 }
 
 #[spacetimedb::reducer]
-pub fn move_units(ctx: &ReducerContext, _tick: MovementTick) -> Result<(), String> {
+pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String> {
     if ctx.sender != ctx.identity() {
         return Err("Movement may only be run by the server scheduler.".into());
     }
+    let mut moving = false;
     for mut unit in ctx.db.unit().iter() {
         let (x, z) = step_towards(
             unit.x,
@@ -178,7 +178,14 @@ pub fn move_units(ctx: &ReducerContext, _tick: MovementTick) -> Result<(), Strin
         unit.x = x;
         unit.z = z;
         unit.y = terrain_height(x, z) + 0.75;
+        moving |= x != unit.target_x || z != unit.target_z;
         ctx.db.unit().id().update(unit);
+    }
+    if !moving {
+        ctx.db
+            .movement_tick()
+            .scheduled_id()
+            .delete(tick.scheduled_id);
     }
     Ok(())
 }

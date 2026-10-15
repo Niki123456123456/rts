@@ -89,10 +89,10 @@ impl Default for Multiplayer {
         Self {
             snapshot: Snapshot::default(),
             uri: option_env!("SPACETIMEDB_URI")
-                .unwrap_or("http://127.0.0.1:3000")
+                .unwrap_or("https://maincloud.spacetimedb.com")
                 .into(),
             database: option_env!("SPACETIMEDB_DATABASE")
-                .unwrap_or("stronghold")
+                .unwrap_or("stronghold-niki123456123456")
                 .into(),
             title: String::new(),
             pending: false,

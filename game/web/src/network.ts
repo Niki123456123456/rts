@@ -21,6 +21,10 @@ function result(ctx: ReducerEventContext) {
 }
 
 function connect(uri: string, database: string) {
+  // SDK 1.1 otherwise downgrades https URLs to plain ws, which cloud hosts reject.
+  const socketUri = new URL(uri);
+  if (socketUri.protocol === 'https:') socketUri.protocol = 'wss:';
+  if (socketUri.protocol === 'http:') socketUri.protocol = 'ws:';
   // Ignore callbacks from a connection replaced by a reconnect.
   conn?.disconnect();
   connected = false;
@@ -28,7 +32,7 @@ function connect(uri: string, database: string) {
   activeGame = undefined;
   unitSubscription = undefined;
   const connection = DbConnection.builder()
-    .withUri(uri)
+    .withUri(socketUri.toString())
     .withModuleName(database)
     .onConnect((db) => {
       if (conn !== db) return;

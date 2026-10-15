@@ -2,8 +2,9 @@
 
 ## Lokal spielen
 
-Das Spiel benötigt jetzt den Multiplayer-Server. Starte und veröffentliche zuerst
-das SpacetimeDB-Modul wie in [server/README.md](../server/README.md) beschrieben.
+Das Spiel verbindet sich standardmäßig mit dem gehosteten Multiplayer-Server auf
+Maincloud (`stronghold-niki123456123456`). Einen eigenen lokalen Server kannst du
+wie in [server/README.md](../server/README.md) beschrieben starten.
 
 ```sh
 bash server/generate-bindings.sh
