@@ -26,7 +26,13 @@ hinzu oder entfernt sie. Ein Linksklick auf freie Fläche leert die Auswahl.
 Halte die linke Maustaste gedrückt und ziehe einen Rahmen, um beim Loslassen
 alle eigenen Einheiten darin auszuwählen. Cmd + Ziehen ergänzt die bestehende
 Auswahl. Escape bricht die Rechteckauswahl ab.
-Rechtsklick auf den Boden bewegt die ausgewählten Einheiten. WASD verschiebt
+Rechtsklick auf den Boden bewegt die ausgewählten Einheiten. Rechtsziehen legt
+eine Reihenformation fest: Die Ziehrichtung bestimmt die Ausrichtung, die Länge
+bestimmt die Breite und damit die Anzahl der Reihen. Die Formation ist um die
+Mitte der gezogenen Linie zentriert; eine unvollständige letzte Reihe ist mittig.
+Kleine Kreise zeigen während des Ziehens die Ziele aller ausgewählten Einheiten.
+Loslassen erteilt den Befehl; Escape bricht ab. Blockierte Formationen werden
+vom Server abgelehnt. WASD verschiebt
 die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
 die Kamera per Ziehen.
 

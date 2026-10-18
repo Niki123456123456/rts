@@ -1,4 +1,6 @@
-use crate::simulation::{can_skip_corner, move_separated, plan_attack, terrain_height};
+use crate::simulation::{
+    can_skip_corner, formation_assignment, move_separated, plan_attack, terrain_height,
+};
 use spacetimedb::{Identity, ReducerContext, ScheduleAt, Table};
 use std::time::Duration;
 
@@ -281,6 +283,61 @@ pub fn set_targets(
         reserved.push(target);
         let path = map::shortest_path((unit.x, unit.z), (unit.target_x, unit.target_z), &obstacles)
             .ok_or("Target is blocked or unreachable. Choose open ground.")?;
+        save_order(ctx, &unit, None, path);
+        ctx.db.army_unit().id().update(unit);
+    }
+    start_tick(ctx);
+    Ok(())
+}
+
+/// The server derives all slots from the same endpoints used by the preview.
+#[spacetimedb::reducer]
+pub fn set_formation_targets(
+    ctx: &ReducerContext,
+    unit_ids: Vec<u64>,
+    start_x: f32,
+    start_z: f32,
+    end_x: f32,
+    end_z: f32,
+) -> Result<(), String> {
+    for value in [start_x, start_z, end_x, end_z] {
+        if !value.is_finite() || value.abs() > MAP_LIMIT {
+            return Err("Formation must be inside the map.".into());
+        }
+    }
+    let player = participant(ctx)?;
+    let mut units = owned_units(ctx, &player, unit_ids)?;
+    units.sort_by_key(|unit| unit.id);
+    let obstacles = obstacles(ctx, player.game_id);
+    let selected: std::collections::HashSet<_> = units.iter().map(|u| u.id).collect();
+    let mut reserved = ctx
+        .db
+        .army_unit()
+        .game_id()
+        .filter(player.game_id)
+        .filter(|u| !selected.contains(&u.id))
+        .flat_map(|u| [(u.x, u.z), (u.target_x, u.target_z)])
+        .collect::<Vec<_>>();
+    let slots = map::formation_positions((start_x, start_z), (end_x, end_z), units.len());
+    let assignment = formation_assignment(
+        &units.iter().map(|u| (u.x, u.z)).collect::<Vec<_>>(),
+        &slots,
+    );
+    for (mut unit, slot) in units.into_iter().zip(assignment) {
+        let target = slots[slot];
+        // Keep exact preview positions; reject blocked formations instead of distorting rows.
+        if !map::free(target, &obstacles)
+            || reserved
+                .iter()
+                .any(|p| map::distance(*p, target) < map::UNIT_SPACING - 0.001)
+        {
+            return Err("Formation is blocked. Choose open ground.".into());
+        }
+        let path = map::shortest_path((unit.x, unit.z), target, &obstacles)
+            .ok_or("Formation is unreachable. Choose open ground.")?;
+        unit.target_x = target.0;
+        unit.target_z = target.1;
+        reserved.push(target);
         save_order(ctx, &unit, None, path);
         ctx.db.army_unit().id().update(unit);
     }

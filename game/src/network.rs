@@ -96,6 +96,14 @@ pub enum Action {
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
     },
+    FormationTargets {
+        #[serde(serialize_with = "serialize_ids")]
+        unit_ids: Vec<u64>,
+        start_x: f32,
+        start_z: f32,
+        end_x: f32,
+        end_z: f32,
+    },
     Targets {
         #[serde(serialize_with = "serialize_ids")]
         unit_ids: Vec<u64>,
@@ -275,6 +283,11 @@ mod backend {
                     .on_set_targets(move |ctx, _, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_set_formation_targets(move |ctx, _, _, _, _, _| {
+                        record_status(&errors, ctx)
+                    });
+                let errors = self.status.clone();
+                conn.reducers
                     .on_build_granary(move |ctx, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -303,6 +316,15 @@ mod backend {
                     building_id,
                 } => conn.reducers.attack_building(unit_ids, building_id),
                 Action::Targets { unit_ids, x, z } => conn.reducers.set_targets(unit_ids, x, z),
+                Action::FormationTargets {
+                    unit_ids,
+                    start_x,
+                    start_z,
+                    end_x,
+                    end_z,
+                } => conn
+                    .reducers
+                    .set_formation_targets(unit_ids, start_x, start_z, end_x, end_z),
                 Action::Connect { .. } => unreachable!(),
             }
             .map_err(|e| e.to_string())

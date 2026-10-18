@@ -89,6 +89,10 @@ a player color and spawns a 5×4 army of 20 units.
 `set_targets` accepts only IDs and a destination. It checks membership, unit ownership, map bounds,
 finite coordinates, and unit count, then calculates formation offsets from server
 positions. Clients cannot set current positions, speed, or tick duration.
+`set_formation_targets` accepts owned unit IDs and the drag endpoints. Shared geometry
+calculates parallel rows centered on the vector midpoint, with row width equal to
+the drag length. The server assigns nearby units to exact preview slots and rejects
+blocked, occupied, out-of-bounds or unreachable formations atomically.
 The protected scheduler advances units at 3 world units/second and computes terrain
 height. Clients subscribe to the lobby and only their active game's units and buildings, and render
 the received positions without simulating movement. Movement continues without clients.

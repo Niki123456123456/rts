@@ -86,6 +86,27 @@ try {
     assert.ok(Math.abs(updated.targetZ - (2 + original.z - centerZ)) < 0.00001);
   }
 
+  // Drag formations use exact row slots, centered on the requested vector.
+  const formation = ownUnits().slice(0, 10);
+  const ids = formation.map(u => u.id);
+  assert.equal((await status(cb => b.reducers.onSetFormationTargets(cb), () => b.reducers.setFormationTargets(ids, -3, 6, 1, 6))).tag, 'Failed');
+  assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, NaN, 5, 0, 5))).tag, 'Failed');
+  assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, 38, 39, 39, 39))).tag, 'Failed');
+  assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, -3, 6, 1, 6))).tag, 'Committed');
+  const slots = formation.map(u => a.db.armyUnit.id.find(u.id)!);
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.0001;
+  const expected = [
+    ...[4.8, 6].flatMap(z => [-3, -5 / 3, -1 / 3, 1].map(x => ({x, z}))),
+    {x: -5 / 3, z: 7.2}, {x: -1 / 3, z: 7.2},
+  ];
+  for (const slot of expected) {
+    assert.equal(slots.filter(u => close(u.targetX, slot.x) && close(u.targetZ, slot.z)).length, 1);
+  }
+  await until(() => ids.every(id => {
+    const u = a.db.armyUnit.id.find(id)!;
+    return close(u.x, u.targetX) && close(u.z, u.targetZ);
+  }), 'Units must reach their previewed formation slots');
+
   assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], NaN, 0))).tag, 'Failed');
   assert.equal((await status(cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 1000, 0))).tag, 'Failed');
   assert.equal((await status(cb => a.reducers.onCreateGame(cb), () => a.reducers.createGame('   '))).tag, 'Failed');
@@ -119,6 +140,9 @@ try {
   assert.ok(snapshot().units.every((u: {owned: boolean; health: number}) => u.owned && u.health === 1));
   bridgeSend({ action: 'targets', unit_ids: [bridgeUnit.id], x: 3, z: 3 });
   await until(() => snapshot().units.find((u: { id: string; x: number }) => u.id === bridgeUnit.id)?.x === 3, 'Bridge receives authoritative movement');
+  bridgeSend({ action: 'formation_targets', unit_ids: [bridgeUnit.id], start_x: 2, start_z: 4, end_x: 4, end_z: 4 });
+  await until(() => snapshot().units.find((u: { id: string; z: number }) => u.id === bridgeUnit.id)?.z === 4, 'Bridge sends drag formation endpoints');
+  assert.equal(snapshot().units.find((u: { id: string }) => u.id === bridgeUnit.id)?.x, 3);
   bridgeSend({ action: 'leave' });
   await until(() => snapshot().game_id === null && snapshot().units.length === 0, 'Bridge clears units when leaving');
   bridgeSend({ action: 'connect', uri, database });

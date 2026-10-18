@@ -47,6 +47,70 @@ mod tests {
 
 use stronghold_map::{self as map, Obstacle, Point};
 
+/// Minimum total squared travel distance keeps formation assignments from crossing.
+/// Hungarian matching, with stable input order to break ties deterministically.
+pub(crate) fn formation_assignment(units: &[Point], slots: &[Point]) -> Vec<usize> {
+    let n = units.len();
+    assert_eq!(n, slots.len());
+    let mut unit_potential = vec![0.0; n + 1];
+    let mut slot_potential = vec![0.0; n + 1];
+    let mut matched = vec![0; n + 1];
+    let mut previous = vec![0; n + 1];
+    for unit in 1..=n {
+        matched[0] = unit;
+        let mut slot = 0;
+        let mut minimum = vec![f64::INFINITY; n + 1];
+        let mut used = vec![false; n + 1];
+        loop {
+            used[slot] = true;
+            let i = matched[slot];
+            let mut delta = f64::INFINITY;
+            let mut next = 0;
+            for j in 1..=n {
+                if used[j] {
+                    continue;
+                }
+                let dx = units[i - 1].0 as f64 - slots[j - 1].0 as f64;
+                let dz = units[i - 1].1 as f64 - slots[j - 1].1 as f64;
+                let cost = dx * dx + dz * dz - unit_potential[i] - slot_potential[j];
+                if cost < minimum[j] {
+                    minimum[j] = cost;
+                    previous[j] = slot;
+                }
+                if minimum[j] < delta {
+                    delta = minimum[j];
+                    next = j;
+                }
+            }
+            for j in 0..=n {
+                if used[j] {
+                    unit_potential[matched[j]] += delta;
+                    slot_potential[j] -= delta;
+                } else {
+                    minimum[j] -= delta;
+                }
+            }
+            slot = next;
+            if matched[slot] == 0 {
+                break;
+            }
+        }
+        loop {
+            let prev = previous[slot];
+            matched[slot] = matched[prev];
+            slot = prev;
+            if slot == 0 {
+                break;
+            }
+        }
+    }
+    let mut result = vec![0; n];
+    for j in 1..=n {
+        result[matched[j] - 1] = j - 1;
+    }
+    result
+}
+
 pub(crate) fn can_skip_corner(
     start: Point,
     corner: Point,
@@ -257,6 +321,50 @@ pub(crate) fn plan_attack(
 #[cfg(test)]
 mod crowd_tests {
     use super::*;
+    #[test]
+    fn formation_matching_preserves_front_to_back_order() {
+        let units = [(0.0, 0.0), (0.0, 1.0)];
+        let slots = [(0.0, 5.0), (0.0, 6.0)];
+        assert_eq!(formation_assignment(&units, &slots), vec![0, 1]);
+        assert!(formation_assignment(&[], &[]).is_empty());
+    }
+
+    #[test]
+    fn army_reaches_formation_rows_without_collisions() {
+        for end in [(0.0, 5.0), (-2.0, 7.0), (0.0, 7.0)] {
+            let mut positions = (0..20)
+                .map(|i| (-1.4 + (i % 5) as f32 * 0.7, -1.05 + (i / 5) as f32 * 0.7))
+                .collect::<Vec<_>>();
+            let slots = map::formation_positions((-2.0, 5.0), end, positions.len());
+            let assignment = formation_assignment(&positions, &slots);
+            for _ in 0..600 {
+                for i in 0..positions.len() {
+                    let goal = slots[assignment[i]];
+                    if map::distance(positions[i], goal) < 0.00001 {
+                        continue;
+                    }
+                    let peers = positions
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .map(|(_, p)| *p)
+                        .collect::<Vec<_>>();
+                    positions[i] = move_separated(positions[i], goal, 0.15, &peers, &[]);
+                    for peer in peers {
+                        assert!(map::distance(positions[i], peer) >= map::UNIT_SPACING - 0.00002);
+                    }
+                }
+            }
+            for (i, p) in positions.iter().enumerate() {
+                assert!(
+                    map::distance(*p, slots[assignment[i]]) < 0.0001,
+                    "unit {i} stopped at {p:?}, wanted {:?}, drag end {end:?}",
+                    slots[assignment[i]]
+                );
+            }
+        }
+    }
+
     #[test]
     fn attackers_spread_over_four_sides_and_keep_reserved_slots() {
         let target = Obstacle { x: 0.0, z: 9.0 };

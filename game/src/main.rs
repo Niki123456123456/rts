@@ -40,6 +40,7 @@ fn main() {
         .init_resource::<SelectedUnits>()
         .init_resource::<SelectionPanel>()
         .init_resource::<SelectionDrag>()
+        .init_resource::<MovementDrag>()
         .init_resource::<Multiplayer>()
         .init_resource::<BuildingInteraction>()
         .add_systems(
@@ -53,6 +54,8 @@ fn main() {
                 buildings::sync_buildings,
                 buildings::building_input,
                 select_unit,
+                movement_input,
+                formation_preview,
                 expire_destination_markers,
                 highlight_selection,
             )
@@ -132,6 +135,15 @@ struct SelectionDrag {
     current: Vec2,
     dragging: bool,
     additive: bool,
+}
+
+#[derive(Resource, Default)]
+struct MovementDrag {
+    start: Option<Vec3>,
+    screen_start: Vec2,
+    end: Vec3,
+    dragging: bool,
+    positions: Vec<stronghold_map::Point>,
 }
 
 #[derive(Resource)]
@@ -280,20 +292,17 @@ fn setup(
 }
 
 fn select_unit(
-    mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
     mut ray_cast: MeshRayCast,
     units: Query<(Entity, &Transform, &Unit)>,
-    mut multiplayer: ResMut<Multiplayer>,
+    multiplayer: Res<Multiplayer>,
     mut selected: ResMut<SelectedUnits>,
     mut contexts: EguiContexts,
     panel: Res<SelectionPanel>,
     ground: Query<(), With<Ground>>,
-    markers: Query<Entity, With<DestinationMarker>>,
-    visual: Res<DestinationVisual>,
     mut drag: ResMut<SelectionDrag>,
     building_interaction: Res<BuildingInteraction>,
 ) {
@@ -363,7 +372,7 @@ fn select_unit(
             *drag = default();
         }
     }
-    if !select && (!move_order || over_ui) {
+    if !select {
         return;
     }
     let (camera, transform) = *camera;
@@ -373,7 +382,7 @@ fn select_unit(
     // Cast against the actual visible geometry, independent of egui's picking events.
     let scene_filter = |entity| units.contains(entity) || ground.contains(entity);
     let settings = MeshRayCastSettings::default().with_filter(&scene_filter);
-    let Some((entity, hit)) = ray_cast.cast_ray(ray, &settings).first() else {
+    let Some((entity, _)) = ray_cast.cast_ray(ray, &settings).first() else {
         if select {
             selected.0.clear();
         }
@@ -381,39 +390,163 @@ fn select_unit(
     };
     if select && units.get(*entity).is_ok_and(|(_, _, unit)| unit.owned) {
         selected.select(*entity, additive);
-    } else if move_order && ground.contains(*entity) {
-        let selected_units: Vec<_> = selected
-            .0
-            .iter()
-            .filter_map(|entity| {
-                units
-                    .get(*entity)
-                    .ok()
-                    .filter(|(_, _, unit)| unit.owned)
-                    .map(|(_, _, unit)| unit.id)
-            })
-            .collect();
-        if !selected_units.is_empty() {
-            if !multiplayer.send(Action::Targets {
-                unit_ids: selected_units,
-                x: hit.point.x,
-                z: hit.point.z,
-            }) {
-                return;
+    } else if select {
+        selected.0.clear();
+    }
+}
+
+fn movement_input(
+    mut commands: Commands,
+    mouse: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    mut ray_cast: MeshRayCast,
+    units: Query<&Unit>,
+    mut multiplayer: ResMut<Multiplayer>,
+    selected: Res<SelectedUnits>,
+    mut contexts: EguiContexts,
+    panel: Res<SelectionPanel>,
+    ground: Query<(), With<Ground>>,
+    markers: Query<Entity, With<DestinationMarker>>,
+    visual: Res<DestinationVisual>,
+    mut drag: ResMut<MovementDrag>,
+    building_interaction: Res<BuildingInteraction>,
+) {
+    if building_interaction.placing
+        || building_interaction.consumed
+        || multiplayer.snapshot.game_id.is_none()
+        || !multiplayer.snapshot.connected
+        || !window.focused
+        || keys.just_pressed(KeyCode::Escape)
+        || mouse.just_pressed(MouseButton::Left)
+    {
+        *drag = default();
+        return;
+    }
+    let Some(cursor) = window.cursor_position() else {
+        *drag = default();
+        return;
+    };
+    let over_ui = contexts.ctx_mut().is_ok_and(|ctx| {
+        let pos = egui::pos2(cursor.x, cursor.y) * (window.scale_factor() / ctx.pixels_per_point());
+        ctx.egui_wants_pointer_input() || panel.0.is_some_and(|rect| rect.contains(pos))
+    });
+    if over_ui {
+        // Releasing over a panel cancels the order.
+        drag.positions.clear();
+        if !mouse.pressed(MouseButton::Right) {
+            *drag = default();
+        }
+        return;
+    }
+    let unit_ids: Vec<_> = selected
+        .0
+        .iter()
+        .filter_map(|entity| {
+            units
+                .get(*entity)
+                .ok()
+                .filter(|unit| unit.owned)
+                .map(|unit| unit.id)
+        })
+        .collect();
+    if unit_ids.is_empty() {
+        *drag = default();
+        return;
+    }
+    if !mouse.just_pressed(MouseButton::Right) && drag.start.is_none() {
+        return;
+    }
+    let (camera, transform) = *camera;
+    let point = camera
+        .viewport_to_world(transform, cursor)
+        .ok()
+        .and_then(|ray| {
+            let filter = |entity| ground.contains(entity);
+            ray_cast
+                .cast_ray(ray, &MeshRayCastSettings::default().with_filter(&filter))
+                .first()
+                .map(|(_, hit)| hit.point)
+        });
+    if mouse.just_pressed(MouseButton::Right) {
+        *drag = MovementDrag {
+            start: point,
+            screen_start: cursor,
+            end: point.unwrap_or_default(),
+            ..default()
+        };
+    }
+    let Some(start) = drag.start else {
+        return;
+    };
+    drag.dragging |= cursor.distance_squared(drag.screen_start) >= 16.0;
+    if let Some(point) = point {
+        drag.end = point;
+    }
+    drag.positions = if drag.dragging && point.is_some() {
+        stronghold_map::formation_positions(
+            (start.x, start.z),
+            (drag.end.x, drag.end.z),
+            unit_ids.len(),
+        )
+    } else {
+        Vec::new()
+    };
+    if mouse.just_released(MouseButton::Right) {
+        let completed = std::mem::take(&mut *drag);
+        if point.is_none() {
+            return;
+        }
+        let action = if completed.dragging {
+            Action::FormationTargets {
+                unit_ids,
+                start_x: start.x,
+                start_z: start.z,
+                end_x: completed.end.x,
+                end_z: completed.end.z,
             }
+        } else {
+            Action::Targets {
+                unit_ids,
+                x: start.x,
+                z: start.z,
+            }
+        };
+        if multiplayer.send(action) {
             for marker in &markers {
                 commands.entity(marker).despawn();
             }
-            commands.spawn((
-                DestinationMarker(Timer::from_seconds(0.8, TimerMode::Once)),
-                Mesh3d(visual.mesh.clone()),
-                MeshMaterial3d(visual.material.clone()),
-                Transform::from_translation(hit.point + hit.normal * 0.06)
-                    .with_rotation(Quat::from_rotation_arc(Vec3::Y, hit.normal)),
-            ));
+            let destinations = if completed.dragging {
+                completed.positions
+            } else {
+                vec![(start.x, start.z)]
+            };
+            for (x, z) in destinations {
+                commands.spawn((
+                    DestinationMarker(Timer::from_seconds(0.8, TimerMode::Once)),
+                    Mesh3d(visual.mesh.clone()),
+                    MeshMaterial3d(visual.material.clone()),
+                    Transform::from_xyz(x, buildings::terrain_height(x, z) + 0.06, z)
+                        .with_scale(Vec3::splat(0.6)),
+                ));
+            }
         }
-    } else if select {
-        selected.0.clear();
+    } else if !mouse.pressed(MouseButton::Right) {
+        *drag = default();
+    }
+}
+
+fn formation_preview(drag: Res<MovementDrag>, mut gizmos: Gizmos) {
+    for &(x, z) in &drag.positions {
+        gizmos.circle(
+            Isometry3d::new(
+                Vec3::new(x, buildings::terrain_height(x, z) + 0.08, z),
+                Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            ),
+            0.2,
+            Color::srgb(1.0, 0.85, 0.2),
+        );
     }
 }
 
@@ -663,6 +796,7 @@ fn selection_ui(
     mut panel: ResMut<SelectionPanel>,
     mut multiplayer: ResMut<Multiplayer>,
     drag: Res<SelectionDrag>,
+    movement: Res<MovementDrag>,
     mut building_interaction: ResMut<BuildingInteraction>,
 ) -> Result {
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
@@ -786,7 +920,8 @@ fn selection_ui(
         .pointer_interact_pos()
         .is_some_and(|position| response.response.rect.contains(position));
     for mut controls in &mut controls {
-        controls.enabled = !drag.dragging
+        controls.enabled = movement.start.is_none()
+            && !drag.dragging
             && !over_panel
             && !ctx.egui_wants_pointer_input()
             && !ctx.egui_wants_keyboard_input();

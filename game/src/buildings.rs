@@ -190,7 +190,7 @@ fn placement_valid(x: f32, z: f32, y: f32, multiplayer: &Multiplayer) -> bool {
         })
 }
 // Keep this identical to the server's terrain surface for the placement preview.
-fn terrain_height(x: f32, z: f32) -> f32 {
+pub(crate) fn terrain_height(x: f32, z: f32) -> f32 {
     let mut h: f32 = 0.0;
     if (7.5..=22.5).contains(&x) && (-7.5..=-2.5).contains(&z) {
         h = 1.0;

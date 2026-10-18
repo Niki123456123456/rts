@@ -7,8 +7,49 @@ pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 pub const MAP_LIMIT: f32 = 39.0;
 pub const CLEARANCE: f32 = 0.27;
 pub const UNIT_SPACING: f32 = 0.55;
+/// Room between formation slots allows units to settle without touching neighbours.
+pub const FORMATION_SPACING: f32 = UNIT_SPACING * 2.0 + 0.1;
 pub const ATTACK_RANGE: f32 = 0.8;
 pub type Point = (f32, f32);
+
+/// Parallel rows centered on the drag midpoint. Full rows span the drag;
+/// a partial final row is centered with the same spacing as the full rows.
+pub fn formation_positions(start: Point, end: Point, count: usize) -> Vec<Point> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let length = distance(start, end);
+    if !length.is_finite() || !start.0.is_finite() || !start.1.is_finite() {
+        return Vec::new();
+    }
+    let along = if length > 0.0001 {
+        ((end.0 - start.0) / length, (end.1 - start.1) / length)
+    } else {
+        (1.0, 0.0)
+    };
+    let columns = ((length / FORMATION_SPACING).floor() as usize)
+        .saturating_add(1)
+        .clamp(1, count);
+    let rows = count.div_ceil(columns);
+    let spacing = if columns > 1 {
+        length / (columns - 1) as f32
+    } else {
+        0.0
+    };
+    let center = ((start.0 + end.0) * 0.5, (start.1 + end.1) * 0.5);
+    (0..count)
+        .map(|index| {
+            let row = index / columns;
+            let in_row = columns.min(count - row * columns);
+            let x = (index % columns) as f32 * spacing - (in_row - 1) as f32 * spacing * 0.5;
+            let z = (row as f32 - (rows - 1) as f32 * 0.5) * FORMATION_SPACING;
+            (
+                center.0 + along.0 * x - along.1 * z,
+                center.1 + along.1 * x + along.0 * z,
+            )
+        })
+        .collect()
+}
 
 #[derive(Clone, Copy)]
 pub struct AttackPosition {
@@ -234,6 +275,49 @@ pub fn path_length(start: Point, path: &[Point]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn formation_rows_span_drag_and_center_partial_row() {
+        let positions = formation_positions((2.0, 3.0), (6.0, 3.0), 10);
+        assert_eq!(positions.len(), 10);
+        // Four columns, three rows; full rows span the exact drag width.
+        assert_eq!(positions[0], (2.0, 3.0 - FORMATION_SPACING));
+        assert_eq!(positions[3], (6.0, 3.0 - FORMATION_SPACING));
+        assert_eq!(positions[4], (2.0, 3.0));
+        assert_eq!(positions[7], (6.0, 3.0));
+        assert!(((positions[8].0 + positions[9].0) * 0.5 - 4.0).abs() < 0.0001);
+        assert_eq!(positions[9].1, 3.0 + FORMATION_SPACING);
+        for (i, a) in positions.iter().enumerate() {
+            for b in &positions[i + 1..] {
+                assert!(distance(*a, *b) >= UNIT_SPACING - 0.0001);
+            }
+        }
+    }
+
+    #[test]
+    fn formation_rotates_with_drag_and_handles_short_drags() {
+        let horizontal = formation_positions((-1.0, 0.0), (1.0, 0.0), 10);
+        let vertical = formation_positions((0.0, -1.0), (0.0, 1.0), 10);
+        for (a, b) in horizontal.iter().zip(vertical) {
+            assert!((a.0 - b.1).abs() < 0.0001);
+            assert!((a.1 + b.0).abs() < 0.0001);
+        }
+        assert_eq!(
+            formation_positions((0.0, 0.0), (2.0, 2.0), 1),
+            vec![(1.0, 1.0)]
+        );
+        assert!(formation_positions((0.0, 0.0), (1.0, 0.0), 0).is_empty());
+        let column = formation_positions((2.0, 3.0), (2.0, 3.0), 3);
+        assert_eq!(
+            column,
+            vec![
+                (2.0, 3.0 - FORMATION_SPACING),
+                (2.0, 3.0),
+                (2.0, 3.0 + FORMATION_SPACING)
+            ]
+        );
+        assert!(formation_positions((f32::NAN, 0.0), (0.0, 0.0), 3).is_empty());
+    }
+
     #[test]
     fn routes_around_building_without_cutting_corners() {
         let obstacles = [Obstacle { x: 0.0, z: 0.0 }];
