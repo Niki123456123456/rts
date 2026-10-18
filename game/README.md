@@ -52,6 +52,16 @@ auf grün markiertem, ebenem Boden. Rot bedeutet, dass die Fläche blockiert ist
 Mit **R** dreht sich das Gebäude im Baumodus um jeweils 90°. Vorschau und Baufläche
 drehen sich gemeinsam; bei 90° und 270° tauschen Rasterbreite und Rastertiefe.
 Die Ausrichtung wird auf dem Server gespeichert und bei allen Spielern angezeigt.
+Beim eigenen **Treppenturm** können ausgewählte Einheiten per **Rechtsklick aufs
+Dach** nach oben geschickt werden. Grüne Kreise zeigen die vorgesehenen Dachplätze.
+Das Dach bietet **5×5 Plätze (25 Einheiten)**. Überzählige Einheiten behalten ihre
+bisherigen Befehle. Einheiten laufen zu einer erreichbaren Tür und werden direkt
+zur Luke teleportiert. Es gibt keine Warteschlange oder Begrenzung gleichzeitig
+teleportierter Einheiten. Von der Luke verteilen sie sich auf ihre Dachplätze;
+ankommende Einheiten können dabei aneinander vorbeilaufen. Boden- und Angriffsbefehle
+führen zuerst zur Luke und teleportieren die Einheiten zurück an die Tür.
+Auch ein direkter Befehl auf ein anderes eigenes Turmdach nutzt diesen Weg.
+Gedrehte Türme verwenden entsprechend gedrehte Türen, Luke und Dachplätze.
 Das unsichtbare Bauraster besteht aus 2×2-m-Feldern. Die Vorschau rastet so ein,
 dass alle Kanten der logischen Baufläche auf Feldgrenzen liegen. Gebäude dürfen
 belegte Rasterfelder nicht überdecken; gemeinsame Außenkanten sind erlaubt.

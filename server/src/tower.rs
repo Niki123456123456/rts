@@ -1,0 +1,506 @@
+use map::stair_tower::{self as stair, Position, StairTower};
+
+fn tower_geometry(ctx: &ReducerContext, b: &Building) -> StairTower {
+    StairTower {
+        x: b.x,
+        y: b.y,
+        z: b.z,
+        rotation: rotation(ctx, b.id),
+    }
+}
+fn clear_tower(ctx: &ReducerContext, id: u64) {
+    ctx.db.tower_travel().unit_id().delete(id);
+    ctx.db.tower_occupant().unit_id().delete(id);
+}
+fn on_ground(ctx: &ReducerContext, u: &ArmyUnit) -> bool {
+    if ctx.db.tower_occupant().unit_id().find(u.id).is_none() {
+        return true;
+    }
+    ctx.db.tower_travel().unit_id().find(u.id).is_some_and(|t| {
+        !t.leaving
+            && (ctx.db.unit_order().unit_id().find(u.id).is_some()
+                || t.modes.get(t.next as usize) == Some(&2))
+    })
+}
+fn ground_reservations(ctx: &ReducerContext, u: &ArmyUnit) -> Vec<map::Point> {
+    let mut points = Vec::new();
+    if on_ground(ctx, u) {
+        points.push((u.x, u.z));
+    }
+    if ctx.db.unit_order().unit_id().find(u.id).is_some() {
+        points.push((u.target_x, u.target_z));
+    }
+    points
+}
+fn ground_start(ctx: &ReducerContext, u: &ArmyUnit) -> map::Point {
+    ctx.db
+        .tower_travel()
+        .unit_id()
+        .find(u.id)
+        .filter(|t| t.leaving)
+        .and_then(|t| t.path.chunks_exact(3).last().map(|p| (p[0], p[2])))
+        .unwrap_or((u.x, u.z))
+}
+fn travel_points(t: &TowerTravel) -> Vec<Position> {
+    t.path.chunks_exact(3).map(|p| (p[0], p[1], p[2])).collect()
+}
+fn store_travel(
+    ctx: &ReducerContext,
+    u: &ArmyUnit,
+    building_id: u64,
+    points: Vec<Position>,
+    modes: Vec<u8>,
+    leaving: bool,
+    active: bool,
+) {
+    ctx.db.tower_travel().unit_id().delete(u.id);
+    ctx.db.tower_travel().insert(TowerTravel {
+        unit_id: u.id,
+        game_id: u.game_id,
+        building_id,
+        path: points.into_iter().flat_map(|p| [p.0, p.1, p.2]).collect(),
+        modes,
+        next: 0,
+        leaving,
+        active,
+    });
+}
+fn slot_reserved(ctx: &ReducerContext, building_id: u64, slot: u8, except: u64) -> bool {
+    ctx.db.tower_occupant().iter().any(|o| {
+        o.unit_id != except
+            && ((o.building_id == building_id && o.slot == slot)
+                || (o.next_building == Some(building_id) && o.next_slot == slot))
+    })
+}
+fn door_clear(ctx: &ReducerContext, b: &Building, door: u8) -> bool {
+    map::free(
+        tower_geometry(ctx, b).door(door),
+        &obstacles(ctx, b.game_id),
+    )
+}
+fn entry_plan(
+    ctx: &ReducerContext,
+    u: &ArmyUnit,
+    b: &Building,
+    _slot: u8,
+) -> Option<(u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
+    let tower = tower_geometry(ctx, b);
+    let obstacles = obstacles(ctx, u.game_id);
+    (0..2)
+        .filter_map(|door| {
+            let path = map::shortest_path((u.x, u.z), tower.door(door), &obstacles)?;
+            let hatch = tower.world(stair::HATCH_LANDING);
+            let cost = map::path_length((u.x, u.z), &path);
+            Some((
+                cost,
+                door,
+                path,
+                vec![(hatch.0, tower.roof_y() + stair::UNIT_CENTER_HEIGHT, hatch.1)],
+                vec![3],
+            ))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, door, path, points, modes)| (door, path, points, modes))
+}
+fn start_roof_entry(
+    ctx: &ReducerContext,
+    mut u: ArmyUnit,
+    b: &Building,
+    slot: u8,
+) -> Result<(), String> {
+    let (door, approach, mut points, mut modes) =
+        entry_plan(ctx, &u, b, slot).ok_or("Neither tower door is reachable.")?;
+    let tower = tower_geometry(ctx, b);
+    let roof = tower
+        .roof_path(tower.world(stair::HATCH_LANDING), tower.slot(slot as usize))
+        .ok_or("Roof destination is unreachable.")?;
+    points.extend(roof);
+    modes.resize(points.len(), 0);
+    let goal = *approach.last().ok_or("No tower approach.")?;
+    u.target_x = goal.0;
+    u.target_z = goal.1;
+    ctx.db.tower_occupant().insert(TowerOccupant {
+        unit_id: u.id,
+        game_id: u.game_id,
+        building_id: b.id,
+        slot,
+        door,
+        next_building: None,
+        next_slot: 0,
+    });
+    store_travel(ctx, &u, b.id, points, modes, false, false);
+    save_order(ctx, &u, None, approach);
+    ctx.db.army_unit().id().update(u);
+    Ok(())
+}
+
+/// A right click on an owned stair-tower roof reserves only the available slots.
+#[spacetimedb::reducer]
+pub fn move_to_roof(
+    ctx: &ReducerContext,
+    unit_ids: Vec<u64>,
+    building_id: u64,
+    x: f32,
+    z: f32,
+) -> Result<(), String> {
+    let player = participant(ctx)?;
+    let mut units = owned_units(ctx, &player, unit_ids)?;
+    let b = ctx
+        .db
+        .building()
+        .id()
+        .find(building_id)
+        .ok_or("Unknown tower.")?;
+    if b.game_id != player.game_id
+        || b.owner != player.connection_id
+        || !stair::is_stair_tower(&b.kind)
+    {
+        return Err("Choose the roof of your own stair tower.".into());
+    }
+    let tower = tower_geometry(ctx, &b);
+    if !x.is_finite() || !z.is_finite() || !tower.roof_contains((x, z)) {
+        return Err("Choose a point on the roof.".into());
+    }
+    // Existing occupants retain their reservations; extra ground units keep their orders.
+    units.sort_by_key(|u| (ctx.db.tower_occupant().unit_id().find(u.id).is_none(), u.id));
+    let mut accepted = 0;
+    for mut u in units {
+        let Some(slot) = tower
+            .sorted_slots((x, z))
+            .into_iter()
+            .find(|slot| !slot_reserved(ctx, b.id, *slot as u8, u.id))
+        else {
+            continue;
+        };
+        if let Some(mut o) = ctx.db.tower_occupant().unit_id().find(u.id) {
+            let travel = ctx.db.tower_travel().unit_id().find(u.id);
+            if o.building_id == b.id && !travel.as_ref().is_some_and(|t| t.leaving) {
+                let (mut points, mut modes, active) = if let Some(t) = travel {
+                    let points = travel_points(&t);
+                    let remaining = &t.modes[t.next as usize..];
+                    if remaining.iter().any(|m| *m != 0) {
+                        let end = t.modes.iter().rposition(|m| *m != 0).unwrap() + 1;
+                        let mut points = points[..end].to_vec();
+                        let mut modes = t.modes[..end].to_vec();
+                        points.extend(
+                            tower
+                                .roof_path(tower.world(stair::HATCH_LANDING), tower.slot(slot))
+                                .unwrap(),
+                        );
+                        modes.resize(points.len(), 0);
+                        let mut updated = t;
+                        updated.path = points.into_iter().flat_map(|p| [p.0, p.1, p.2]).collect();
+                        updated.modes = modes;
+                        ctx.db.tower_travel().unit_id().update(updated);
+                        o.slot = slot as u8;
+                        ctx.db.tower_occupant().unit_id().update(o);
+                        accepted += 1;
+                        continue;
+                    }
+                    (
+                        tower
+                            .roof_path((u.x, u.z), tower.slot(slot))
+                            .ok_or("Roof destination is unreachable.")?,
+                        Vec::new(),
+                        t.active,
+                    )
+                } else {
+                    (
+                        tower
+                            .roof_path((u.x, u.z), tower.slot(slot))
+                            .ok_or("Roof destination is unreachable.")?,
+                        Vec::new(),
+                        false,
+                    )
+                };
+                modes.resize(points.len(), 0);
+                u.target_x = tower.slot(slot).0;
+                u.target_z = tower.slot(slot).1;
+                store_travel(
+                    ctx,
+                    &u,
+                    b.id,
+                    std::mem::take(&mut points),
+                    modes,
+                    false,
+                    active,
+                );
+                // Hold the current slot until the roof walk has completed.
+                o.next_building = Some(b.id);
+                o.next_slot = slot as u8;
+                ctx.db.tower_occupant().unit_id().update(o);
+                ctx.db.army_unit().id().update(u);
+            } else {
+                depart_tower(ctx, &u)?;
+                ctx.db.unit_order().unit_id().delete(u.id);
+                if let Some(mut o) = ctx.db.tower_occupant().unit_id().find(u.id) {
+                    o.next_building = Some(b.id);
+                    o.next_slot = slot as u8;
+                    ctx.db.tower_occupant().unit_id().update(o);
+                } else {
+                    start_roof_entry(ctx, u, &b, slot as u8)?;
+                }
+            }
+        } else {
+            start_roof_entry(ctx, u, &b, slot as u8)?;
+        }
+        accepted += 1;
+    }
+    if accepted == 0 {
+        return Err(format!(
+            "The roof is full ({} units).",
+            stair::ROOF_CAPACITY
+        ));
+    }
+    start_tick(ctx);
+    Ok(())
+}
+
+/// Walk to the hatch, then teleport to the door before a ground/attack order.
+fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String> {
+    let Some(mut o) = ctx.db.tower_occupant().unit_id().find(u.id) else {
+        return Ok((u.x, u.z));
+    };
+    o.next_building = None;
+    if ctx
+        .db
+        .tower_travel()
+        .unit_id()
+        .find(u.id)
+        .is_some_and(|t| t.leaving)
+    {
+        ctx.db.tower_occupant().unit_id().update(o);
+        return Ok(ground_start(ctx, u));
+    }
+    if on_ground(ctx, u) {
+        clear_tower(ctx, u.id);
+        return Ok((u.x, u.z));
+    }
+    let b = ctx
+        .db
+        .building()
+        .id()
+        .find(o.building_id)
+        .ok_or("Tower no longer exists.")?;
+    let tower = tower_geometry(ctx, &b);
+    if !door_clear(ctx, &b, o.door) {
+        if !door_clear(ctx, &b, 1 - o.door) {
+            return Err("Both tower doors are blocked. Clear a doorway first.".into());
+        }
+        o.door = 1 - o.door;
+    }
+    let door = tower.door(o.door);
+    let mut points = tower
+        .roof_path((u.x, u.z), tower.world(stair::HATCH_LANDING))
+        .ok_or("Cannot reach the hatch.")?;
+    let mut modes = vec![0; points.len()];
+    points.push((door.0, b.y + stair::UNIT_CENTER_HEIGHT, door.1));
+    modes.push(3);
+    ctx.db.tower_occupant().unit_id().update(o);
+    store_travel(ctx, u, b.id, points, modes, true, false);
+    Ok(door)
+}
+
+fn replan_tower_approach(ctx: &ReducerContext, u: ArmyUnit) {
+    let Some(o) = ctx.db.tower_occupant().unit_id().find(u.id) else {
+        return;
+    };
+    let Some(b) = ctx.db.building().id().find(o.building_id) else {
+        return;
+    };
+    clear_tower(ctx, u.id);
+    if start_roof_entry(ctx, u.clone(), &b, o.slot).is_err() {
+        stop_unit(ctx, u);
+    }
+}
+
+fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
+    let mut moved = std::collections::HashSet::new();
+    let mut travels = ctx.db.tower_travel().iter().collect::<Vec<_>>();
+    // Every traveler advances independently; teleportation has no per-tower queue.
+    travels.sort_by_key(|t| t.unit_id);
+    for mut t in travels {
+        let Some(mut u) = ctx.db.army_unit().id().find(t.unit_id) else {
+            clear_tower(ctx, t.unit_id);
+            continue;
+        };
+        let Some(b) = ctx.db.building().id().find(t.building_id) else {
+            clear_tower(ctx, t.unit_id);
+            continue;
+        };
+        if !t.leaving && (t.modes.contains(&1) || t.modes.contains(&2)) && on_ground(ctx, &u) {
+            replan_tower_approach(ctx, u);
+            continue;
+        }
+        if !t.leaving && ctx.db.unit_order().unit_id().find(u.id).is_some() {
+            let o = ctx.db.tower_occupant().unit_id().find(u.id).unwrap();
+            let door = tower_geometry(ctx, &b).door(o.door);
+            if map::distance((u.x, u.z), door) > 0.55 {
+                continue;
+            }
+            ctx.db.unit_order().unit_id().delete(u.id);
+        }
+        // Replace any in-flight stair route from the preceding server version.
+        if t.modes.contains(&1) || t.modes.contains(&2) {
+            let o = ctx.db.tower_occupant().unit_id().find(u.id).unwrap();
+            let tower = tower_geometry(ctx, &b);
+            let target = if t.leaving {
+                tower.door(o.door)
+            } else {
+                tower.world(stair::HATCH_LANDING)
+            };
+            let y = if t.leaving {
+                b.y + stair::UNIT_CENTER_HEIGHT
+            } else {
+                tower.roof_y() + stair::UNIT_CENTER_HEIGHT
+            };
+            let mut points = vec![(target.0, y, target.1)];
+            let mut modes = vec![3];
+            if !t.leaving {
+                points.extend(
+                    tower
+                        .roof_path(target, tower.slot(o.slot as usize))
+                        .unwrap(),
+                );
+                modes.resize(points.len(), 0);
+            }
+            t.path = points.into_iter().flat_map(|p| [p.0, p.1, p.2]).collect();
+            t.modes = modes;
+            t.next = 0;
+        }
+        moved.insert(u.id);
+        t.active = true;
+        let tower = tower_geometry(ctx, &b);
+        let points = travel_points(&t);
+        let mut budget = UNIT_SPEED * TICK_SECONDS;
+        while (t.next as usize) < points.len() && budget > 0.00001 {
+            let i = t.next as usize;
+            let goal = points[i];
+            let start = (u.x, u.y, u.z);
+            if t.modes[i] == 3 {
+                // Door <-> hatch is instantaneous and may run for every unit this tick.
+                if t.leaving {
+                    let obstacles = obstacles(ctx, u.game_id);
+                    let reserved = ctx
+                        .db
+                        .army_unit()
+                        .game_id()
+                        .filter(u.game_id)
+                        .filter(|peer| peer.id != u.id && on_ground(ctx, peer))
+                        .map(|peer| (peer.x, peer.z))
+                        .collect::<Vec<_>>();
+                    let Some(landing) = free_destination((goal.0, goal.2), &reserved, &obstacles)
+                    else {
+                        break;
+                    };
+                    u.x = landing.0;
+                    u.z = landing.1;
+                    u.y = terrain_height(u.x, u.z) + stair::UNIT_CENTER_HEIGHT;
+                    if let Some(order) = ctx.db.unit_order().unit_id().find(u.id) {
+                        if let Some(path) =
+                            map::shortest_path(landing, (u.target_x, u.target_z), &obstacles)
+                        {
+                            save_order(ctx, &u, order.attack_building, path);
+                        } else {
+                            stop_unit(ctx, u.clone());
+                        }
+                    }
+                } else {
+                    u.x = goal.0;
+                    u.y = goal.1;
+                    u.z = goal.2;
+                }
+                t.next += 1;
+                continue;
+            }
+            let obstacles = tower.roof_obstacles();
+            // Transfers fan out from a shared hatch concurrently. Slot reservations
+            // prevent stacking at rest; moving arrivals may pass one another.
+            let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &[], &obstacles);
+            u.x = p.0;
+            u.z = p.1;
+            u.y = tower.roof_y() + stair::UNIT_CENTER_HEIGHT;
+            let travelled =
+                ((u.x - start.0).powi(2) + (u.y - start.1).powi(2) + (u.z - start.2).powi(2))
+                    .sqrt();
+            budget -= travelled;
+            if ((u.x - goal.0).powi(2) + (u.y - goal.1).powi(2) + (u.z - goal.2).powi(2)).sqrt()
+                < 0.0001
+            {
+                u.x = goal.0;
+                u.y = goal.1;
+                u.z = goal.2;
+                t.next += 1;
+            } else {
+                break;
+            }
+        }
+        if (t.next as usize) == points.len() {
+            ctx.db.tower_travel().unit_id().delete(u.id);
+            if t.leaving {
+                let pending = ctx
+                    .db
+                    .tower_occupant()
+                    .unit_id()
+                    .find(u.id)
+                    .and_then(|o| o.next_building.map(|id| (id, o.next_slot)));
+                clear_tower(ctx, u.id);
+                if let Some((id, slot)) = pending {
+                    ctx.db.army_unit().id().update(u.clone());
+                    if let Some(next) = ctx.db.building().id().find(id) {
+                        if start_roof_entry(ctx, u.clone(), &next, slot).is_ok() {
+                            continue;
+                        }
+                    }
+                }
+            }
+            if !t.leaving {
+                if let Some(mut o) = ctx.db.tower_occupant().unit_id().find(u.id) {
+                    if o.next_building == Some(o.building_id) {
+                        o.slot = o.next_slot;
+                        o.next_building = None;
+                        ctx.db.tower_occupant().unit_id().update(o);
+                    }
+                }
+            }
+            if ctx.db.unit_order().unit_id().find(u.id).is_none() {
+                u.target_x = u.x;
+                u.target_z = u.z;
+            }
+        } else {
+            ctx.db.tower_travel().unit_id().update(t);
+        }
+        ctx.db.army_unit().id().update(u);
+    }
+    moved
+}
+
+fn evacuate_tower(ctx: &ReducerContext, building_id: u64) {
+    for mut o in ctx.db.tower_occupant().iter().collect::<Vec<_>>() {
+        if o.next_building == Some(building_id) {
+            o.next_building = None;
+            ctx.db.tower_occupant().unit_id().update(o.clone());
+        }
+        if o.building_id != building_id {
+            continue;
+        }
+        clear_tower(ctx, o.unit_id);
+        if let Some(mut u) = ctx.db.army_unit().id().find(o.unit_id) {
+            let obstacles = obstacles(ctx, u.game_id);
+            let reserved = ctx
+                .db
+                .army_unit()
+                .game_id()
+                .filter(u.game_id)
+                .filter(|p| p.id != u.id && on_ground(ctx, p))
+                .map(|p| (p.x, p.z))
+                .collect::<Vec<_>>();
+            if let Some(p) = free_destination((u.x, u.z), &reserved, &obstacles) {
+                u.x = p.0;
+                u.z = p.1;
+            }
+            u.y = terrain_height(u.x, u.z) + stair::UNIT_CENTER_HEIGHT;
+            stop_unit(ctx, u);
+        }
+    }
+}

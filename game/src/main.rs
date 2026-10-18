@@ -56,6 +56,7 @@ fn main() {
                 select_unit,
                 movement_input,
                 formation_preview,
+                buildings::roof_preview,
                 expire_destination_markers,
                 highlight_selection,
             )
@@ -912,6 +913,24 @@ fn selection_ui(
                                 .text(format!("Health {:.0}%", building.health * 100.0))
                                 .desired_width(160.0),
                         );
+                        if stronghold_map::stair_tower::is_stair_tower(&building.kind) {
+                            let count = multiplayer
+                                .snapshot
+                                .roof_occupants
+                                .iter()
+                                .filter(|o| {
+                                    o.building_id == building.id
+                                        || o.next_building == Some(building.id)
+                                })
+                                .count();
+                            ui.label(format!(
+                                "Dach: {count}/{} Plätze (5×5)",
+                                stronghold_map::stair_tower::ROOF_CAPACITY
+                            ))
+                            .on_hover_text(
+                                "Einheiten auswählen und mit rechts auf das Dach klicken.",
+                            );
+                        }
                         if building.owned && ui.button("Remove building").clicked() {
                             multiplayer.send(Action::RemoveBuilding {
                                 building_id: building.id,

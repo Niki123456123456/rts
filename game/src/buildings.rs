@@ -9,6 +9,8 @@ pub(crate) struct BuildingInteraction {
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
+    roof_hover: Option<(Vec2, usize)>,
+    roof_preview: Vec<Vec3>,
 }
 #[derive(Component)]
 pub(crate) struct Building(pub network::Building);
@@ -265,6 +267,8 @@ pub(crate) fn building_input(
 ) {
     state.consumed = false;
     state.attack_hover = None;
+    state.roof_hover = None;
+    state.roof_preview.clear();
     assets.hide_previews(&mut commands);
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
         return;
@@ -348,6 +352,57 @@ pub(crate) fn building_input(
         }
         return;
     }
+    // Pick the actual roof plane rather than the solid ground-level collision box.
+    let roof_units = units
+        .iter()
+        .filter(|(e, u)| u.owned && selected.0.contains(e))
+        .map(|(_, u)| u.id)
+        .collect::<Vec<_>>();
+    if !roof_units.is_empty() {
+        let target = multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .filter(|b| b.owned)
+            .filter_map(|b| roof_ray_hit(ray, b).map(|(distance, point)| (b, distance, point)))
+            .filter(|(_, distance, _)| *distance <= hit.distance + 0.08 || units.contains(*entity))
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((building, _, point)) = target {
+            let id = building.id;
+            let tower = stair_geometry(building);
+            let free = tower
+                .sorted_slots((point.x, point.z))
+                .into_iter()
+                .filter(|slot| {
+                    !multiplayer.snapshot.roof_occupants.iter().any(|o| {
+                        !roof_units.contains(&o.unit_id)
+                            && ((o.building_id == id && o.slot as usize == *slot)
+                                || (o.next_building == Some(id) && o.next_slot as usize == *slot))
+                    })
+                })
+                .take(roof_units.len())
+                .collect::<Vec<_>>();
+            state.roof_hover = Some((cursor, free.len()));
+            state.roof_preview = free
+                .iter()
+                .map(|slot| {
+                    let p = tower.slot(*slot);
+                    Vec3::new(p.0, tower.roof_y() + 0.08, p.1)
+                })
+                .collect();
+            if mouse.just_pressed(MouseButton::Right) {
+                state.consumed = true;
+                *drag = default();
+                multiplayer.send(Action::MoveToRoof {
+                    unit_ids: roof_units,
+                    building_id: id,
+                    x: point.x,
+                    z: point.z,
+                });
+                return;
+            }
+        }
+    }
     if let Ok(collider) = colliders.get(*entity) {
         let Some(building) = multiplayer
             .snapshot
@@ -394,12 +449,67 @@ pub(crate) fn building_input(
     }
 }
 
+fn stair_geometry(building: &network::Building) -> map::stair_tower::StairTower {
+    map::stair_tower::StairTower {
+        x: building.x,
+        y: building.y,
+        z: building.z,
+        rotation: building.rotation,
+    }
+}
+fn roof_ray_hit(ray: Ray3d, building: &network::Building) -> Option<(f32, Vec3)> {
+    if !map::stair_tower::is_stair_tower(&building.kind) || ray.direction.y.abs() < 0.00001 {
+        return None;
+    }
+    let tower = stair_geometry(building);
+    let distance = (tower.roof_y() - ray.origin.y) / ray.direction.y;
+    if distance < 0.0 {
+        return None;
+    }
+    let point = ray.get_point(distance);
+    tower
+        .roof_contains((point.x, point.z))
+        .then_some((distance, point))
+}
+pub(crate) fn roof_preview(interaction: Res<BuildingInteraction>, mut gizmos: Gizmos) {
+    for point in &interaction.roof_preview {
+        gizmos.circle(
+            Isometry3d::new(*point, Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            0.22,
+            Color::srgb(0.3, 1.0, 0.5),
+        );
+    }
+}
+
 pub(crate) fn attack_hover_ui(
     mut contexts: EguiContexts,
     window: Single<&Window, With<PrimaryWindow>>,
     interaction: Res<BuildingInteraction>,
     selected: Res<SelectedUnits>,
 ) -> Result {
+    if let Some((cursor, count)) = interaction.roof_hover {
+        let ctx = contexts.ctx_mut()?;
+        let cursor = cursor * (window.scale_factor() / ctx.pixels_per_point());
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("roof_hover"),
+        ));
+        painter.text(
+            egui::pos2(cursor.x + 20., cursor.y - 25.),
+            egui::Align2::LEFT_BOTTOM,
+            if count == 0 {
+                "Dach voll".into()
+            } else {
+                format!(
+                    "Rechtsklick: {count} aufs Dach (max. {})",
+                    map::stair_tower::ROOF_CAPACITY
+                )
+            },
+            egui::FontId::proportional(16.),
+            egui::Color32::LIGHT_GREEN,
+        );
+        return Ok(());
+    }
     let Some(cursor) = interaction.attack_hover.filter(|_| !selected.0.is_empty()) else {
         return Ok(());
     };
@@ -551,6 +661,30 @@ mod tests {
     use super::*;
     use bevy::{asset::AssetPlugin, gltf::GltfPlugin, image::ImagePlugin, mesh::MeshPlugin};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn roof_click_uses_elevated_plane_for_every_tower_rotation() {
+        for rotation in 0..4 {
+            let row = network::Building {
+                id: 1,
+                kind: "tower_stairwell".into(),
+                rotation,
+                color: 0,
+                health: 1.,
+                owned: true,
+                x: 10.,
+                y: 3.,
+                z: 20.,
+            };
+            let ray = Ray3d::new(Vec3::new(10., 20., 20.), Dir3::NEG_Y);
+            let (_, point) = roof_ray_hit(ray, &row).unwrap();
+            assert!((point.y - 9.663).abs() < 0.001);
+            assert!(
+                roof_ray_hit(Ray3d::new(Vec3::new(15., 20., 20.), Dir3::NEG_Y), &row).is_none()
+            );
+            assert!(roof_ray_hit(Ray3d::new(Vec3::new(10., 20., 20.), Dir3::X), &row).is_none());
+        }
+    }
 
     #[test]
     fn replicated_destruction_despawns_building_children_without_stale_commands() {

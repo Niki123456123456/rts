@@ -12,6 +12,8 @@ pub struct Snapshot {
     pub units: Vec<Unit>,
     #[serde(default)]
     pub buildings: Vec<Building>,
+    #[serde(default)]
+    pub roof_occupants: Vec<RoofOccupant>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -47,6 +49,18 @@ pub struct Building {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct RoofOccupant {
+    #[serde(deserialize_with = "id")]
+    pub unit_id: u64,
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub slot: u8,
+    #[serde(default, deserialize_with = "optional_id")]
+    pub next_building: Option<u64>,
+    pub next_slot: u8,
 }
 
 // IDs cross the JavaScript bridge as strings to preserve all 64 bits.
@@ -100,6 +114,14 @@ pub enum Action {
         unit_ids: Vec<u64>,
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
+    },
+    MoveToRoof {
+        #[serde(serialize_with = "serialize_ids")]
+        unit_ids: Vec<u64>,
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+        x: f32,
+        z: f32,
     },
     FormationTargets {
         #[serde(serialize_with = "serialize_ids")]
@@ -299,6 +321,9 @@ mod backend {
                     .on_build_rotated(move |ctx, _, _, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_move_to_roof(move |ctx, _, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_remove_building(move |ctx, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -321,6 +346,12 @@ mod backend {
                     building,
                     rotation,
                 } => conn.reducers.build_rotated(x, z, building, rotation),
+                Action::MoveToRoof {
+                    unit_ids,
+                    building_id,
+                    x,
+                    z,
+                } => conn.reducers.move_to_roof(unit_ids, building_id, x, z),
                 Action::RemoveBuilding { building_id } => {
                     conn.reducers.remove_building(building_id)
                 }
@@ -396,6 +427,7 @@ mod backend {
                                 format!("SELECT * FROM army_unit WHERE game_id = {id}"),
                                 format!("SELECT * FROM building WHERE game_id = {id}"),
                                 format!("SELECT * FROM building_rotation WHERE game_id = {id}"),
+                                format!("SELECT * FROM tower_occupant WHERE game_id = {id}"),
                             ]),
                     );
                 }
@@ -414,6 +446,19 @@ mod backend {
                     x: u.x,
                     y: u.y,
                     z: u.z,
+                })
+                .collect();
+            snapshot.roof_occupants = conn
+                .db
+                .tower_occupant()
+                .iter()
+                .filter(|o| Some(o.game_id) == snapshot.game_id)
+                .map(|o| super::RoofOccupant {
+                    unit_id: o.unit_id,
+                    building_id: o.building_id,
+                    slot: o.slot,
+                    next_building: o.next_building,
+                    next_slot: o.next_slot,
                 })
                 .collect();
             snapshot.buildings = conn

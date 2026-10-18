@@ -43,6 +43,7 @@ pub struct Player {
 
 // Keep the original tables above so the hosted database can upgrade without
 // deleting existing games. New gameplay uses these versioned army records.
+#[derive(Clone)]
 #[spacetimedb::table(name = army_unit, public)]
 pub struct ArmyUnit {
     #[primary_key]
@@ -97,6 +98,36 @@ pub struct BuildingRotation {
     #[index(btree)]
     pub game_id: u64,
     pub quarter_turns: u8,
+}
+
+#[derive(Clone)]
+#[spacetimedb::table(name = tower_occupant, public)]
+pub struct TowerOccupant {
+    #[primary_key]
+    pub unit_id: u64,
+    #[index(btree)]
+    pub game_id: u64,
+    #[index(btree)]
+    pub building_id: u64,
+    pub slot: u8,
+    pub door: u8,
+    pub next_building: Option<u64>,
+    pub next_slot: u8,
+}
+
+#[spacetimedb::table(name = tower_travel)]
+pub struct TowerTravel {
+    #[primary_key]
+    pub unit_id: u64,
+    #[index(btree)]
+    pub game_id: u64,
+    pub building_id: u64,
+    pub path: Vec<f32>,
+    // Per-waypoint movement: 0 = roof walk, 3 = door/hatch teleport; 1/2 are upgraded legacy routes.
+    pub modes: Vec<u8>,
+    pub next: u32,
+    pub leaving: bool,
+    pub active: bool,
 }
 
 // Paths and attack orders stay authoritative and private. Existing army schema
@@ -228,6 +259,7 @@ pub fn leave_game(ctx: &ReducerContext) {
             }
             let units: Vec<_> = ctx.db.army_unit().owner().filter(connection_id).collect();
             for unit in units {
+                clear_tower(ctx, unit.id);
                 ctx.db.unit_order().unit_id().delete(unit.id);
                 ctx.db.army_unit().id().delete(unit.id);
             }
@@ -275,7 +307,7 @@ pub fn set_targets(
         .game_id()
         .filter(player.game_id)
         .filter(|u| !selected.contains(&u.id))
-        .flat_map(|u| [(u.x, u.z), (u.target_x, u.target_z)])
+        .flat_map(|u| ground_reservations(ctx, &u))
         .collect::<Vec<_>>();
     let center_x = units.iter().map(|u| u.x).sum::<f32>() / units.len() as f32;
     let center_z = units.iter().map(|u| u.z).sum::<f32>() / units.len() as f32;
@@ -291,7 +323,8 @@ pub fn set_targets(
         unit.target_x = target.0;
         unit.target_z = target.1;
         reserved.push(target);
-        let path = map::shortest_path((unit.x, unit.z), (unit.target_x, unit.target_z), &obstacles)
+        let start = depart_tower(ctx, &unit)?;
+        let path = map::shortest_path(start, (unit.target_x, unit.target_z), &obstacles)
             .ok_or("Target is blocked or unreachable. Choose open ground.")?;
         save_order(ctx, &unit, None, path);
         ctx.db.army_unit().id().update(unit);
@@ -326,7 +359,7 @@ pub fn set_formation_targets(
         .game_id()
         .filter(player.game_id)
         .filter(|u| !selected.contains(&u.id))
-        .flat_map(|u| [(u.x, u.z), (u.target_x, u.target_z)])
+        .flat_map(|u| ground_reservations(ctx, &u))
         .collect::<Vec<_>>();
     let slots = map::formation_positions((start_x, start_z), (end_x, end_z), units.len());
     let assignment = formation_assignment(
@@ -343,7 +376,8 @@ pub fn set_formation_targets(
         {
             return Err("Formation is blocked. Choose open ground.".into());
         }
-        let path = map::shortest_path((unit.x, unit.z), target, &obstacles)
+        let start = depart_tower(ctx, &unit)?;
+        let path = map::shortest_path(start, target, &obstacles)
             .ok_or("Formation is unreachable. Choose open ground.")?;
         unit.target_x = target.0;
         unit.target_z = target.1;
@@ -374,6 +408,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
     for unit in ctx.db.army_unit().iter() {
         if (unit.x != unit.target_x || unit.z != unit.target_z)
             && ctx.db.unit_order().unit_id().find(unit.id).is_none()
+            && ctx.db.tower_occupant().unit_id().find(unit.id).is_none()
         {
             if let Some(path) = map::shortest_path(
                 (unit.x, unit.z),
@@ -386,12 +421,25 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             }
         }
     }
+    let tower_moved = step_tower_travel(ctx);
     let mut changed_games = std::collections::HashSet::new();
     for mut order in ctx.db.unit_order().iter().collect::<Vec<_>>() {
         let Some(mut unit) = ctx.db.army_unit().id().find(order.unit_id) else {
             ctx.db.unit_order().unit_id().delete(order.unit_id);
             continue;
         };
+        if tower_moved.contains(&unit.id) {
+            continue;
+        }
+        if ctx
+            .db
+            .tower_travel()
+            .unit_id()
+            .find(unit.id)
+            .is_some_and(|t| t.leaving)
+        {
+            continue;
+        }
         if let Some(id) = order.attack_building {
             let Some(mut building) = ctx.db.building().id().find(id) else {
                 stop_unit(ctx, unit);
@@ -420,7 +468,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             .army_unit()
             .game_id()
             .filter(unit.game_id)
-            .filter(|u| u.id != unit.id)
+            .filter(|u| u.id != unit.id && on_ground(ctx, u))
             .map(|u| (u.x, u.z))
             .collect::<Vec<_>>();
         let obstacles = obstacles(ctx, unit.game_id);
@@ -460,7 +508,8 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
     for game_id in changed_games {
         replan(ctx, game_id);
     }
-    if ctx.db.unit_order().iter().next().is_none() {
+    if ctx.db.unit_order().iter().next().is_none() && ctx.db.tower_travel().iter().next().is_none()
+    {
         ctx.db
             .movement_tick()
             .scheduled_id()
@@ -514,6 +563,7 @@ fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
 fn delete_building(ctx: &ReducerContext, building_id: u64) {
     ctx.db.building_rotation().building_id().delete(building_id);
     ctx.db.building().id().delete(building_id);
+    evacuate_tower(ctx, building_id);
 }
 fn building_shape(ctx: &ReducerContext, building: &Building) -> Obstacle {
     map::BuildingKind::from_name(&building.kind)
@@ -585,7 +635,7 @@ fn attack_plans(
         .army_unit()
         .game_id()
         .filter(b.game_id)
-        .filter(|u| !ids.contains(&u.id))
+        .filter(|u| !ids.contains(&u.id) && on_ground(ctx, u))
         .map(|u| (u.x, u.z))
         .collect::<Vec<_>>();
     let reserved = ctx
@@ -599,7 +649,13 @@ fn attack_plans(
         .collect::<Vec<_>>();
     let starts = units
         .iter()
-        .map(|u| (u.id, (u.x, u.z), keep.then_some((u.target_x, u.target_z))))
+        .map(|u| {
+            (
+                u.id,
+                ground_start(ctx, u),
+                keep.then_some((u.target_x, u.target_z)),
+            )
+        })
         .collect::<Vec<_>>();
     plan_attack(
         &starts,
@@ -639,7 +695,20 @@ fn replan(ctx: &ReducerContext, game_id: u64) {
             attacks.entry(id).or_default().push(u);
             continue;
         }
-        if let Some(path) = map::shortest_path((u.x, u.z), (u.target_x, u.target_z), &obstacles) {
+        if ctx.db.tower_occupant().unit_id().find(u.id).is_some()
+            && !ctx
+                .db
+                .tower_travel()
+                .unit_id()
+                .find(u.id)
+                .is_some_and(|t| t.leaving)
+        {
+            replan_tower_approach(ctx, u);
+            continue;
+        }
+        if let Some(path) =
+            map::shortest_path(ground_start(ctx, &u), (u.target_x, u.target_z), &obstacles)
+        {
             save_order(ctx, &u, None, path);
         } else {
             stop_unit(ctx, u);
@@ -794,9 +863,14 @@ pub fn attack_building(
     if b.game_id != player.game_id || b.owner == player.connection_id {
         return Err("Choose an enemy building in your game.".into());
     }
+    for unit in &units {
+        depart_tower(ctx, unit)?;
+    }
     let plans =
         attack_plans(ctx, &units, &b, false).ok_or("No reachable space around this building.")?;
     apply_attack_plans(ctx, building_id, plans);
     start_tick(ctx);
     Ok(())
 }
+
+include!("tower.rs");
