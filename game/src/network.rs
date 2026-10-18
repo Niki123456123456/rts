@@ -65,6 +65,14 @@ pub struct Game {
 
 #[derive(Clone, Deserialize)]
 pub struct Unit {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub activity: u8,
+    #[serde(default)]
+    pub facing_x: f32,
+    #[serde(default)]
+    pub facing_z: f32,
     #[serde(deserialize_with = "id")]
     pub id: u64,
     pub number: usize,
@@ -141,6 +149,11 @@ pub enum Action {
         game_id: u64,
     },
     Leave,
+    RecruitUnit {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+        kind: String,
+    },
     Build {
         x: f32,
         z: f32,
@@ -379,6 +392,9 @@ mod backend {
                 let errors = self.status.clone();
                 conn.reducers
                     .on_attack_building(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_recruit_unit(move |ctx, _, _| record_status(&errors, ctx));
                 self.connection = Some(conn);
                 return Ok(());
             }
@@ -391,6 +407,9 @@ mod backend {
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
+                Action::RecruitUnit { building_id, kind } => {
+                    conn.reducers.recruit_unit(building_id, kind)
+                }
                 Action::Build {
                     x,
                     z,
@@ -489,6 +508,7 @@ mod backend {
                                 format!("SELECT * FROM warehouse_stock WHERE game_id = {id}"),
                                 format!("SELECT * FROM worker WHERE game_id = {id}"),
                                 format!("SELECT * FROM producer WHERE game_id = {id}"),
+                                format!("SELECT * FROM unit_profile WHERE game_id = {id}"),
                             ]),
                     );
                 }
@@ -546,6 +566,34 @@ mod backend {
                 .filter(|u| Some(u.game_id) == snapshot.game_id)
                 .map(|u| super::Unit {
                     id: u.id,
+                    kind: conn
+                        .db
+                        .unit_profile()
+                        .unit_id()
+                        .find(&u.id)
+                        .map(|p| p.kind)
+                        .unwrap_or_default(),
+                    activity: conn
+                        .db
+                        .unit_profile()
+                        .unit_id()
+                        .find(&u.id)
+                        .map(|p| p.activity)
+                        .unwrap_or(0),
+                    facing_x: conn
+                        .db
+                        .unit_profile()
+                        .unit_id()
+                        .find(&u.id)
+                        .map(|p| p.facing_x)
+                        .unwrap_or(0.),
+                    facing_z: conn
+                        .db
+                        .unit_profile()
+                        .unit_id()
+                        .find(&u.id)
+                        .map(|p| p.facing_z)
+                        .unwrap_or(-1.),
                     number: u.number as usize,
                     color: u.color,
                     health: u.health,
@@ -663,7 +711,7 @@ mod backend {
                         .as_nanos()
                 ),
             }));
-            until(&mut network, |s| s.game_id.is_some() && s.units.len() == 20);
+            until(&mut network, |s| s.game_id.is_some() && s.units.len() == 1);
             // A perimeter unit has a route out; interior units are physically
             // enclosed while their neighbours remain stationary.
             let id = network

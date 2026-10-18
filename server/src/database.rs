@@ -243,7 +243,7 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
             .find(connection_id)
             .unwrap(),
     );
-    // Each army gets a separate formation inside the map.
+    // Each lord starts near a separate player home inside the map.
     let axis = |slot: u32| {
         if slot == 0 {
             0.0
@@ -253,47 +253,46 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
     };
     let origin_x = axis(color % 7) - 1.4;
     let origin_z = axis((color / 7) % 7) - 1.05;
-    for number in 1..=20 {
-        let mut x = origin_x + ((number - 1) % 5) as f32 * 0.7;
-        let mut z = origin_z + ((number - 1) / 5) as f32 * 0.7;
-        let obstacles = obstacles(ctx, game_id);
-        if !map::free((x, z), &obstacles)
-            || ctx
-                .db
-                .army_unit()
-                .game_id()
-                .filter(game_id)
-                .any(|u| map::distance((x, z), (u.x, u.z)) < map::UNIT_SPACING)
-        {
-            let p = (-55..=55)
-                .flat_map(|i| (-55..=55).map(move |j| (i as f32 * 0.7, j as f32 * 0.7)))
-                .filter(|p| map::free(*p, &obstacles))
-                .filter(|p| {
-                    !ctx.db
-                        .army_unit()
-                        .game_id()
-                        .filter(game_id)
-                        .any(|u| map::distance(*p, (u.x, u.z)) < map::UNIT_SPACING)
-                })
-                .min_by(|a, b| map::distance(*a, (x, z)).total_cmp(&map::distance(*b, (x, z))))
-                .ok_or("No room for this army.")?;
-            x = p.0;
-            z = p.1;
-        }
-        ctx.db.army_unit().insert(ArmyUnit {
-            id: 0,
-            game_id,
-            owner: connection_id,
-            color,
-            number,
-            health: 1.0,
-            x,
-            y: terrain_height(x, z) + 0.75,
-            z,
-            target_x: x,
-            target_z: z,
-        });
+    let mut x = origin_x;
+    let mut z = origin_z;
+    let obstacles = obstacles(ctx, game_id);
+    if !map::free((x, z), &obstacles)
+        || ctx
+            .db
+            .army_unit()
+            .game_id()
+            .filter(game_id)
+            .any(|u| map::distance((x, z), (u.x, u.z)) < map::UNIT_SPACING)
+    {
+        let p = (-55..=55)
+            .flat_map(|i| (-55..=55).map(move |j| (i as f32 * 0.7, j as f32 * 0.7)))
+            .filter(|p| map::free(*p, &obstacles))
+            .filter(|p| {
+                !ctx.db
+                    .army_unit()
+                    .game_id()
+                    .filter(game_id)
+                    .any(|u| map::distance(*p, (u.x, u.z)) < map::UNIT_SPACING)
+            })
+            .min_by(|a, b| map::distance(*a, (x, z)).total_cmp(&map::distance(*b, (x, z))))
+            .ok_or("No room for this army.")?;
+        x = p.0;
+        z = p.1;
     }
+    let unit = ctx.db.army_unit().insert(ArmyUnit {
+        id: 0,
+        game_id,
+        owner: connection_id,
+        color,
+        number: 1,
+        health: 1.0,
+        x,
+        y: terrain_height(x, z) + 0.75,
+        z,
+        target_x: x,
+        target_z: z,
+    });
+    register_combat_unit(ctx, &unit, map::units::UnitKind::Lord);
     ensure_logistics_player(
         ctx,
         &ctx.db
@@ -315,6 +314,7 @@ pub fn leave_game(ctx: &ReducerContext) {
             let units: Vec<_> = ctx.db.army_unit().owner().filter(connection_id).collect();
             for unit in units {
                 ctx.db.worker().unit_id().delete(unit.id);
+                ctx.db.unit_profile().unit_id().delete(unit.id);
                 clear_tower(ctx, unit.id);
                 ctx.db.unit_order().unit_id().delete(unit.id);
                 ctx.db.army_unit().id().delete(unit.id);
@@ -335,7 +335,10 @@ pub fn leave_game(ctx: &ReducerContext) {
             .player_resources()
             .connection_id()
             .delete(connection_id);
-        ctx.db.logistics_player().connection_id().delete(connection_id);
+        ctx.db
+            .logistics_player()
+            .connection_id()
+            .delete(connection_id);
         ctx.db.player().connection_id().delete(connection_id);
     }
 }
@@ -351,6 +354,21 @@ pub fn connected(ctx: &ReducerContext) {
     for b in ctx.db.building().iter().collect::<Vec<_>>() {
         if let Err(error) = register_logistics_building(ctx, &b) {
             spacetimedb::log::warn!("{error}");
+        }
+    }
+    for unit in ctx.db.army_unit().iter() {
+        if ctx.db.worker().unit_id().find(unit.id).is_none()
+            && ctx.db.unit_profile().unit_id().find(unit.id).is_none()
+        {
+            register_combat_unit(
+                ctx,
+                &unit,
+                if unit.number == 1 {
+                    map::units::UnitKind::Lord
+                } else {
+                    map::units::UnitKind::ArmedPeasant
+                },
+            );
         }
     }
     start_production(ctx);
@@ -503,6 +521,12 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             }
         }
     }
+    let previous_positions = ctx
+        .db
+        .army_unit()
+        .iter()
+        .map(|u| (u.id, (u.x, u.z)))
+        .collect();
     let tower_moved = step_tower_travel(ctx);
     let mut changed_games = std::collections::HashSet::new();
     for mut order in ctx.db.unit_order().iter().collect::<Vec<_>>() {
@@ -587,6 +611,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             ctx.db.unit_order().unit_id().update(order);
         }
     }
+    update_unit_activity(ctx, &previous_positions);
     for game_id in changed_games {
         replan(ctx, game_id);
     }
@@ -620,8 +645,8 @@ fn owned_units(
     player: &Participant,
     mut ids: Vec<u64>,
 ) -> Result<Vec<ArmyUnit>, String> {
-    if ids.is_empty() || ids.len() > 20 {
-        return Err("Select between 1 and 20 units.".into());
+    if ids.is_empty() || ids.len() > map::units::MAX_COMBAT_UNITS {
+        return Err("Select between 1 and 200 units.".into());
     }
     ids.sort_unstable();
     ids.dedup();
@@ -1046,3 +1071,5 @@ include!("walls.rs");
 include!("tower.rs");
 
 include!("logistics.rs");
+
+include!("units.rs");

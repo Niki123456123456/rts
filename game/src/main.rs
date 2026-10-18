@@ -1,6 +1,7 @@
 //! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
 
 mod buildings;
+mod combat_units;
 mod logistics;
 #[cfg(not(target_arch = "wasm32"))]
 mod module_bindings;
@@ -19,6 +20,7 @@ use bevy_rts_camera::{Ground, RtsCamera, RtsCameraControls, RtsCameraPlugin};
 
 fn main() {
     let mut app = App::new();
+    app.init_resource::<combat_units::CombatAssets>();
     #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -63,6 +65,9 @@ fn main() {
                 buildings::load_building_models,
                 buildings::sync_buildings,
                 logistics::load_storage_assets,
+                combat_units::load_combat_models,
+                combat_units::sync_combat_visuals,
+                combat_units::animate_combat_units,
                 logistics::sync_storage_visuals,
                 buildings::building_input,
                 select_unit,
@@ -90,6 +95,9 @@ fn main() {
 
 #[derive(Component, Default)]
 struct Unit {
+    kind: String,
+    activity: u8,
+    facing: Vec2,
     worker: bool,
     id: u64,
     number: usize,
@@ -163,38 +171,14 @@ struct MovementDrag {
 
 #[derive(Resource)]
 struct UnitMaterials {
-    colors: std::collections::HashMap<u32, UnitPalette>,
     mesh: Handle<Mesh>,
     worker: Handle<StandardMaterial>,
     hat: Handle<Mesh>,
-}
-
-struct UnitPalette {
-    normal: Handle<StandardMaterial>,
-    selected: Handle<StandardMaterial>,
+    invisible: Handle<StandardMaterial>,
 }
 
 fn player_color(index: u32) -> Color {
     Color::hsl((210.0 + index as f32 * 137.507_77) % 360.0, 0.8, 0.55)
-}
-
-impl UnitMaterials {
-    fn palette(&mut self, index: u32, assets: &mut Assets<StandardMaterial>) -> &UnitPalette {
-        self.colors.entry(index).or_insert_with(|| {
-            let color = player_color(index);
-            UnitPalette {
-                normal: assets.add(StandardMaterial {
-                    base_color: color,
-                    ..default()
-                }),
-                selected: assets.add(StandardMaterial {
-                    base_color: color,
-                    emissive: LinearRgba::from(color) * 0.6,
-                    ..default()
-                }),
-            }
-        })
-    }
 }
 
 fn connect_multiplayer(mut multiplayer: ResMut<Multiplayer>) {
@@ -254,9 +238,13 @@ fn setup(
         Ground,
     ));
     commands.insert_resource(UnitMaterials {
+        invisible: materials.add(StandardMaterial {
+            base_color: Color::NONE,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        }),
         worker: materials.add(Color::srgb(0.55, 0.36, 0.17)),
         hat: meshes.add(Cylinder::new(0.4, 0.10)),
-        colors: default(),
         mesh: meshes.add(Capsule3d::new(0.25, 1.25)),
     });
     // Light
@@ -594,8 +582,7 @@ fn sync_multiplayer(
     mut multiplayer: ResMut<Multiplayer>,
     mut selected: ResMut<SelectedUnits>,
     mut units: Query<(Entity, &mut Unit, &mut Transform)>,
-    mut materials: ResMut<UnitMaterials>,
-    mut assets: ResMut<Assets<StandardMaterial>>,
+    materials: Res<UnitMaterials>,
     markers: Query<Entity, With<DestinationMarker>>,
     mut previous_game: Local<Option<u64>>,
     mut drag: ResMut<SelectionDrag>,
@@ -624,6 +611,9 @@ fn sync_multiplayer(
             unit.health = row.health;
             unit.owned = row.owned;
             unit.worker = row.worker;
+            unit.kind = row.kind.clone();
+            unit.activity = row.activity;
+            unit.facing = Vec2::new(row.facing_x, row.facing_z);
             if row.worker {
                 selected.0.retain(|e| *e != entity);
             }
@@ -636,10 +626,13 @@ fn sync_multiplayer(
         let material = if row.worker {
             materials.worker.clone()
         } else {
-            materials.palette(row.color, &mut assets).normal.clone()
+            materials.invisible.clone()
         };
         let mut entity = commands.spawn((
             Unit {
+                kind: row.kind.clone(),
+                activity: row.activity,
+                facing: Vec2::new(row.facing_x, row.facing_z),
                 worker: row.worker,
                 id: row.id,
                 number: row.number,
@@ -651,6 +644,9 @@ fn sync_multiplayer(
             MeshMaterial3d(material),
             Transform::from_xyz(row.x, row.y, row.z),
         ));
+        if !row.worker {
+            entity.insert(bevy::light::NotShadowCaster);
+        }
         if row.worker {
             entity.with_children(|parent| {
                 parent.spawn((
@@ -814,24 +810,26 @@ fn expire_destination_markers(
 
 fn highlight_selection(
     selected: Res<SelectedUnits>,
-    materials: Res<UnitMaterials>,
-    mut units: Query<(Entity, &Unit, &mut MeshMaterial3d<StandardMaterial>)>,
+    units: Query<(Entity, &Unit, &Transform)>,
+    mut gizmos: Gizmos,
 ) {
-    if !selected.is_changed() {
-        return;
-    }
-    for (entity, unit, mut material) in &mut units {
+    for (entity, unit, transform) in &units {
         if unit.worker {
             continue;
         }
-        let Some(palette) = materials.colors.get(&unit.color) else {
-            continue;
-        };
-        material.0 = if selected.0.contains(&entity) {
-            palette.selected.clone()
+        let color = if selected.0.contains(&entity) {
+            Color::srgb(1., 0.9, 0.15)
         } else {
-            palette.normal.clone()
+            player_color(unit.color)
         };
+        gizmos.circle(
+            Isometry3d::new(
+                transform.translation - Vec3::Y * 0.72,
+                Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+            ),
+            0.34,
+            color,
+        );
     }
 }
 
@@ -1030,6 +1028,15 @@ fn selection_ui(
                                 "Einheiten auswählen und mit rechts auf das Dach klicken.",
                             );
                         }
+                        if building.owned
+                            && building.kind == "barracks"
+                            && ui.button("Bewaffneten Bauern ausbilden").clicked()
+                        {
+                            multiplayer.send(Action::RecruitUnit {
+                                building_id: building.id,
+                                kind: "armed_peasant".into(),
+                            });
+                        }
                         if building.owned && ui.button("Remove building").clicked() {
                             multiplayer.send(Action::RemoveBuilding {
                                 building_id: building.id,
@@ -1066,7 +1073,17 @@ fn selection_ui(
                                                 },
                                             );
                                             ui.vertical(|ui| {
-                                                ui.strong(format!("Einheit {}", unit.number));
+                                                ui.strong(format!(
+                                                    "{} {}",
+                                                    stronghold_map::units::UnitKind::from_name(
+                                                        &unit.kind
+                                                    )
+                                                    .unwrap_or(
+                                                        stronghold_map::units::UnitKind::Lord
+                                                    )
+                                                    .label(),
+                                                    unit.number
+                                                ));
                                                 ui.add(
                                                     egui::ProgressBar::new(unit.health)
                                                         .text(format!(

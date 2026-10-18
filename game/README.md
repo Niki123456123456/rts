@@ -15,8 +15,8 @@ cargo run
 Beim Start erscheint die Stronghold-Lobby mit Verbindungsanzeige. Server-Einstellungen
 sind unter **Connection settings** eingeklappt. Gib einen Titel ein und klicke auf **Create
 Game**, oder bewege die Maus über ein vorhandenes Spiel und klicke auf **Join**.
-Jeder Spieler erhält 20 Einheiten in seiner Farbe und kann nur seine eigenen
-Einheiten auswählen und bewegen. Jede Einheit startet mit Gesundheit `1.0`. Der Client
+Jeder Spieler startet mit einem Burgherrn und kann nur seine eigenen
+Kampfeinheiten auswählen und bewegen. Farbige Bodenringe zeigen die Zugehörigkeit. Jede Einheit startet mit Gesundheit `1.0`. Der Client
 sendet nur Zielpositionen; Bewegung und Terrainhöhe berechnet der Server.
 
 Über **Leave game** unter **Auswahl** kannst du das Spiel verlassen.
@@ -281,3 +281,27 @@ Ladung; ausgewählte Lager zeigen Inhalt und belegte Plätze.
 Die 22 Ressourcenmodelle liegen unter `game/assets/models/resources/` und werden
 mit `python3 game/import-storage.py` aus den Original-Stockpile-Modellen importiert.
 Auch diese Modelle werden nacheinander geladen.
+
+### Einheitentypen und Rekrutierung
+
+Neue Teilnahmen starten mit genau einem **Burgherrn** (`lord.glb`). Wähle eine
+eigene **Steinkaserne** aus und klicke **Bewaffneten Bauern ausbilden**, um einen
+**bewaffneten Bauern** (`armed_peasant.glb`) zu rekrutieren. Er erscheint sofort
+auf einer freien Position vor der Kaserne; deren Rotation dreht den Aufstellbereich
+mit. Ohne freien Platz schlägt die Rekrutierung fehl. Sie ist derzeit kostenlos;
+bis zu 200 Kampfeinheiten pro Spieler sind möglich. Transportbauern bleiben
+automatisch gesteuert und zählen nicht zu diesem Limit.
+
+Beide Typen verwenden ihre Original-Skelettmodelle: Der Burgherr trägt
+`lord_sword.glb`, der bewaffnete Bauer `armed_peasant_fork.glb`. Die Waffen sind
+am rechten Handknochen befestigt. Da die gelieferten Modelle keine passenden
+Clips enthalten, erzeugt `python3 game/import-units.py` eigene Skelettanimationen
+für `idle`, `walking` und `fighting` in `game/assets/models/units/`. Die Clips
+bewegen Arme, Beine und Oberkörper; Waffen folgen der Hand. Animationen laufen
+am Ort, Positionsänderungen berechnet weiterhin ausschließlich der Server.
+
+Der Server repliziert Einheitentyp, Tätigkeit und Blickrichtung. Bewegung startet
+die Laufanimation, Stillstand die Standanimation und ein tatsächlich ausgeführter
+Angriff in Reichweite die Kampfanimation. Übergänge werden über 140 ms überblendet.
+Bestehende Armeen bleiben bei einem Serverupdate erhalten und werden einmalig
+typisiert; für den neuen Start mit einem Burgherrn eine neue Teilnahme beginnen.

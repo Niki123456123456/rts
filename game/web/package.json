@@ -12,7 +12,8 @@
     "test:roof-types": "tsx src/roof-types.test.ts",
     "test:walls": "tsx src/walls.test.ts",
     "test:resources": "tsx src/resources.test.ts",
-    "test:logistics": "tsx src/logistics.test.ts"
+    "test:logistics": "tsx src/logistics.test.ts",
+    "test:combat": "tsx src/combat.test.ts"
   },
   "dependencies": {
     "@clockworklabs/spacetimedb-sdk": "1.1.0"

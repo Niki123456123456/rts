@@ -306,3 +306,20 @@ producers, workers and initialization marker.
 physical starting stock, every producer, worker movement and order rejection,
 deliveries around an obstacle, observer replication, physical costs and rollback,
 demolition, fresh participation and browser snapshots.
+
+### Typed combat units
+
+The additive public `unit_profile` table stores kind (`lord` or `armed_peasant`),
+activity (0 idle / 1 walking / 2 fighting) and normalized facing direction. New
+participants receive one lord. Existing armies are preserved on upgrades and get
+profiles on connection: number 1 becomes a lord, others armed peasants.
+`recruit_unit(building_id, kind)` recruits armed peasants at an own, same-game
+barracks. It validates the type, ownership, army limit (200 excluding workers),
+front spawn positions after rotation, obstacle clearance and unit reservations
+atomically. Recruitment is currently immediate and free. Profiles are removed
+with participation. Activity is computed from actual movement and attack range,
+including switching to idle when the last movement order completes.
+
+`npm --prefix game/web run test:combat` checks starting types, recruitment,
+ownership, free front positions, movement/idle/combat transitions, damage,
+observer replication, browser actions and cleanup against a disposable server.
