@@ -261,6 +261,48 @@ The supply catalog contains 37 civilian buildings, including food chains, raw
 materials, civilian workshops, storage, trade, water and sanitation. All use the
 existing `build` / `build_rotated` reducers with their catalog IDs and logical
 2 m plot dimensions; no new reducers or table migrations are needed. Importing
-these models does not implement resource production or consumption. The real-server
+these models alone does not enable their production chains; quarry, iron mine and saw pit now produce raw materials. The real-server
 building test checks placement, grid alignment, collision, navigation targets,
 combat approach and removal for every newly imported supply kind.
+
+### Resource balances
+
+The additive public `player_resources` table is keyed by participant connection and
+indexed by game. Each participation starts with 20 wood, stone and iron. Native and
+browser snapshots expose only the local participant's balance. Rejoining the same
+active game never replenishes stock; leaving deletes the balance alongside membership.
+For hosted upgrades, missing balances of existing participants are initialized once,
+without modifying any existing table schemas or resetting existing balances.
+
+`BuildingKind::stone_cost()` is the shared source of prices: 1 stone per `stone_wall`
+cell, 5 for each of the seven tower types, zero for other models. All construction
+reducers debit the participant's balance after placement validation. SpacetimeDB
+transactions roll back both buildings and debits if any segment fails or the total
+cost cannot be met. Reused own wall cells are not charged. Demolition has no refund.
+Clients cannot write balances. Construction also debits physical warehouse stock; wood and iron construction costs are not enabled.
+
+`npm --prefix game/web run test:resources` against a disposable local database checks
+starting balances, ownership, atomic rollback, zero balances, wall reuse, repeat joins,
+cleanup and browser snapshot replication.
+
+### Storage and automatic transport
+
+Additive `warehouse_stock`, `producer`, `worker` and private `logistics_player` tables
+keep existing schemas intact. A participation gets one starting stockpile with its
+20/20/20 stock. Existing balances are preserved and moved into storage once on upgrade.
+The shared `logistics` module defines the 24-cell grid, capacities, exact model layout,
+production interval (one item/3 seconds), buffer (20), and carrying capacity (5).
+
+Each quarry, iron mine and saw pit creates one server-controlled peasant in
+`army_unit`, distinguished by a `worker` row. All player order reducers reject these
+units. Production runs in a scheduled one-second reducer; transport uses existing
+50 ms movement, pathfinding, obstacle replanning and unit avoidance. Material enters
+the spendable balance only on delivery. Full, missing or unreachable storage causes
+workers to wait/retry. Storage demolition removes its stock from the balance;
+producer demolition removes its worker. Leaving cleans up physical stock,
+producers, workers and initialization marker.
+
+`npm --prefix game/web run test:logistics` against a disposable local database checks
+physical starting stock, every producer, worker movement and order rejection,
+deliveries around an obstacle, observer replication, physical costs and rollback,
+demolition, fresh participation and browser snapshots.

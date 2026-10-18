@@ -109,13 +109,20 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
+      resources: ready && connected && conn && gameId !== undefined ? (() => {
+        const stock=conn.db.playerResources.connectionId.find(conn.connectionId);
+        return stock?.gameId===gameId ? {wood:stock.wood,stone:stock.stone,iron:stock.iron} : null;
+      })() : null,
       games: ready && connected && conn ? Array.from(conn.db.game.iter())
         .sort((a, b) => a.id < b.id ? -1 : 1)
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
+      warehouses: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.warehouseStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),wood:s.wood,stone:s.stone,iron:s.iron})) : [],
+      workers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.worker.iter()).filter(w=>w.gameId===gameId).map(w=>({unit_id:w.unitId.toString(),source_building:w.sourceBuilding.toString(),resource:w.resource,cargo:w.cargo})) : [],
+      producers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.producer.iter()).filter(p=>p.gameId===gameId).map(p=>({building_id:p.buildingId.toString(),resource:p.resource,buffer:p.buffer})) : [],
       roof_occupants: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.towerOccupant.iter())
         .filter(o => o.gameId === gameId)
         .map(o => ({ unit_id: o.unitId.toString(), building_id: o.buildingId.toString(), slot: o.slot, next_building: o.nextBuilding?.toString() ?? null, next_slot: o.nextSlot })) : [],
@@ -124,7 +131,7 @@ export const strongholdNetwork = {
         .map(b => ({ rotation: conn!.db.buildingRotation.buildingId.find(b.id)?.quarterTurns ?? 0, kind: b.kind, id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],
       units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.armyUnit.iter())
         .filter(u => u.gameId === gameId)
-        .map(u => ({ id: u.id.toString(), number: u.number, color: u.color, health: u.health, owned: u.owner.toHexString() === conn!.connectionId.toHexString(), x: u.x, y: u.y, z: u.z })) : [],
+        .map(u => ({ id: u.id.toString(), number: u.number, color: u.color, health: u.health, owned: u.owner.toHexString() === conn!.connectionId.toHexString() && !conn!.db.worker.unitId.find(u.id), worker: !!conn!.db.worker.unitId.find(u.id), x: u.x, y: u.y, z: u.z })) : [],
     });
   },
 };

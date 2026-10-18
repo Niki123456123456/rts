@@ -30,7 +30,7 @@
     "id": "stockpile",
     "label": "Vorratslager",
     "category": "supply",
-    "source": "stockpile_closed",
+    "source": "stockpile_open",
     "collision": "stockpile_collision",
     "folder": "stockpile",
     "grid": [

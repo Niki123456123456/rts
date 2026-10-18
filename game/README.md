@@ -227,8 +227,8 @@ Der Import verwendet die vollständigen Basismodelle, bevorzugt die geschlossene
 Variante, und vorhandene Kollisionsmodelle. Für Fischteich, Taubenschlag,
 Gemüsebeet und Wassertrog wird eine konservative Box erzeugt. Der gemeinsame
 Katalog liefert Rastergröße, Rotation, Bauvorschau, Auswahl und Bodennavigation.
-Die Modelle sind baubar; Produktionsabläufe und Ressourcenverbrauch sind noch
-nicht implementiert.
+Die Modelle sind baubar. Steinbruch, Eisenmine und Sägegrube produzieren bereits
+Rohstoffe; weitere Produktionsketten sind noch nicht implementiert.
 
 Beim Start lädt eine begrenzte Warteschlange jeweils nur das Modell- und
 Kollisionspaar eines Gebäudes. Ein im Baumenü gewähltes, noch nicht angefordertes
@@ -236,3 +236,48 @@ Gebäude wird als Nächstes geladen. Das verhindert, dass sich die glTF-Texturau
 bei vielen gleichzeitigen Importen auf dem IO-Worker verschachteln und dessen
 Stack im nativen Debug-Build überlaufen. Die vollständige Startwarteschlange wird
 im Test `startup_loads_full_catalog_with_only_one_building_pair_in_flight` geprüft.
+
+### Ressourcen und Baukosten
+
+Jeder neue Spielbeitritt beginnt mit **20 Holz, 20 Stein und 20 Eisen**.
+Oben rechts zeigt die Ressourcenleiste den vom Server bestätigten eigenen Bestand.
+Die Symbole stammen aus `assets/images/Source/ui/ingameui.png`, Reihe 9 ab Spalte 6
+(1-basiert), und werden aus dem unveränderten Atlas unter `game/assets/ui/` angezeigt.
+Während die erste Bestandsmeldung geladen wird, erscheint eine Auslassung statt
+eines geratenen Werts.
+
+Ein Steinmauersegment kostet **1 Stein**, jeder der sieben eigentlichen Turmtypen
+kostet **5 Stein**. Eine Mauerlinie berechnet nur neu gebaute Segmente. Bei belegten
+Baufeldern oder fehlenden Ressourcen wird der vollständige Bauauftrag einschließlich
+aller Abbuchungen zurückgerollt. Die Vorschau wird bei unzureichendem Bestand rot;
+Werkzeughinweise und Bauleiste zeigen die Steinpreise an. Andere Gebäude sind
+vorerst kostenlos. Holz und Eisen werden noch nicht zum Bauen verbraucht.
+Abriss erstattet keine Ressourcen.
+
+Bestände gelten pro Spieler und Spielteilnahme. Ein wiederholter Beitritt zum bereits
+aktiven Spiel setzt sie nicht zurück; beim Verlassen werden sie mit der Teilnahme
+entfernt. Ein neuer Beitritt beginnt wieder mit dem Startbestand.
+
+### Physisches Lager und Produktion
+
+Jeder Spieler erhält ein eigenes Start-Vorratslager nahe seiner Armee. Der Bestand
+liegt darin als sichtbare Holz-, Stein- und Eisenmodelle auf einem inneren Raster
+mit 6×4 Plätzen im Abstand von 2 m. Teilmengen und volle Lagen stellen die Anzahl
+exakt dar. Pro Platz passen 20 Holz, 54 Steine oder 96 Eisen; Ressourcen teilen
+sich keinen Platz. Das Lager verwendet das offene Originalmodell, damit der Inhalt
+sichtbar bleibt. Zusätzliche Vorratslager starten leer. Baukosten entnehmen Stein
+aus den eigenen Lagern. Wird ein Lager zerstört oder abgerissen, geht dessen Inhalt verloren.
+
+**Sägegrube → Holz**, **Steinbruch → Stein**, **Eisenmine → Eisen**: Jeder Betrieb
+erzeugt eine Einheit alle 3 Sekunden und puffert höchstens 20 Einheiten. Beim Bau
+entsteht automatisch ein brauner Transportbauer mit Hut. Er lässt sich nicht auswählen
+oder befehligen und trägt bis zu 5 Einheiten pro Weg. Bauern verwenden dieselben
+serverseitigen Wege, Hindernisse und Abstände wie andere Bodeneinheiten. Sie laufen
+vom Betrieb zu einem erreichbaren eigenen Lager und zurück. Ohne Platz oder
+erreichbares Lager warten sie. Erst die tatsächliche Ablieferung erhöht den
+verfügbaren Bestand. Ausgewählte Betriebe zeigen Puffer und unterwegs befindliche
+Ladung; ausgewählte Lager zeigen Inhalt und belegte Plätze.
+
+Die 22 Ressourcenmodelle liegen unter `game/assets/models/resources/` und werden
+mit `python3 game/import-storage.py` aus den Original-Stockpile-Modellen importiert.
+Auch diese Modelle werden nacheinander geladen.

@@ -6,6 +6,7 @@ pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
 pub mod building_roof;
+pub mod logistics;
 pub mod walls;
 pub use building_catalog::BuildingKind;
 
@@ -13,6 +14,23 @@ pub const MAP_SIZE: f32 = 800.0;
 pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
 /// Grid lines lie at multiples of two metres on both world axes.
 pub const BUILD_GRID_SIZE: f32 = 2.0;
+pub const STARTING_RESOURCE_AMOUNT: u32 = 20;
+
+impl BuildingKind {
+    pub fn stone_cost(self) -> u32 {
+        match self {
+            Self::StoneWall => 1,
+            Self::TowerWooden
+            | Self::TowerLookout
+            | Self::TowerStairwell
+            | Self::TowerSquare
+            | Self::TowerRoundShort
+            | Self::TowerRoundTall
+            | Self::TowerGreat => 5,
+            _ => 0,
+        }
+    }
+}
 
 impl BuildingKind {
     pub fn rotated_grid_size(self, rotation: u8) -> (u16, u16) {

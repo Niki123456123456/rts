@@ -73,6 +73,35 @@ pub struct Participant {
     pub color: u32,
 }
 
+#[derive(Clone)]
+#[spacetimedb::table(name = player_resources, public)]
+pub struct PlayerResources {
+    #[primary_key]
+    pub connection_id: spacetimedb::ConnectionId,
+    #[index(btree)]
+    pub game_id: u64,
+    pub wood: u32,
+    pub stone: u32,
+    pub iron: u32,
+}
+
+// Initialize missing balances only, including players present before this update.
+fn ensure_resources(ctx: &ReducerContext, player: &Participant) -> PlayerResources {
+    ctx.db
+        .player_resources()
+        .connection_id()
+        .find(player.connection_id)
+        .unwrap_or_else(|| {
+            ctx.db.player_resources().insert(PlayerResources {
+                connection_id: player.connection_id,
+                game_id: player.game_id,
+                wood: map::STARTING_RESOURCE_AMOUNT,
+                stone: map::STARTING_RESOURCE_AMOUNT,
+                iron: map::STARTING_RESOURCE_AMOUNT,
+            })
+        })
+}
+
 #[spacetimedb::table(name = building, public)]
 pub struct Building {
     #[primary_key]
@@ -184,6 +213,8 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
             return Err("This connection belongs to another player.".into());
         }
         if player.game_id == game_id {
+            ensure_resources(ctx, &player);
+            ensure_logistics_player(ctx, &player)?;
             return Ok(());
         }
     }
@@ -204,6 +235,14 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         game_id,
         color,
     });
+    ensure_resources(
+        ctx,
+        &ctx.db
+            .participant()
+            .connection_id()
+            .find(connection_id)
+            .unwrap(),
+    );
     // Each army gets a separate formation inside the map.
     let axis = |slot: u32| {
         if slot == 0 {
@@ -255,6 +294,14 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
             target_z: z,
         });
     }
+    ensure_logistics_player(
+        ctx,
+        &ctx.db
+            .participant()
+            .connection_id()
+            .find(connection_id)
+            .unwrap(),
+    )?;
     Ok(())
 }
 
@@ -267,6 +314,7 @@ pub fn leave_game(ctx: &ReducerContext) {
             }
             let units: Vec<_> = ctx.db.army_unit().owner().filter(connection_id).collect();
             for unit in units {
+                ctx.db.worker().unit_id().delete(unit.id);
                 clear_tower(ctx, unit.id);
                 ctx.db.unit_order().unit_id().delete(unit.id);
                 ctx.db.army_unit().id().delete(unit.id);
@@ -283,12 +331,29 @@ pub fn leave_game(ctx: &ReducerContext) {
             replan(ctx, player.game_id);
             ctx.db.participant().connection_id().delete(connection_id);
         }
+        ctx.db
+            .player_resources()
+            .connection_id()
+            .delete(connection_id);
+        ctx.db.logistics_player().connection_id().delete(connection_id);
         ctx.db.player().connection_id().delete(connection_id);
     }
 }
 
 #[spacetimedb::reducer(client_connected)]
 pub fn connected(ctx: &ReducerContext) {
+    for player in ctx.db.participant().iter() {
+        ensure_resources(ctx, &player);
+        if let Err(error) = ensure_logistics_player(ctx, &player) {
+            spacetimedb::log::warn!("{error}");
+        }
+    }
+    for b in ctx.db.building().iter().collect::<Vec<_>>() {
+        if let Err(error) = register_logistics_building(ctx, &b) {
+            spacetimedb::log::warn!("{error}");
+        }
+    }
+    start_production(ctx);
     normalize_roof_slots(ctx);
     if ctx.db.tower_travel().iter().next().is_some() {
         start_tick(ctx);
@@ -566,6 +631,9 @@ fn owned_units(
             if u.game_id != player.game_id || u.owner != player.connection_id {
                 return Err("You can only command your own units in your game.".into());
             }
+            if ctx.db.worker().unit_id().find(id).is_some() {
+                return Err("Transportbauern sind nicht steuerbar.".into());
+            }
             Ok(u)
         })
         .collect()
@@ -578,6 +646,7 @@ fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
         .map_or(0, |row| row.quarter_turns)
 }
 fn delete_building(ctx: &ReducerContext, building_id: u64) {
+    remove_logistics_building(ctx, building_id);
     cancel_surface_routes_through(ctx, building_id);
     ctx.db.building_rotation().building_id().delete(building_id);
     ctx.db.building().id().delete(building_id);
@@ -789,6 +858,7 @@ fn construct(
     building: String,
     quarter_turns: u8,
 ) -> Result<(), String> {
+    ensure_logistics_player(ctx, &participant(ctx)?)?;
     place_building(ctx, x, z, building, quarter_turns)?;
     replan(ctx, participant(ctx)?.game_id);
     Ok(())
@@ -804,6 +874,7 @@ pub fn build_wall(
     end_z: f32,
 ) -> Result<(), String> {
     let player = participant(ctx)?;
+    ensure_logistics_player(ctx, &player)?;
     let line = map::walls::wall_line((start_x, start_z), (end_x, end_z));
     if line.is_empty() {
         return Err("Choose valid wall endpoints inside the map.".into());
@@ -827,11 +898,21 @@ fn place_building(
     building: String,
     quarter_turns: u8,
 ) -> Result<(), String> {
+    place_building_for(ctx, &participant(ctx)?, x, z, building, quarter_turns)
+}
+
+fn place_building_for(
+    ctx: &ReducerContext,
+    player: &Participant,
+    x: f32,
+    z: f32,
+    building: String,
+    quarter_turns: u8,
+) -> Result<(), String> {
     if quarter_turns > 3 {
         return Err("Rotation must be 0, 1, 2 or 3 quarter turns.".into());
     }
     let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
-    let player = participant(ctx)?;
     let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
     let shape = kind.rotated_build_footprint(x, z, quarter_turns);
     if !shape.in_build_area() {
@@ -885,6 +966,18 @@ fn place_building(
     {
         return Err("Place the building on level ground.".into());
     }
+    let mut resources = ensure_resources(ctx, &player);
+    let cost = kind.stone_cost();
+    resources.stone = resources.stone.checked_sub(cost).ok_or_else(|| {
+        format!(
+            "Nicht genug Stein: {} benötigt, {} vorhanden.",
+            cost, resources.stone
+        )
+    })?;
+    if cost > 0 {
+        debit_stone_stock(ctx, &player, cost)?;
+        ctx.db.player_resources().connection_id().update(resources);
+    }
     let placed = ctx.db.building().insert(Building {
         id: 0,
         game_id: player.game_id,
@@ -901,6 +994,7 @@ fn place_building(
         game_id: placed.game_id,
         quarter_turns,
     });
+    register_logistics_building(ctx, &placed)?;
     Ok(())
 }
 
@@ -950,3 +1044,5 @@ pub fn attack_building(
 
 include!("walls.rs");
 include!("tower.rs");
+
+include!("logistics.rs");

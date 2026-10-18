@@ -14,6 +14,46 @@ pub struct Snapshot {
     pub buildings: Vec<Building>,
     #[serde(default)]
     pub roof_occupants: Vec<RoofOccupant>,
+    #[serde(default)]
+    pub resources: Option<Resources>,
+    #[serde(default)]
+    pub warehouses: Vec<Warehouse>,
+    #[serde(default)]
+    pub workers: Vec<WorkerState>,
+    #[serde(default)]
+    pub producers: Vec<ProducerState>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub struct Resources {
+    pub wood: u32,
+    pub stone: u32,
+    pub iron: u32,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Warehouse {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub wood: u32,
+    pub stone: u32,
+    pub iron: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct WorkerState {
+    #[serde(deserialize_with = "id")]
+    pub unit_id: u64,
+    #[serde(deserialize_with = "id")]
+    pub source_building: u64,
+    pub resource: u8,
+    pub cargo: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct ProducerState {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub resource: u8,
+    pub buffer: u32,
 }
 
 #[derive(Clone, Deserialize)]
@@ -31,6 +71,8 @@ pub struct Unit {
     pub color: u32,
     pub health: f32,
     pub owned: bool,
+    #[serde(default)]
+    pub worker: bool,
     pub x: f32,
     pub y: f32,
     pub z: f32,
@@ -443,10 +485,60 @@ mod backend {
                                 format!("SELECT * FROM building WHERE game_id = {id}"),
                                 format!("SELECT * FROM building_rotation WHERE game_id = {id}"),
                                 format!("SELECT * FROM tower_occupant WHERE game_id = {id}"),
+                                format!("SELECT * FROM player_resources WHERE game_id = {id}"),
+                                format!("SELECT * FROM warehouse_stock WHERE game_id = {id}"),
+                                format!("SELECT * FROM worker WHERE game_id = {id}"),
+                                format!("SELECT * FROM producer WHERE game_id = {id}"),
                             ]),
                     );
                 }
             }
+            snapshot.resources = conn
+                .db
+                .player_resources()
+                .connection_id()
+                .find(&conn.connection_id())
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::Resources {
+                    wood: r.wood,
+                    stone: r.stone,
+                    iron: r.iron,
+                });
+            snapshot.warehouses = conn
+                .db
+                .warehouse_stock()
+                .iter()
+                .filter(|s| Some(s.game_id) == snapshot.game_id)
+                .map(|s| super::Warehouse {
+                    building_id: s.building_id,
+                    wood: s.wood,
+                    stone: s.stone,
+                    iron: s.iron,
+                })
+                .collect();
+            snapshot.workers = conn
+                .db
+                .worker()
+                .iter()
+                .filter(|w| Some(w.game_id) == snapshot.game_id)
+                .map(|w| super::WorkerState {
+                    unit_id: w.unit_id,
+                    source_building: w.source_building,
+                    resource: w.resource,
+                    cargo: w.cargo,
+                })
+                .collect();
+            snapshot.producers = conn
+                .db
+                .producer()
+                .iter()
+                .filter(|p| Some(p.game_id) == snapshot.game_id)
+                .map(|p| super::ProducerState {
+                    building_id: p.building_id,
+                    resource: p.resource,
+                    buffer: p.buffer,
+                })
+                .collect();
             snapshot.units = conn
                 .db
                 .army_unit()
@@ -457,7 +549,9 @@ mod backend {
                     number: u.number as usize,
                     color: u.color,
                     health: u.health,
-                    owned: u.owner == conn.connection_id(),
+                    owned: u.owner == conn.connection_id()
+                        && conn.db.worker().unit_id().find(&u.id).is_none(),
+                    worker: conn.db.worker().unit_id().find(&u.id).is_some(),
                     x: u.x,
                     y: u.y,
                     z: u.z,

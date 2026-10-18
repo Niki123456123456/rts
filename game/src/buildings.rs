@@ -6,6 +6,7 @@ pub(crate) struct BuildingInteraction {
     pub placing: Option<BuildingKind>,
     pub rotation: u8,
     pub wall_start: Option<map::Point>,
+    pub wall_cost: u32,
     pub category: Option<&'static str>,
     pub selected: Option<u64>,
     pub consumed: bool,
@@ -258,6 +259,11 @@ fn placement_valid(
 ) -> bool {
     let shape = kind.rotated_build_footprint(x, z, rotation);
     shape.in_build_area()
+        && (kind.stone_cost() == 0
+            || multiplayer
+                .snapshot
+                .resources
+                .is_some_and(|s| s.stone >= kind.stone_cost()))
         && !multiplayer.snapshot.buildings.iter().any(|b| {
             shape.overlaps(
                 BuildingKind::from_name(&b.kind)
@@ -383,7 +389,13 @@ pub(crate) fn building_input(
                 .iter()
                 .filter(|b| b.kind == "stone_wall")
                 .count();
+            state.wall_cost =
+                line.iter().filter(|p| !existing(p.0, p.1)).count() as u32 * kind.stone_cost();
             let valid = !line.is_empty()
+                && multiplayer
+                    .snapshot
+                    .resources
+                    .is_some_and(|s| s.stone >= state.wall_cost)
                 && wall_count + line.iter().filter(|p| !existing(p.0, p.1)).count()
                     <= map::walls::MAX_WALL_SEGMENTS
                 && line.iter().all(|&(x, z)| {
@@ -806,17 +818,18 @@ pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: boo
         ui.visuals().text_color(),
     );
     if kind == BuildingKind::StoneWall {
-        return response.on_hover_text("Steinmauer: 2×2-m-Segmente. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
+        return response.on_hover_text("Steinmauer: 2×2-m-Segmente, je 1 Stein. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
     }
     let (width, depth) = kind.grid_size();
     response
         .on_hover_text(format!(
-            "{}: {}×{} Felder ({}×{} m). R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
+            "{}: {}×{} Felder ({}×{} m). Kosten: {} Stein. R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
             kind.label(),
             width,
             depth,
             width * 2,
-            depth * 2
+            depth * 2,
+            kind.stone_cost()
         ))
         .clicked()
 }

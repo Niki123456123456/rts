@@ -1,9 +1,12 @@
 //! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
 
 mod buildings;
+mod logistics;
 #[cfg(not(target_arch = "wasm32"))]
 mod module_bindings;
 mod network;
+mod resources;
+mod storage_models;
 use buildings::BuildingInteraction;
 
 use network::{Action, Multiplayer};
@@ -45,7 +48,13 @@ fn main() {
         .init_resource::<BuildingInteraction>()
         .add_systems(
             Startup,
-            (setup, buildings::setup_buildings, connect_multiplayer),
+            (
+                setup,
+                buildings::setup_buildings,
+                resources::setup_resource_ui,
+                logistics::setup_storage_assets,
+                connect_multiplayer,
+            ),
         )
         .add_systems(
             Update,
@@ -53,6 +62,8 @@ fn main() {
                 sync_multiplayer,
                 buildings::load_building_models,
                 buildings::sync_buildings,
+                logistics::load_storage_assets,
+                logistics::sync_storage_visuals,
                 buildings::building_input,
                 select_unit,
                 movement_input,
@@ -67,6 +78,7 @@ fn main() {
             EguiPrimaryContextPass,
             (
                 lobby_ui,
+                resources::resource_ui,
                 selection_ui,
                 selection_rectangle_ui,
                 buildings::attack_hover_ui,
@@ -78,6 +90,7 @@ fn main() {
 
 #[derive(Component, Default)]
 struct Unit {
+    worker: bool,
     id: u64,
     number: usize,
     color: u32,
@@ -152,6 +165,8 @@ struct MovementDrag {
 struct UnitMaterials {
     colors: std::collections::HashMap<u32, UnitPalette>,
     mesh: Handle<Mesh>,
+    worker: Handle<StandardMaterial>,
+    hat: Handle<Mesh>,
 }
 
 struct UnitPalette {
@@ -239,6 +254,8 @@ fn setup(
         Ground,
     ));
     commands.insert_resource(UnitMaterials {
+        worker: materials.add(Color::srgb(0.55, 0.36, 0.17)),
+        hat: meshes.add(Cylinder::new(0.4, 0.10)),
         colors: default(),
         mesh: meshes.add(Capsule3d::new(0.25, 1.25)),
     });
@@ -606,15 +623,24 @@ fn sync_multiplayer(
             transform.translation = Vec3::new(row.x, row.y, row.z);
             unit.health = row.health;
             unit.owned = row.owned;
+            unit.worker = row.worker;
+            if row.worker {
+                selected.0.retain(|e| *e != entity);
+            }
         } else {
             commands.entity(entity).despawn();
             selected.0.retain(|selected| *selected != entity);
         }
     }
     for row in remaining.values() {
-        let material = materials.palette(row.color, &mut assets).normal.clone();
-        commands.spawn((
+        let material = if row.worker {
+            materials.worker.clone()
+        } else {
+            materials.palette(row.color, &mut assets).normal.clone()
+        };
+        let mut entity = commands.spawn((
             Unit {
+                worker: row.worker,
                 id: row.id,
                 number: row.number,
                 color: row.color,
@@ -625,6 +651,15 @@ fn sync_multiplayer(
             MeshMaterial3d(material),
             Transform::from_xyz(row.x, row.y, row.z),
         ));
+        if row.worker {
+            entity.with_children(|parent| {
+                parent.spawn((
+                    Mesh3d(materials.hat.clone()),
+                    MeshMaterial3d(materials.worker.clone()),
+                    Transform::from_xyz(0., 0.85, 0.),
+                ));
+            });
+        }
     }
 }
 
@@ -786,6 +821,9 @@ fn highlight_selection(
         return;
     }
     for (entity, unit, mut material) in &mut units {
+        if unit.worker {
+            continue;
+        }
         let Some(palette) = materials.colors.get(&unit.color) else {
             continue;
         };
@@ -873,6 +911,7 @@ fn selection_ui(
                                         building_interaction.selected = None;
                                         building_interaction.rotation = 0;
                                         building_interaction.wall_start = None;
+                                        building_interaction.wall_cost = 0;
                                     }
                                 }
                             });
@@ -882,15 +921,20 @@ fn selection_ui(
                 if let Some(kind) = building_interaction.placing {
                     if kind == stronghold_map::BuildingKind::StoneWall {
                         ui.label(if building_interaction.wall_start.is_some() {
-                            "Mauer: Endpunkt anklicken. Rechtsklick / Esc bricht ab."
+                            format!(
+                                "Mauer: Endpunkt anklicken. {} Stein. Rechtsklick / Esc bricht ab.",
+                                building_interaction.wall_cost
+                            )
                         } else {
-                            "Mauer: Startpunkt anklicken, dann Endpunkt wählen."
+                            "Mauer: Startpunkt anklicken, dann Endpunkt wählen. 1 Stein je Segment."
+                                .into()
                         });
                     } else {
                         ui.label(format!(
-                            "{} ({}°) platzieren. R: 90° drehen. Rechtsklick / Esc bricht ab.",
+                            "{} ({}°), {} Stein. R: 90° drehen. Rechtsklick / Esc bricht ab.",
                             kind.label(),
-                            building_interaction.rotation as u16 * 90
+                            building_interaction.rotation as u16 * 90,
+                            kind.stone_cost()
                         ));
                     }
                 } else if let Some(building) = building_interaction
@@ -923,6 +967,47 @@ fn selection_ui(
                                 .text(format!("Health {:.0}%", building.health * 100.0))
                                 .desired_width(160.0),
                         );
+                        if let Some(stock) = multiplayer
+                            .snapshot
+                            .warehouses
+                            .iter()
+                            .find(|s| s.building_id == building.id)
+                        {
+                            ui.label(format!(
+                                "Holz {} · Stein {} · Eisen {} · {}/24 Lagerplätze",
+                                stock.wood,
+                                stock.stone,
+                                stock.iron,
+                                stronghold_map::logistics::storage_cells([
+                                    stock.wood,
+                                    stock.stone,
+                                    stock.iron
+                                ])
+                            ));
+                        }
+                        if let Some(producer) = multiplayer
+                            .snapshot
+                            .producers
+                            .iter()
+                            .find(|p| p.building_id == building.id)
+                        {
+                            let resource = match producer.resource {
+                                0 => "Holz",
+                                1 => "Stein",
+                                _ => "Eisen",
+                            };
+                            let cargo: u32 = multiplayer
+                                .snapshot
+                                .workers
+                                .iter()
+                                .filter(|w| w.source_building == building.id)
+                                .map(|w| w.cargo)
+                                .sum();
+                            ui.label(format!(
+                                "{resource}: 1 je 3 s · Abholung: {} · Unterwegs: {cargo}",
+                                producer.buffer
+                            ));
+                        }
                         if let Some(profile) =
                             stronghold_map::BuildingKind::from_name(&building.kind)
                                 .and_then(stronghold_map::BuildingKind::roof_profile)
