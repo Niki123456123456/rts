@@ -112,6 +112,12 @@ def main():
             generator = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(generator)
             minimum, maximum = generator.generate()
+        elif item.get('procedural') == 'apple_farm':
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('apple_farm', ROOT / 'create-apple-farm.py')
+            generator = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(generator)
+            minimum, maximum = generator.generate(item, unpack, pack, box_collision)
         else:
             visual, tail = unpack((SOURCE / (item['source'] + '.glb')).read_bytes())
             tail = embed_material_textures(visual, tail, item.get('material_textures'))

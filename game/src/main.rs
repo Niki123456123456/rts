@@ -978,6 +978,7 @@ fn selection_ui(
                                 0 => "Holz",
                                 1 => "Stein",
                                 5 => "Käse",
+                                3 => "Äpfel",
                                 _ => "Eisen",
                             };
                             let cargo: u32 = multiplayer

@@ -45,6 +45,7 @@ pub enum Commodity {
     Wood = 0,
     Stone = 1,
     Iron = 2,
+    Apples = 3,
     Cheese = 5,
 }
 impl Commodity {
@@ -53,6 +54,7 @@ impl Commodity {
             0 => Some(Self::Wood),
             1 => Some(Self::Stone),
             2 => Some(Self::Iron),
+            3 => Some(Self::Apples),
             5 => Some(Self::Cheese),
             _ => None,
         }
@@ -62,8 +64,11 @@ impl Commodity {
             Self::Wood => 20,
             Self::Stone => 54,
             Self::Iron => 96,
-            Self::Cheese => FOOD_CAPACITY_PER_KIND,
+            Self::Apples | Self::Cheese => FOOD_CAPACITY_PER_KIND,
         }
+    }
+    pub fn is_food(self) -> bool {
+        matches!(self, Self::Apples | Self::Cheese)
     }
 }
 impl BuildingKind {
@@ -73,6 +78,7 @@ impl BuildingKind {
             Self::Quarry => Some(Commodity::Stone),
             Self::IronMine => Some(Commodity::Iron),
             Self::DairyFarm => Some(Commodity::Cheese),
+            Self::AppleFarm => Some(Commodity::Apples),
             _ => None,
         }
     }
@@ -85,7 +91,7 @@ pub fn storage_cells(stock: [u32; 3]) -> u64 {
         .sum()
 }
 pub fn can_store(mut stock: [u32; 3], resource: Commodity, amount: u32) -> bool {
-    if resource == Commodity::Cheese {
+    if resource.is_food() {
         return false;
     }
     let Some(sum) = stock[resource as usize].checked_add(amount) else {
@@ -165,7 +171,9 @@ pub fn stock_visuals(stock: [u32; 3]) -> Vec<StockVisual> {
                         });
                     }
                 }
-                Commodity::Cheese => unreachable!("Food is stored in granaries"),
+                Commodity::Apples | Commodity::Cheese => {
+                    unreachable!("Food is stored in granaries")
+                }
             }
             amount -= count;
             cell += 1;

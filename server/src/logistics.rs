@@ -12,6 +12,27 @@ pub struct GranaryStock {
     pub cheese: u32,
     pub meat: u32,
 }
+impl GranaryStock {
+    fn food_amount(&self, resource: Commodity) -> Option<u32> {
+        match resource {
+            Commodity::Apples => Some(self.apples),
+            Commodity::Cheese => Some(self.cheese),
+            _ => None,
+        }
+    }
+    fn can_store_food(&self, resource: Commodity, amount: u32) -> bool {
+        self.food_amount(resource)
+            .and_then(|n| n.checked_add(amount))
+            .is_some_and(|n| n <= economy::FOOD_CAPACITY_PER_KIND)
+    }
+    fn add_food(&mut self, resource: Commodity, amount: u32) {
+        match resource {
+            Commodity::Apples => self.apples += amount,
+            Commodity::Cheese => self.cheese += amount,
+            _ => unreachable!("Not a food commodity"),
+        }
+    }
+}
 #[spacetimedb::table(name = granary_player)]
 pub struct GranaryPlayer {
     #[primary_key]
@@ -37,7 +58,7 @@ impl WarehouseStock {
             Commodity::Wood => self.wood += n,
             Commodity::Stone => self.stone += n,
             Commodity::Iron => self.iron += n,
-            Commodity::Cheese => unreachable!("Food belongs in granaries"),
+            Commodity::Apples | Commodity::Cheese => unreachable!("Food belongs in granaries"),
         }
     }
 }
@@ -140,17 +161,12 @@ fn storage_targets(
     resource: Commodity,
     amount: u32,
 ) -> Vec<Building> {
-    let ids: Vec<_> = if resource == Commodity::Cheese {
+    let ids: Vec<_> = if resource.is_food() {
         ctx.db
             .granary_stock()
             .game_id()
             .filter(u.game_id)
-            .filter(|s| {
-                s.owner == u.owner
-                    && s.cheese
-                        .checked_add(amount)
-                        .is_some_and(|n| n <= economy::FOOD_CAPACITY_PER_KIND)
-            })
+            .filter(|s| s.owner == u.owner && s.can_store_food(resource, amount))
             .map(|s| s.building_id)
             .collect()
     } else {
@@ -178,17 +194,13 @@ fn deliver_resource(
     resource: Commodity,
     amount: u32,
 ) -> bool {
-    if resource == Commodity::Cheese {
+    if resource.is_food() {
         let Some(mut stock) = ctx.db.granary_stock().building_id().find(id).filter(|s| {
-            s.owner == u.owner
-                && s.game_id == u.game_id
-                && s.cheese
-                    .checked_add(amount)
-                    .is_some_and(|n| n <= economy::FOOD_CAPACITY_PER_KIND)
+            s.owner == u.owner && s.game_id == u.game_id && s.can_store_food(resource, amount)
         }) else {
             return false;
         };
-        stock.cheese += amount;
+        stock.add_food(resource, amount);
         ctx.db.granary_stock().building_id().update(stock);
     } else {
         let Some(mut stock) = ctx
@@ -212,7 +224,7 @@ fn deliver_resource(
             Commodity::Wood => balance.wood += amount,
             Commodity::Stone => balance.stone += amount,
             Commodity::Iron => balance.iron += amount,
-            Commodity::Cheese => unreachable!(),
+            Commodity::Apples | Commodity::Cheese => unreachable!(),
         }
         ctx.db.player_resources().connection_id().update(balance);
     }
@@ -512,20 +524,22 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
             .filter(|p| p.buffer > 0)
         {
             let amount = p.buffer.min(economy::CARRY_CAPACITY);
-            let minimum = if resource == Commodity::Cheese {
-                1
-            } else {
-                amount
-            };
+            let minimum = if resource.is_food() { 1 } else { amount };
             for target in storage_targets(ctx, &u, resource, minimum) {
-                let amount = if resource == Commodity::Cheese {
+                let amount = if resource.is_food() {
                     let stock = ctx
                         .db
                         .granary_stock()
                         .building_id()
                         .find(target.id)
                         .unwrap();
-                    amount.min(economy::FOOD_CAPACITY_PER_KIND.saturating_sub(stock.cheese))
+                    amount.min(
+                        economy::FOOD_CAPACITY_PER_KIND.saturating_sub(
+                            stock
+                                .food_amount(resource)
+                                .unwrap_or(economy::FOOD_CAPACITY_PER_KIND),
+                        ),
+                    )
                 } else {
                     amount
                 };

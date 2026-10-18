@@ -228,7 +228,7 @@ Variante, und vorhandene Kollisionsmodelle. Für Fischteich, Taubenschlag,
 Gemüsebeet und Wassertrog wird eine konservative Box erzeugt. Der gemeinsame
 Katalog liefert Rastergröße, Rotation, Bauvorschau, Auswahl und Bodennavigation.
 Die Modelle sind baubar. Steinbruch, Eisenmine und Holzfällerhütte produzieren
-Rohstoffe, die Käserei produziert Käse; weitere Produktionsketten sind noch nicht
+Rohstoffe, Käserei und Obstgarten produzieren Käse beziehungsweise Äpfel; weitere Produktionsketten sind noch nicht
 implementiert.
 
 Beim Start lädt eine begrenzte Warteschlange jeweils nur das Modell- und
@@ -248,7 +248,7 @@ Die im alten Mesh fehlenden Materialien werden beim Import eingebettet:
 `stone_mossy.png` für die Wände (Ersatz für die nicht enthaltene
 `hovel_small.bmp`) und `hovel_small_roof_2.alphatest.png` für das Strohdach.
 Nur Gebäude mit tatsächlicher Produktion (Steinbruch, Eisenmine,
-Holzfällerhütte und Käserei) belegen je einen Bauern. Befestigungen, Vorratslager,
+Holzfällerhütte, Käserei und Obstgarten) belegen je einen Bauern. Befestigungen, Vorratslager,
 Kornspeicher und Kaserne benötigen keine Bauern. Oben rechts steht beim
 Bauernsymbol **belegt/Kapazität**, etwa **4/8**. Man beginnt bei **0/0**; eine Unterkunft ist erst für Produktionsgebäude nötig.
 Abriss oder Zerstörung gibt den belegten Bauern frei; bei Unterkünften sinkt die
@@ -281,6 +281,21 @@ Bestände gelten pro Spieler und Spielteilnahme. Ein wiederholter Beitritt zum b
 aktiven Spiel setzt sie nicht zurück; beim Verlassen werden sie mit der Teilnahme
 entfernt. Ein neuer Beitritt beginnt wieder ohne Lager und Bestand; die Gabe gibt es erst
 beim Bau des ersten Lagers dieser neuen Teilnahme.
+
+### Obstgarten mit acht Apfelbäumen
+
+Der **Obstgarten** (`farm_apple.glb`, Versorgung, Symbol Zeile 3/Spalte 10)
+verwendet das originale Farmgebäude und genau acht `apple_tree_apples.glb`-Bäume
+in einem Ring darum. Gebäude, Baumgeometrie und Texturen bleiben erhalten;
+die Blätter verwenden Alpha-Masking. Alle Bäume sind direkt in die gemeinsame
+Szene eingebettet und drehen sich mit dem Gebäude. Das reservierte Grundstück
+ist 8×8 Rasterfelder (16×16 m) groß und umfasst alle Baumkronen.
+
+Ein Obstgarten belegt einen Bauern und erzeugt 1 Apfel je 3 Sekunden. Sein
+Transportbauer liefert ausschließlich zum eigenen Kornspeicher (bis zu 24 Äpfel
+je Speicher). Ohne Platz wartet er; nach Abriss/Neubau eines Kornspeichers findet
+er einen neuen Weg. Import: `python3 game/import-buildings.py` (Komposition in
+`create-apple-farm.py`). Test: `npm --prefix game/web run test:orchard`.
 
 ### Käserei mit Kuhweide
 

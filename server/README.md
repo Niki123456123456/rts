@@ -268,7 +268,7 @@ combat approach and removal for every newly imported supply kind.
 ### Peasant capacity
 
 `housing` imports `hovel_small.glb` on a 3×3-cell plot and adds four peasant
-places. Only actual resource producers (quarry, iron mine, saw pit and dairy farm) occupy one
+places. Only actual resource producers (quarry, iron mine, saw pit, dairy farm and apple farm) occupy one
 place each. Fortifications, storage, granaries and barracks employ no peasants.
 Participants start at 0/0; housing itself needs no worker or resources.
 Shared `population::Population` derives used/capacity from surviving owned
@@ -308,7 +308,7 @@ gets 5 apples, bread, cheese and meat. Further granaries/rebuilds are empty;
 demolition deletes their food, and leaving clears the gift marker. Existing table
 schemas and construction balances are unchanged. Native and browser snapshots
 sum only owned granary food in the active game into the seven-resource display;
-all players can see replicated physical food stacks. The dairy farm produces cheese; other food production and consumption are not yet enabled. `npm --prefix game/web run test:food` checks gifts,
+all players can see replicated physical food stacks. Dairy and apple farms produce cheese and apples; other food production and consumption are not yet enabled. `npm --prefix game/web run test:food` checks gifts,
 ownership, observer replication, demolition, repeated joins and browser snapshots.
 
 Additive `warehouse_stock`, `producer`, `worker` and private `logistics_player` tables
@@ -417,3 +417,13 @@ routing and balances. Storage removal clears worker destinations for both storag
 kinds, allowing rerouting to replacements. No table schema changes are required.
 `npm --prefix game/web run test:dairy` checks workforce, plot occupancy, production,
 physical delivery, capacity, observer/browser replication and demolition.
+
+### Apple orchard
+
+`apple_farm` is a one-peasant producer of apples (commodity ID 3), one item per
+3 seconds. Its 16×16 m plot reserves the building and eight surrounding apple
+trees. The shared food transport path handles both apples and cheese, using the
+corresponding granary field, per-food capacity 24, partial final pickups and
+rerouting after storage demolition. Existing schemas and balances are unchanged.
+`npm --prefix game/web run test:orchard` checks production, construction occupancy,
+granary delivery/capacity, observer/browser replication and cleanup.

@@ -1068,6 +1068,8 @@ mod tests {
         for kind in BuildingKind::ALL {
             let assets = app.world().resource::<AssetServer>();
             let visual: Handle<WorldAsset> = assets.load(kind.scene());
+            let orchard: Option<Handle<bevy::gltf::Gltf>> = (kind == BuildingKind::AppleFarm)
+                .then(|| assets.load(kind.scene().split('#').next().unwrap()));
             let collision: Handle<Mesh> = assets.load(kind.collision());
             let roof_mesh: Option<Handle<Mesh>> = kind.roof_profile().map(|_| {
                 let primitive = match kind {
@@ -1085,6 +1087,9 @@ mod tests {
                 app.update();
                 let assets = app.world().resource::<AssetServer>();
                 if assets.is_loaded_with_dependencies(visual.id())
+                    && orchard
+                        .as_ref()
+                        .is_none_or(|h| assets.is_loaded_with_dependencies(h.id()))
                     && assets.is_loaded_with_dependencies(collision.id())
                     && roof_mesh
                         .as_ref()
@@ -1101,6 +1106,32 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(10));
             }
             let materials = app.world().resource::<Assets<bevy::gltf::GltfMaterial>>();
+            if let Some(handle) = orchard {
+                let gltfs = app.world().resource::<Assets<bevy::gltf::Gltf>>();
+                let gltf = gltfs.get(&handle).unwrap();
+                assert_eq!(
+                    gltf.named_nodes
+                        .keys()
+                        .filter(|name| name.starts_with("AppleTree_"))
+                        .count(),
+                    8,
+                    "The orchard must include exactly eight apple trees"
+                );
+                let leaf: Handle<bevy::gltf::GltfMaterial> =
+                    app.world().resource::<AssetServer>().load(format!(
+                        "{}#Material7",
+                        kind.scene().split('#').next().unwrap()
+                    ));
+                let leaf = materials.get(&leaf).unwrap();
+                assert!(
+                    matches!(leaf.alpha_mode, AlphaMode::Mask(_)),
+                    "Leaves need transparent cutouts"
+                );
+                assert!(
+                    leaf.base_color_texture.is_some(),
+                    "Apple trees must retain their original texture"
+                );
+            }
             if kind == BuildingKind::Housing {
                 let server = app.world().resource::<AssetServer>();
                 let images = app.world().resource::<Assets<Image>>();
@@ -1119,10 +1150,11 @@ mod tests {
                 }
             }
             assert!(
-                materials
-                    .iter()
-                    .all(|(_, material)| material.alpha_mode == AlphaMode::Opaque),
-                "Building walls must not use the DDS data alpha as transparency"
+                materials.iter().all(|(_, material)| matches!(
+                    material.alpha_mode,
+                    AlphaMode::Opaque | AlphaMode::Mask(_)
+                )),
+                "Building walls must be opaque; tree foliage may use alpha masking"
             );
             let meshes = app.world().resource::<Assets<Mesh>>();
             if let Some(handle) = roof_mesh {

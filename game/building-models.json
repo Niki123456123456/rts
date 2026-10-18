@@ -295,8 +295,21 @@
     "collision": "farm_apple_collision",
     "folder": "apple_farm",
     "grid": [
-      2,
-      2
+      8,
+      8
+    ],
+    "procedural": "apple_farm",
+    "collision_bounds": [
+      [
+        -611.7632598876953,
+        0,
+        -993.5983734130859
+      ],
+      [
+        988.2367401123047,
+        550,
+        606.4016265869141
+      ]
     ]
   },
   {
