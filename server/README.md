@@ -323,3 +323,27 @@ including switching to idle when the last movement order completes.
 `npm --prefix game/web run test:combat` checks starting types, recruitment,
 ownership, free front positions, movement/idle/combat transitions, damage,
 observer replication, browser actions and cleanup against a disposable server.
+
+### Unit melee and automatic defense
+
+The additive private `unit_engagement` table tracks the selected enemy group,
+current target, automatic/manual mode and return position. `attack_units` validates
+command ownership, same-game hostile combatants, accessible surfaces and reachable
+approach slots. All other explicit unit commands cancel the engagement transactionally.
+Group connectivity and distances live in `shared/src/combat.rs` and are shared with
+the client's hover preview. Groups use 3 m spatial links and never cross ownership.
+
+`combat_tick` runs every 250 ms while opposing combatants or returning units exist.
+Idle units acquire reachable enemies within 8 m; automatic pursuit has a 16 m leash.
+Approach slots use standard ground navigation, collision avoidance and reservations;
+rear rows wait for melee space. Contact needs range <=1.05 m, height difference
+<=0.6 m and unobstructed ground line of sight (or the same roof). Damage is resolved
+simultaneously each scan: lord 0.22/s, armed peasant 0.14/s. A unit at zero health
+releases its movement, profile, engagement and roof reservations. Workers do not
+participate. Returning units find a free location near their original position.
+The scan scheduler stops when no opposing armies or return orders remain.
+
+`npm --prefix game/web run test:melee` checks manual group attacks, reciprocal
+combat/animation states, damage, deaths, ownership, automatic acquisition and return,
+moving targets, pursuit limits, explicit-command override, wall navigation and
+browser attack actions against a disposable local database.

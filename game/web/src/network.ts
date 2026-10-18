@@ -10,6 +10,7 @@ type Action =
   | { action: 'build_wall'; start_x: number; start_z: number; end_x: number; end_z: number }
   | { action: 'remove_building'; building_id: string }
   | { action: 'move_to_roof'; unit_ids: string[]; building_id: string; x: number; z: number }
+  | { action: 'attack_units'; unit_ids: string[]; target_unit_id: string }
   | { action: 'attack_building'; unit_ids: string[]; building_id: string }
   | { action: 'formation_targets'; unit_ids: string[]; start_x: number; start_z: number; end_x: number; end_z: number }
   | { action: 'targets'; unit_ids: string[]; x: number; z: number };
@@ -72,6 +73,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onMoveToRoof(result);
   connection.reducers.onRemoveBuilding(result);
   connection.reducers.onAttackBuilding(result);
+  connection.reducers.onAttackUnits(result);
   connection.reducers.onRecruitUnit(result);
 }
 
@@ -98,6 +100,7 @@ export const strongholdNetwork = {
       case 'build_wall': conn.reducers.buildWall(action.start_x, action.start_z, action.end_x, action.end_z); break;
       case 'remove_building': conn.reducers.removeBuilding(BigInt(action.building_id)); break;
       case 'move_to_roof': conn.reducers.moveToRoof(action.unit_ids.map(BigInt), BigInt(action.building_id), action.x, action.z); break;
+      case 'attack_units': conn.reducers.attackUnits(action.unit_ids.map(BigInt), BigInt(action.target_unit_id)); break;
       case 'attack_building': conn.reducers.attackBuilding(action.unit_ids.map(BigInt), BigInt(action.building_id)); break;
       case 'formation_targets': conn.reducers.setFormationTargets(action.unit_ids.map(BigInt), action.start_x, action.start_z, action.end_x, action.end_z); break;
       case 'targets': conn.reducers.setTargets(action.unit_ids.map(BigInt), action.x, action.z); break;

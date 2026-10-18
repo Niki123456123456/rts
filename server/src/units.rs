@@ -21,6 +21,7 @@ fn register_combat_unit(ctx: &ReducerContext, u: &ArmyUnit, kind: map::units::Un
         facing_x: 0.,
         facing_z: -1.,
     });
+    start_combat_scan(ctx);
 }
 fn update_unit_activity(
     ctx: &ReducerContext,
@@ -57,6 +58,10 @@ fn update_unit_activity(
                     facing = (b.x - u.x, b.z - u.z);
                 }
             }
+        }
+        if let Some(direction) = unit_combat_facing(ctx, &u) {
+            activity = 2;
+            facing = direction;
         }
         let length = map::distance((0., 0.), facing);
         let direction = if length > 0.00001 {

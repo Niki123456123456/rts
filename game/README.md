@@ -305,3 +305,30 @@ die Laufanimation, Stillstand die Standanimation und ein tatsächlich ausgeführ
 Angriff in Reichweite die Kampfanimation. Übergänge werden über 140 ms überblendet.
 Bestehende Armeen bleiben bei einem Serverupdate erhalten und werden einmalig
 typisiert; für den neuen Start mit einem Burgherrn eine neue Teilnahme beginnen.
+
+### Kampf gegen Einheiten
+
+Wähle eigene Kampfeinheiten und klicke mit rechts auf eine gegnerische Einheit.
+Zusammenstehende Gegner gehören zu einer Gruppe, wenn sie über Nachbarn mit
+höchstens 3 m Abstand verbunden sind; verschiedene Höhen werden berücksichtigt.
+Rote Ringe und die Gegneranzahl zeigen vor dem Klick, welche Gruppe gemeint ist.
+Angreifer verteilen sich auf freie Nahkampfplätze und wechseln nach dem Tod eines
+Gegners zum nächsten Mitglied der angeklickten Gruppe. Entfernte Gegner gehören
+nicht automatisch zu diesem Auftrag.
+
+Im Nahkampf müssen Gegner höchstens 1,05 m entfernt und auf gleicher Höhe sein;
+Mauern und Gebäude verhindern Treffer hindurch. Die Einheiten benutzen die normale
+Wegfindung und halten Abstand. Beide Seiten kämpfen mit ihren Animationen und
+verlieren Gesundheit. Lebensbalken erscheinen bei Kampf oder Verletzungen. Bei
+null Gesundheit wird die Einheit entfernt und gibt ihre Position und Dachplätze frei.
+Der Burgherr verursacht 0,22 Schaden/s, bewaffnete Bauern 0,14 Schaden/s.
+
+Ohne laufenden Bewegungsbefehl greifen Kampfeinheiten erreichbare Gegner innerhalb
+von 8 m selbständig an. Automatische Verfolgung reicht höchstens 16 m vom
+Ausgangspunkt; nach dem Gefecht oder einem entkommenen Gegner laufen sie dorthin
+zurück. Ist die Stelle inzwischen belegt, wählen sie einen freien Platz daneben.
+Ein neuer Bewegungs-, Dach- oder Angriffsbefehl ersetzt den bisherigen Auftrag.
+Manuell befohlene Gruppenangriffe enden nach dem letzten erreichbaren Gegner;
+die überlebenden Angreifer bleiben am Kampfplatz. Transportbauern nehmen nicht
+an diesen Kämpfen teil. Nahkämpfer können keine Gegner auf unerreichbaren Dächern
+angreifen; vom eigenen Dach können sie über Luke und Tür zum Bodengegner laufen.

@@ -84,6 +84,7 @@ fn main() {
             (
                 lobby_ui,
                 resources::resource_ui,
+                combat_units::unit_health_ui,
                 selection_ui,
                 selection_rectangle_ui,
                 buildings::attack_hover_ui,

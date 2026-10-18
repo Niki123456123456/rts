@@ -170,6 +170,12 @@ pub enum Action {
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
     },
+    AttackUnits {
+        #[serde(serialize_with = "serialize_ids")]
+        unit_ids: Vec<u64>,
+        #[serde(serialize_with = "serialize_id")]
+        target_unit_id: u64,
+    },
     AttackBuilding {
         #[serde(serialize_with = "serialize_ids")]
         unit_ids: Vec<u64>,
@@ -395,6 +401,9 @@ mod backend {
                 let errors = self.status.clone();
                 conn.reducers
                     .on_recruit_unit(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_attack_units(move |ctx, _, _| record_status(&errors, ctx));
                 self.connection = Some(conn);
                 return Ok(());
             }
@@ -431,6 +440,10 @@ mod backend {
                 Action::RemoveBuilding { building_id } => {
                     conn.reducers.remove_building(building_id)
                 }
+                Action::AttackUnits {
+                    unit_ids,
+                    target_unit_id,
+                } => conn.reducers.attack_units(unit_ids, target_unit_id),
                 Action::AttackBuilding {
                     unit_ids,
                     building_id,

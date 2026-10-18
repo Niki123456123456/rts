@@ -13,7 +13,8 @@
     "test:walls": "tsx src/walls.test.ts",
     "test:resources": "tsx src/resources.test.ts",
     "test:logistics": "tsx src/logistics.test.ts",
-    "test:combat": "tsx src/combat.test.ts"
+    "test:combat": "tsx src/combat.test.ts",
+    "test:melee": "tsx src/melee.test.ts"
   },
   "dependencies": {
     "@clockworklabs/spacetimedb-sdk": "1.1.0"

@@ -283,3 +283,42 @@ mod tests {
         }
     }
 }
+
+pub(crate) fn unit_health_ui(
+    mut contexts: EguiContexts,
+    units: Query<(&Unit, &Transform)>,
+    camera: Single<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    let scale = window.scale_factor() / ctx.pixels_per_point();
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Background,
+        egui::Id::new("combat_health"),
+    ));
+    let (camera, transform) = *camera;
+    for (unit, position) in &units {
+        if unit.worker || (unit.health >= 0.999 && unit.activity != 2) {
+            continue;
+        }
+        let Ok(p) = camera.world_to_viewport(transform, position.translation + Vec3::Y * 1.25)
+        else {
+            continue;
+        };
+        let rect =
+            egui::Rect::from_center_size(egui::pos2(p.x * scale, p.y * scale), egui::vec2(34., 5.));
+        painter.rect_filled(rect, 1., egui::Color32::from_black_alpha(220));
+        let mut fill = rect.shrink(1.);
+        fill.max.x = fill.min.x + fill.width() * unit.health.clamp(0., 1.);
+        painter.rect_filled(
+            fill,
+            0.,
+            if unit.owned {
+                egui::Color32::LIGHT_GREEN
+            } else {
+                egui::Color32::LIGHT_RED
+            },
+        );
+    }
+    Ok(())
+}

@@ -11,6 +11,7 @@ pub(crate) struct BuildingInteraction {
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
+    enemy_group_preview: Vec<Vec3>,
     roof_hover: Option<(Vec2, usize, usize)>,
     roof_preview: Vec<Vec3>,
     roof_error: Option<&'static str>,
@@ -315,6 +316,7 @@ pub(crate) fn building_input(
 ) {
     state.consumed = false;
     state.attack_hover = None;
+    state.enemy_group_preview.clear();
     state.roof_hover = None;
     state.roof_error = None;
     state.roof_preview.clear();
@@ -482,6 +484,48 @@ pub(crate) fn building_input(
         }
         return;
     }
+    // Combat units take precedence over the roof or ground underneath them.
+    if let Ok((_, target)) = units.get(*entity) {
+        if !target.owned && !target.worker && !selected.0.is_empty() {
+            let members = multiplayer
+                .snapshot
+                .units
+                .iter()
+                .filter(|u| !u.worker)
+                .map(|u| map::combat::GroupMember {
+                    id: u.id,
+                    side: u.color,
+                    point: (u.x, u.z),
+                    height: u.y,
+                })
+                .collect::<Vec<_>>();
+            let group = map::combat::enemy_group(target.id, &members);
+            state.attack_hover = Some(cursor);
+            state.enemy_group_preview = multiplayer
+                .snapshot
+                .units
+                .iter()
+                .filter(|u| group.contains(&u.id))
+                .map(|u| Vec3::new(u.x, u.y - 0.71, u.z))
+                .collect();
+            if mouse.just_pressed(MouseButton::Right) {
+                let unit_ids = units
+                    .iter()
+                    .filter(|(e, u)| u.owned && selected.0.contains(e))
+                    .map(|(_, u)| u.id)
+                    .collect::<Vec<_>>();
+                if !unit_ids.is_empty() {
+                    state.consumed = true;
+                    *drag = default();
+                    multiplayer.send(Action::AttackUnits {
+                        unit_ids,
+                        target_unit_id: target.id,
+                    });
+                }
+            }
+            return;
+        }
+    }
     // Pick the actual roof plane rather than the solid ground-level collision box.
     let roof_units = units
         .iter()
@@ -647,6 +691,13 @@ fn roof_ray_hit(ray: Ray3d, building: &network::Building) -> Option<(f32, Vec3)>
         .then_some((distance, point))
 }
 pub(crate) fn roof_preview(interaction: Res<BuildingInteraction>, mut gizmos: Gizmos) {
+    for point in &interaction.enemy_group_preview {
+        gizmos.circle(
+            Isometry3d::new(*point, Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            0.36,
+            Color::srgb(1., 0.2, 0.1),
+        );
+    }
     for point in &interaction.roof_preview {
         gizmos.circle(
             Isometry3d::new(*point, Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
@@ -709,6 +760,15 @@ pub(crate) fn attack_hover_ui(
         19.0,
         egui::Stroke::new(2.0, egui::Color32::LIGHT_RED),
     );
+    if !interaction.enemy_group_preview.is_empty() {
+        painter.text(
+            center + egui::vec2(0., 24.),
+            egui::Align2::CENTER_TOP,
+            format!("{} Gegner", interaction.enemy_group_preview.len()),
+            egui::FontId::proportional(14.),
+            egui::Color32::LIGHT_RED,
+        );
+    }
     // Crossed swords, drawn as geometry so no platform-specific emoji font is needed.
     for direction in [egui::vec2(1.0, -1.0), egui::vec2(-1.0, -1.0)] {
         let direction = direction.normalized();
