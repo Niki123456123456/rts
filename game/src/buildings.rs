@@ -830,87 +830,13 @@ pub(crate) fn attack_hover_ui(
     }
     Ok(())
 }
-pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(114.0, 70.0), egui::Sense::click());
-    let painter = ui.painter();
-    painter.rect_filled(
-        rect,
-        5.0,
-        if active {
-            egui::Color32::from_rgb(55, 95, 55)
-        } else {
-            ui.visuals().widgets.inactive.bg_fill
-        },
-    );
-    let c = rect.center();
-    painter.rect_filled(
-        egui::Rect::from_min_max(
-            egui::pos2(c.x - 21.0, rect.top() + 24.0),
-            egui::pos2(c.x + 21.0, rect.top() + 49.0),
-        ),
-        2.0,
-        if kind == BuildingKind::Barracks || kind.category() == "fortifications" {
-            egui::Color32::GRAY
-        } else {
-            egui::Color32::from_rgb(178, 140, 79)
-        },
-    );
-    if kind == BuildingKind::Barracks || kind.category() == "fortifications" {
-        for i in -2..=2 {
-            let x = c.x + i as f32 * 9.0;
-            painter.rect_filled(
-                egui::Rect::from_min_size(
-                    egui::pos2(x - 3.0, rect.top() + 15.0),
-                    egui::vec2(6.0, 12.0),
-                ),
-                0.0,
-                egui::Color32::GRAY,
-            );
-        }
-    } else if kind == BuildingKind::Stockpile {
-        for row in 0..2 {
-            for column in 0..3 {
-                painter.rect_filled(
-                    egui::Rect::from_min_size(
-                        egui::pos2(
-                            c.x - 21.0 + column as f32 * 15.0,
-                            rect.top() + 14.0 + row as f32 * 16.0,
-                        ),
-                        egui::vec2(12.0, 13.0),
-                    ),
-                    1.0,
-                    egui::Color32::from_rgb(125, 75, 40),
-                );
-            }
-        }
-    } else {
-        painter.add(egui::Shape::convex_polygon(
-            vec![
-                egui::pos2(c.x - 25.0, rect.top() + 25.0),
-                egui::pos2(c.x, rect.top() + 7.0),
-                egui::pos2(c.x + 25.0, rect.top() + 25.0),
-            ],
-            egui::Color32::from_rgb(125, 75, 40),
-            egui::Stroke::NONE,
-        ));
-    }
-    for i in -1..=1 {
-        let x = c.x + i as f32 * 9.0;
-        painter.line_segment(
-            [
-                egui::pos2(x, rect.top() + 32.0),
-                egui::pos2(x, rect.top() + 45.0),
-            ],
-            egui::Stroke::new(3.0, egui::Color32::GOLD),
-        );
-    }
-    painter.text(
-        egui::pos2(c.x, rect.bottom() - 10.0),
-        egui::Align2::CENTER_CENTER,
-        kind.label(),
-        egui::FontId::proportional(12.0),
-        ui.visuals().text_color(),
-    );
+pub(crate) fn building_button(
+    ui: &mut egui::Ui,
+    texture: egui::TextureId,
+    kind: BuildingKind,
+    active: bool,
+) -> bool {
+    let response = menu_ui::building_button(ui, texture, kind, active);
     if kind == BuildingKind::StoneWall {
         return response.on_hover_text("Steinmauer: 2×2-m-Segmente, je 1 Stein. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
     }

@@ -3,6 +3,11 @@ use bevy_egui::EguiTextureHandle;
 
 #[derive(Resource)]
 pub(crate) struct ResourceAtlas(Handle<Image>);
+impl ResourceAtlas {
+    pub(crate) fn texture(&self, contexts: &mut EguiContexts) -> egui::TextureId {
+        contexts.add_image(EguiTextureHandle::Strong(self.0.clone()))
+    }
+}
 pub(crate) fn setup_resource_ui(mut commands: Commands, server: Res<AssetServer>) {
     commands.insert_resource(ResourceAtlas(server.load("ui/ingameui.png")));
 }
@@ -23,7 +28,7 @@ pub(crate) fn resource_ui(
     if !multiplayer.snapshot.connected || multiplayer.snapshot.game_id.is_none() {
         return Ok(());
     }
-    let texture = contexts.add_image(EguiTextureHandle::Strong(atlas.0.clone()));
+    let texture = atlas.texture(&mut contexts);
     let ctx = contexts.ctx_mut()?;
     egui::Area::new("resource_stock".into())
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12., 12.))

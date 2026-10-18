@@ -3,11 +3,13 @@
 mod buildings;
 mod combat_units;
 mod logistics;
+mod menu_ui;
 #[cfg(not(target_arch = "wasm32"))]
 mod module_bindings;
 mod network;
 mod resources;
 mod storage_models;
+mod unit_ui;
 use buildings::BuildingInteraction;
 
 use network::{Action, Multiplayer};
@@ -54,6 +56,7 @@ fn main() {
                 setup,
                 buildings::setup_buildings,
                 resources::setup_resource_ui,
+                unit_ui::setup,
                 logistics::setup_storage_assets,
                 connect_multiplayer,
             ),
@@ -101,7 +104,6 @@ struct Unit {
     facing: Vec2,
     worker: bool,
     id: u64,
-    number: usize,
     color: u32,
     health: f32,
     owned: bool,
@@ -636,7 +638,6 @@ fn sync_multiplayer(
                 facing: Vec2::new(row.facing_x, row.facing_z),
                 worker: row.worker,
                 id: row.id,
-                number: row.number,
                 color: row.color,
                 health: row.health,
                 owned: row.owned,
@@ -838,6 +839,8 @@ fn selection_ui(
     mut contexts: EguiContexts,
     selected: Res<SelectedUnits>,
     units: Query<&Unit>,
+    portraits: Res<unit_ui::UnitPortraits>,
+    menu_atlas: Res<resources::ResourceAtlas>,
     mut controls: Query<&mut RtsCameraControls>,
     mut panel: ResMut<SelectionPanel>,
     mut multiplayer: ResMut<Multiplayer>,
@@ -849,6 +852,8 @@ fn selection_ui(
         panel.0 = None;
         return Ok(());
     }
+    let portrait_texture = portraits.texture(&mut contexts);
+    let menu_texture = menu_atlas.texture(&mut contexts);
     let ctx = contexts.ctx_mut()?;
     let mut viewport_ui = egui::Ui::new(
         ctx.clone(),
@@ -862,105 +867,70 @@ fn selection_ui(
         .exact_size(110.0)
         .show(&mut viewport_ui, |ui| {
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.heading("Auswahl");
-                    if ui.button("Leave game").clicked() {
-                        multiplayer.send(Action::Leave);
-                    }
-                });
+            ui.horizontal_top(|ui| {
+                if menu_ui::leave_button(ui, menu_texture) {
+                    multiplayer.send(Action::Leave);
+                }
                 ui.separator();
                 ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.;
+                    for category in ["fortifications", "supply", "military"] {
+                        let active = building_interaction.category.unwrap_or("supply") == category;
+                        if menu_ui::category_button(ui, menu_texture, category, active) {
+                            building_interaction.category = Some(category);
+                        }
+                    }
+                });
+                ui.vertical(|ui| {
                     let category = building_interaction.category.unwrap_or("supply");
-                    let category_label = |category| match category {
-                        "military" => "Militär",
-                        "fortifications" => "Befestigungen",
-                        _ => "Versorgung",
-                    };
-                    egui::ComboBox::from_id_salt("build_category")
-                        .selected_text(category_label(category))
-                        .show_ui(ui, |ui| {
-                            for category in ["supply", "military", "fortifications"] {
-                                if ui
-                                    .selectable_label(
-                                        building_interaction.category.unwrap_or("supply")
-                                            == category,
-                                        category_label(category),
-                                    )
-                                    .clicked()
-                                {
-                                    building_interaction.category = Some(category);
+                    let buildings = menu_ui::BUILD_MENU.into_iter()
+                        .filter(|kind| kind.category() == category)
+                        .collect::<Vec<_>>();
+                    let columns = buildings.len().div_ceil(2).max(1);
+                    egui::Grid::new("building_palette")
+                        .num_columns(columns)
+                        .spacing(egui::vec2(6., 4.))
+                        .show(ui, |ui| {
+                            for (index, kind) in buildings.into_iter().enumerate() {
+                                let active = building_interaction.placing == Some(kind);
+                                if buildings::building_button(ui, menu_texture, kind, active) {
+                                    building_interaction.placing = if active { None } else { Some(kind) };
+                                    building_interaction.selected = None;
+                                    building_interaction.rotation = 0;
+                                    building_interaction.wall_start = None;
+                                    building_interaction.wall_cost = 0;
+                                }
+                                if (index + 1) % columns == 0 {
+                                    ui.end_row();
                                 }
                             }
-                        });
-                    egui::ScrollArea::horizontal()
-                        .id_salt("building_palette")
-                        .max_width(380.0)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                let category = building_interaction.category.unwrap_or("supply");
-                                for kind in stronghold_map::BuildingKind::ALL
-                                    .into_iter()
-                                    .filter(|kind| kind.category() == category)
-                                {
-                                    let active = building_interaction.placing == Some(kind);
-                                    if buildings::building_button(ui, kind, active) {
-                                        building_interaction.placing =
-                                            if active { None } else { Some(kind) };
-                                        building_interaction.selected = None;
-                                        building_interaction.rotation = 0;
-                                        building_interaction.wall_start = None;
-                                        building_interaction.wall_cost = 0;
-                                    }
-                                }
-                            });
                         });
                 });
                 ui.separator();
                 if let Some(kind) = building_interaction.placing {
-                    if kind == stronghold_map::BuildingKind::StoneWall {
-                        ui.label(if building_interaction.wall_start.is_some() {
-                            format!(
-                                "Mauer: Endpunkt anklicken. {} Stein. Rechtsklick / Esc bricht ab.",
-                                building_interaction.wall_cost
-                            )
+                    let response = menu_ui::building_button(ui, menu_texture, kind, true);
+                    let hint = if kind == stronghold_map::BuildingKind::StoneWall {
+                        if building_interaction.wall_start.is_some() {
+                            format!("Steinmauer: Endpunkt anklicken. {} Stein. Rechtsklick / Esc bricht ab.", building_interaction.wall_cost)
                         } else {
-                            "Mauer: Startpunkt anklicken, dann Endpunkt wählen. 1 Stein je Segment."
-                                .into()
-                        });
+                            "Steinmauer: Startpunkt anklicken, dann Endpunkt wählen. 1 Stein je Segment.".into()
+                        }
                     } else {
-                        ui.label(format!(
-                            "{} ({}°), {} Stein. R: 90° drehen. Rechtsklick / Esc bricht ab.",
-                            kind.label(),
-                            building_interaction.rotation as u16 * 90,
-                            kind.stone_cost()
-                        ));
+                        format!("{} ({}°), {} Stein. R: 90° drehen. Rechtsklick / Esc bricht ab.", kind.label(), building_interaction.rotation as u16 * 90, kind.stone_cost())
+                    };
+                    if response.on_hover_text(hint).clicked() {
+                        building_interaction.placing = None;
+                        building_interaction.wall_start = None;
                     }
                 } else if let Some(building) = building_interaction
                     .selected
                     .and_then(|id| multiplayer.snapshot.buildings.iter().find(|b| b.id == id))
                     .cloned()
                 {
+                    let kind = stronghold_map::BuildingKind::from_name(&building.kind).unwrap_or_default();
+                    menu_ui::building_button(ui, menu_texture, kind, false)
+                        .on_hover_text(format!("{}: {}", if building.owned { "Eigenes Gebäude" } else { "Feindliches Gebäude" }, kind.label()));
                     ui.vertical(|ui| {
-                        let color = player_color(building.color).to_srgba();
-                        ui.colored_label(
-                            egui::Color32::from_rgb(
-                                (color.red * 255.0) as u8,
-                                (color.green * 255.0) as u8,
-                                (color.blue * 255.0) as u8,
-                            ),
-                            format!(
-                                "{}: {}",
-                                if building.owned {
-                                    "Eigenes Gebäude"
-                                } else {
-                                    "Feindliches Gebäude"
-                                },
-                                stronghold_map::BuildingKind::from_name(&building.kind)
-                                    .unwrap_or_default()
-                                    .label()
-                            ),
-                        );
                         ui.add(
                             egui::ProgressBar::new(building.health)
                                 .text(format!("Health {:.0}%", building.health * 100.0))
@@ -1029,77 +999,55 @@ fn selection_ui(
                                 "Einheiten auswählen und mit rechts auf das Dach klicken.",
                             );
                         }
-                        if building.owned
-                            && building.kind == "barracks"
-                            && ui.button("Bewaffneten Bauern ausbilden").clicked()
-                        {
-                            multiplayer.send(Action::RecruitUnit {
-                                building_id: building.id,
-                                kind: "armed_peasant".into(),
-                            });
-                        }
-                        if building.owned && ui.button("Remove building").clicked() {
+                        if building.owned && menu_ui::remove_button(ui, menu_texture) {
                             multiplayer.send(Action::RemoveBuilding {
                                 building_id: building.id,
                             });
                         }
                     });
-                } else if selected.0.is_empty() {
-                    ui.label("Klicke auf eine Einheit. Cmd + Klick für Mehrfachauswahl.");
-                } else {
-                    egui::ScrollArea::horizontal().show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for entity in &selected.0 {
-                                let Ok(unit) = units.get(*entity) else {
-                                    continue;
-                                };
-                                ui.push_id(unit.number, |ui| {
-                                    egui::Frame::group(ui.style()).show(ui, |ui| {
-                                        ui.horizontal(|ui| {
-                                            // A capsule portrait matching the units in the scene.
-                                            let (rect, _) = ui.allocate_exact_size(
-                                                egui::vec2(44.0, 64.0),
-                                                egui::Sense::hover(),
-                                            );
-                                            ui.painter().rect_filled(
-                                                rect.shrink2(egui::vec2(10.0, 4.0)),
-                                                12.0,
-                                                {
-                                                    let color = player_color(unit.color).to_srgba();
-                                                    egui::Color32::from_rgb(
-                                                        (color.red * 255.0) as u8,
-                                                        (color.green * 255.0) as u8,
-                                                        (color.blue * 255.0) as u8,
-                                                    )
-                                                },
-                                            );
-                                            ui.vertical(|ui| {
-                                                ui.strong(format!(
-                                                    "{} {}",
-                                                    stronghold_map::units::UnitKind::from_name(
-                                                        &unit.kind
-                                                    )
-                                                    .unwrap_or(
-                                                        stronghold_map::units::UnitKind::Lord
-                                                    )
-                                                    .label(),
-                                                    unit.number
-                                                ));
-                                                ui.add(
-                                                    egui::ProgressBar::new(unit.health)
-                                                        .text(format!(
-                                                            "Health {:.0}%",
-                                                            unit.health * 100.0
-                                                        ))
-                                                        .desired_width(95.0),
-                                                );
-                                            });
-                                        });
-                                    });
-                                });
-                            }
+                    if building.owned
+                        && building.kind == "barracks"
+                        && unit_ui::portrait(
+                            ui,
+                            portrait_texture,
+                            stronghold_map::units::UnitKind::ArmedPeasant,
+                            None,
+                            true,
+                        )
+                        .clicked()
+                    {
+                        multiplayer.send(Action::RecruitUnit {
+                            building_id: building.id,
+                            kind: "armed_peasant".into(),
                         });
-                    });
+                    }
+                } else if !selected.0.is_empty() {
+                    egui::ScrollArea::horizontal()
+                        .max_height(88.)
+                        .show(ui, |ui| {
+                            ui.horizontal_top(|ui| {
+                                for kind in [
+                                    stronghold_map::units::UnitKind::Lord,
+                                    stronghold_map::units::UnitKind::ArmedPeasant,
+                                ] {
+                                    let count = selected
+                                        .0
+                                        .iter()
+                                        .filter_map(|entity| units.get(*entity).ok())
+                                        .filter(|unit| unit.kind == kind.name())
+                                        .count();
+                                    if count > 0 {
+                                        unit_ui::portrait(
+                                            ui,
+                                            portrait_texture,
+                                            kind,
+                                            Some(count),
+                                            false,
+                                        );
+                                    }
+                                }
+                            });
+                        });
                 }
             });
             if let Some(error) = &multiplayer.snapshot.error {
@@ -1191,21 +1139,13 @@ mod tests {
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, 0.0),
         );
-        world.entity_mut(near).insert(Unit {
-            id: 1,
-            number: 1,
-            ..default()
-        });
+        world.entity_mut(near).insert(Unit { id: 1, ..default() });
         let far = spawn_mesh(
             &mut world,
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, -2.0),
         );
-        world.entity_mut(far).insert(Unit {
-            id: 2,
-            number: 2,
-            ..default()
-        });
+        world.entity_mut(far).insert(Unit { id: 2, ..default() });
         assert_eq!(
             pick(
                 &mut world,
@@ -1231,11 +1171,7 @@ mod tests {
             Capsule3d::new(0.25, 1.25).mesh().build(),
             Vec3::new(0.0, 0.75, 0.0),
         );
-        world.entity_mut(unit).insert(Unit {
-            id: 1,
-            number: 1,
-            ..default()
-        });
+        world.entity_mut(unit).insert(Unit { id: 1, ..default() });
         spawn_mesh(
             &mut world,
             Cuboid::new(2.0, 2.0, 1.0).mesh().build(),
