@@ -39,7 +39,7 @@ def generate():
     for points, normal, material in faces:
         pos = accessor(points, 'VEC3', bounds={'min':[min(p[i] for p in points) for i in range(3)],'max':[max(p[i] for p in points) for i in range(3)]})
         norm = accessor([normal]*4, 'VEC3')
-        uv = accessor([(0,0),(1,0),(1,3.3315 if material==0 else 1),(0,3.3315 if material==0 else 1)], 'VEC2')
+        uv = accessor([(0,0),(1,0),(1,1),(0,1)], 'VEC2')
         idx = accessor([(i,) for i in [0,1,2,0,2,3]], 'SCALAR', 5123)
         primitives.append(dict(attributes={'POSITION':pos,'NORMAL':norm,'TEXCOORD_0':uv},indices=idx,material=material))
     images = [{'bufferView':view((ROOT.parent / 'assets/images/Source/meshes/buildings' / filename).read_bytes()),'mimeType':'image/png'} for filename in ['castle_wall.png','walltop.png']]
