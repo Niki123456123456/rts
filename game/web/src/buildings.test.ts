@@ -17,7 +17,7 @@ async function connect() {
       .onConnect(db => {
         clients.push(db);
         db.subscriptionBuilder().onApplied(() => resolve(db)).onError(ctx => reject(ctx.event))
-          .subscribe(['SELECT * FROM game', 'SELECT * FROM participant', 'SELECT * FROM army_unit', 'SELECT * FROM building']);
+          .subscribe(['SELECT * FROM game', 'SELECT * FROM participant', 'SELECT * FROM army_unit', 'SELECT * FROM building', 'SELECT * FROM building_rotation']);
       }).onConnectError((_ctx, err) => reject(err)).build();
     setTimeout(() => reject(new Error('Connection timeout')), 8000).unref();
     return db;
@@ -162,6 +162,32 @@ try {
   await until(() => buildings().some(row => row.kind === 'tower_stairwell' && row.x === 102), 'Replacement tower replicated');
   assert.equal(await remove(b, buildings().find(row => row.kind === 'tower_stairwell' && row.x === 102)!.id), 'Committed');
 
+  // Persist all four orientations; 90° swaps a 12×10 m barracks plot to 10×12 m.
+  const buildRotated = (x: number, z: number, kind: string, rotation: number) => status(b, cb => b.reducers.onBuildRotated(cb), () => b.reducers.buildRotated(x, z, kind, rotation));
+  assert.equal(await buildRotated(100, 100, 'barracks', 4), 'Failed', 'Invalid rotations are rejected');
+  for (let rotation = 0; rotation < 4; rotation++) {
+    const x = 100 + rotation * 40 + (rotation % 2);
+    const z = rotation % 2 === 0 ? 101 : 100;
+    assert.equal(await buildRotated(100.3 + rotation * 40, 100.3, 'barracks', rotation), 'Committed');
+    await until(() => buildings().some(row => row.kind === 'barracks' && row.x === x && row.z === z), 'Rotated building replicated at its snapped centre');
+    const turned = buildings().find(row => row.kind === 'barracks' && row.x === x && row.z === z)!;
+    await until(() => a.db.buildingRotation.buildingId.find(turned.id)?.quarterTurns === rotation, 'Orientation replicated to second player');
+    assert.equal(b.db.buildingRotation.buildingId.find(turned.id)?.quarterTurns, rotation);
+    if (rotation === 1) {
+      assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], x, z + 5.8)), 'Failed', 'Pathfinding uses rotated collision dimensions');
+      assert.equal(await attack(a, [unit.id], turned.id), 'Committed');
+      const attacker = a.db.armyUnit.id.find(unit.id)!;
+      const edge = Math.hypot(Math.max(0, Math.abs(attacker.targetX - x) - 5.137907), Math.max(0, Math.abs(attacker.targetZ - z) - 6.157582));
+      assert.ok(Math.abs(edge - 0.6) < 0.001, 'Attack positions follow rotated walls');
+      assert.equal(await buildRotated(x + 7, z, 'tower_stairwell', 0), 'Committed', 'Adjacent plot allowed by swapped raster dimensions');
+      await until(() => buildings().some(row => row.kind === 'tower_stairwell' && row.x === x + 7 && row.z === z), 'Rotated neighbour replicated');
+      assert.equal(await remove(b, buildings().find(row => row.kind === 'tower_stairwell' && row.x === x + 7)!.id), 'Committed');
+      assert.equal(await buildRotated(x + 5, z, 'tower_stairwell', 0), 'Failed', 'Occupied rotated cells cannot be reused');
+    }
+    assert.equal(await remove(b, turned.id), 'Committed');
+    await until(() => !a.db.buildingRotation.buildingId.find(turned.id), 'Demolition removes orientation metadata');
+  }
+
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 120, 120)), 'Committed', 'Movement orders beyond the old map limits are accepted');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], unit.x, unit.z)), 'Committed');
 
@@ -212,11 +238,13 @@ try {
   const snapshot = () => JSON.parse(strongholdNetwork.snapshot());
   send({ action: 'connect', uri, database }); await until(() => snapshot().ready, 'Bridge ready');
   send({ action: 'join', game_id: game.toString() }); await until(() => snapshot().units.length === 60, 'Bridge army joined');
-  send({ action: 'build', building: 'barracks', x: -27, z: 15 });
-  await until(() => snapshot().buildings.some((b: {owned: boolean}) => b.owned), 'Bridge receives its building');
+  send({ action: 'build', building: 'barracks', x: -27, z: 15, rotation: 1 });
+  await until(() => snapshot().buildings.some((b: {owned: boolean; rotation: number}) => b.owned && b.rotation === 1), 'Bridge receives its rotated building');
   const bridgeBuilding = snapshot().buildings.find((b: {owned: boolean}) => b.owned);
   assert.equal(bridgeBuilding.health, 1);
   assert.equal(bridgeBuilding.kind, 'barracks');
+  assert.equal(bridgeBuilding.rotation, 1);
+  assert.deepEqual([bridgeBuilding.x, bridgeBuilding.z], [-27, 16]);
   send({ action: 'remove_building', building_id: bridgeBuilding.id });
   await until(() => snapshot().buildings.length === 0, 'Bridge removes building');
   send({ action: 'build', building: 'stockpile', x: -27, z: 15 });
@@ -230,6 +258,7 @@ try {
   await until(() => buildings().length === 0, 'Leave removes owned buildings');
   assert.equal(await build(b, 0, 25), 'Committed');
   b.disconnect(); await until(() => buildings().length === 0, 'Disconnect removes owned buildings');
+  await until(() => !Array.from(a.db.buildingRotation.iter()).some(row => row.gameId === game), 'Leave and disconnect remove orientation metadata');
   console.log('Building integration passed: placement, overlap, ownership, shortest routes, live replanning, unit separation, surrounding attacks, attack damage, destruction, game isolation, browser bridge and cleanup.');
 } finally {
   strongholdNetwork.disconnect();

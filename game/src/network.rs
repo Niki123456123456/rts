@@ -37,6 +37,8 @@ pub struct Unit {
 #[derive(Clone, Deserialize)]
 pub struct Building {
     pub kind: String,
+    #[serde(default)]
+    pub rotation: u8,
     #[serde(deserialize_with = "id")]
     pub id: u64,
     pub color: u32,
@@ -87,6 +89,7 @@ pub enum Action {
         x: f32,
         z: f32,
         building: String,
+        rotation: u8,
     },
     RemoveBuilding {
         #[serde(serialize_with = "serialize_id")]
@@ -293,6 +296,9 @@ mod backend {
                     .on_build(move |ctx, _, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_build_rotated(move |ctx, _, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_remove_building(move |ctx, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -309,7 +315,12 @@ mod backend {
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
-                Action::Build { x, z, building } => conn.reducers.build(x, z, building),
+                Action::Build {
+                    x,
+                    z,
+                    building,
+                    rotation,
+                } => conn.reducers.build_rotated(x, z, building, rotation),
                 Action::RemoveBuilding { building_id } => {
                     conn.reducers.remove_building(building_id)
                 }
@@ -384,6 +395,7 @@ mod backend {
                             .subscribe([
                                 format!("SELECT * FROM army_unit WHERE game_id = {id}"),
                                 format!("SELECT * FROM building WHERE game_id = {id}"),
+                                format!("SELECT * FROM building_rotation WHERE game_id = {id}"),
                             ]),
                     );
                 }
@@ -410,6 +422,12 @@ mod backend {
                 .iter()
                 .filter(|b| Some(b.game_id) == snapshot.game_id)
                 .map(|b| super::Building {
+                    rotation: conn
+                        .db
+                        .building_rotation()
+                        .building_id()
+                        .find(&b.id)
+                        .map_or(0, |row| row.quarter_turns),
                     kind: b.kind,
                     id: b.id,
                     color: b.color,
@@ -514,7 +532,8 @@ mod backend {
             assert!(network.send(Action::Build {
                 x: -27.0,
                 z: 15.0,
-                building: "granary".into()
+                building: "granary".into(),
+                rotation: 0,
             }));
             until(&mut network, |s| s.buildings.len() == 1);
             let building = network.snapshot.buildings[0].clone();

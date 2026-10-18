@@ -5,7 +5,7 @@ type Action =
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
-  | { action: 'build'; x: number; z: number; building: string }
+  | { action: 'build'; x: number; z: number; building: string; rotation?: number }
   | { action: 'remove_building'; building_id: string }
   | { action: 'attack_building'; unit_ids: string[]; building_id: string }
   | { action: 'formation_targets'; unit_ids: string[]; start_x: number; start_z: number; end_x: number; end_z: number }
@@ -64,6 +64,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onSetTargets(result);
   connection.reducers.onSetFormationTargets(result);
   connection.reducers.onBuild(result);
+  connection.reducers.onBuildRotated(result);
   connection.reducers.onRemoveBuilding(result);
   connection.reducers.onAttackBuilding(result);
 }
@@ -86,7 +87,7 @@ export const strongholdNetwork = {
       case 'create': conn.reducers.createGame(action.title); break;
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
-      case 'build': conn.reducers.build(action.x, action.z, action.building); break;
+      case 'build': conn.reducers.buildRotated(action.x, action.z, action.building, action.rotation ?? 0); break;
       case 'remove_building': conn.reducers.removeBuilding(BigInt(action.building_id)); break;
       case 'attack_building': conn.reducers.attackBuilding(action.unit_ids.map(BigInt), BigInt(action.building_id)); break;
       case 'formation_targets': conn.reducers.setFormationTargets(action.unit_ids.map(BigInt), action.start_x, action.start_z, action.end_x, action.end_z); break;
@@ -102,7 +103,7 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
@@ -111,7 +112,7 @@ export const strongholdNetwork = {
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
       buildings: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.building.iter())
         .filter(b => b.gameId === gameId)
-        .map(b => ({ kind: b.kind, id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],
+        .map(b => ({ rotation: conn!.db.buildingRotation.buildingId.find(b.id)?.quarterTurns ?? 0, kind: b.kind, id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],
       units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.armyUnit.iter())
         .filter(u => u.gameId === gameId)
         .map(u => ({ id: u.id.toString(), number: u.number, color: u.color, health: u.health, owned: u.owner.toHexString() === conn!.connectionId.toHexString(), x: u.x, y: u.y, z: u.z })) : [],

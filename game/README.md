@@ -49,6 +49,9 @@ startet den jeweiligen Baumodus.
 Die Steinkaserne verwendet `military/barrack_stone/mesh.glb` mit `collision.glb` im selben Ordner; Einheitenrekrutierung ist noch nicht implementiert. Linksklick platziert
 auf grün markiertem, ebenem Boden. Rot bedeutet, dass die Fläche blockiert ist oder
 über den Kartenrand hinausgeht. Rechtsklick oder Escape bricht den Baumodus ab.
+Mit **R** dreht sich das Gebäude im Baumodus um jeweils 90°. Vorschau und Baufläche
+drehen sich gemeinsam; bei 90° und 270° tauschen Rasterbreite und Rastertiefe.
+Die Ausrichtung wird auf dem Server gespeichert und bei allen Spielern angezeigt.
 Das unsichtbare Bauraster besteht aus 2×2-m-Feldern. Die Vorschau rastet so ein,
 dass alle Kanten der logischen Baufläche auf Feldgrenzen liegen. Gebäude dürfen
 belegte Rasterfelder nicht überdecken; gemeinsame Außenkanten sind erlaubt.

@@ -13,9 +13,22 @@ pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
 pub const BUILD_GRID_SIZE: f32 = 2.0;
 
 impl BuildingKind {
-    /// Odd cell counts have odd-metre centres; even counts have even-metre centres.
-    pub fn snap_position(self, x: f32, z: f32) -> Point {
+    pub fn rotated_grid_size(self, rotation: u8) -> (u16, u16) {
         let (width, depth) = self.grid_size();
+        if rotation % 2 == 0 {
+            (width, depth)
+        } else {
+            (depth, width)
+        }
+    }
+
+    pub fn snap_position(self, x: f32, z: f32) -> Point {
+        self.rotated_snap_position(x, z, 0)
+    }
+
+    /// Odd cell counts have odd-metre centres; dimensions follow the orientation.
+    pub fn rotated_snap_position(self, x: f32, z: f32, rotation: u8) -> Point {
+        let (width, depth) = self.rotated_grid_size(rotation);
         let snap = |value: f32, cells: u16| {
             let offset = (cells % 2) as f32 * BUILD_GRID_SIZE * 0.5;
             ((value - offset) / BUILD_GRID_SIZE).round() * BUILD_GRID_SIZE + offset
@@ -23,9 +36,13 @@ impl BuildingKind {
         (snap(x, width), snap(z, depth))
     }
 
-    /// Logical construction area. Physical geometry is used separately for navigation.
     pub fn build_footprint(self, x: f32, z: f32) -> Obstacle {
-        let (width, depth) = self.grid_size();
+        self.rotated_build_footprint(x, z, 0)
+    }
+
+    /// Logical construction area; orientation swaps its world-space dimensions.
+    pub fn rotated_build_footprint(self, x: f32, z: f32, rotation: u8) -> Obstacle {
+        let (width, depth) = self.rotated_grid_size(rotation);
         Obstacle {
             x,
             z,
@@ -34,10 +51,27 @@ impl BuildingKind {
         }
     }
 
-    /// Sample every occupied cell's corners and centre when checking level ground.
+    pub fn rotated_obstacle(self, x: f32, z: f32, rotation: u8) -> Obstacle {
+        let mut shape = self.obstacle(x, z);
+        if rotation % 2 == 1 {
+            std::mem::swap(&mut shape.half_x, &mut shape.half_z);
+        }
+        shape
+    }
+
     pub fn build_samples(self, x: f32, z: f32) -> impl Iterator<Item = Point> {
-        let (width, depth) = self.grid_size();
-        let shape = self.build_footprint(x, z);
+        self.rotated_build_samples(x, z, 0)
+    }
+
+    /// Sample every occupied cell's corners and centre when checking level ground.
+    pub fn rotated_build_samples(
+        self,
+        x: f32,
+        z: f32,
+        rotation: u8,
+    ) -> impl Iterator<Item = Point> {
+        let (width, depth) = self.rotated_grid_size(rotation);
+        let shape = self.rotated_build_footprint(x, z, rotation);
         (0..=width * 2).flat_map(move |column| {
             (0..=depth * 2).map(move |row| {
                 (
@@ -48,10 +82,23 @@ impl BuildingKind {
         })
     }
 
-    /// Reserve the plot and ensure units will not be trapped inside model overhangs.
     pub fn blocks_construction_unit(self, x: f32, z: f32, point: Point) -> bool {
-        self.build_footprint(x, z).contains(point, CLEARANCE)
-            || self.obstacle(x, z).contains(point, CLEARANCE)
+        self.rotated_blocks_construction_unit(x, z, 0, point)
+    }
+
+    /// Reserve the plot and ensure units will not be trapped inside model overhangs.
+    pub fn rotated_blocks_construction_unit(
+        self,
+        x: f32,
+        z: f32,
+        rotation: u8,
+        point: Point,
+    ) -> bool {
+        self.rotated_build_footprint(x, z, rotation)
+            .contains(point, CLEARANCE)
+            || self
+                .rotated_obstacle(x, z, rotation)
+                .contains(point, CLEARANCE)
     }
 }
 
@@ -354,6 +401,56 @@ pub fn path_length(start: Point, path: &[Point]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rotated_plots_swap_dimensions_and_keep_all_edges_on_grid_lines() {
+        for kind in BuildingKind::ALL {
+            let (width, depth) = kind.grid_size();
+            for rotation in 0..4 {
+                let dimensions = kind.rotated_grid_size(rotation);
+                assert_eq!(
+                    dimensions,
+                    if rotation % 2 == 0 {
+                        (width, depth)
+                    } else {
+                        (depth, width)
+                    }
+                );
+                let (x, z) = kind.rotated_snap_position(-13.7, 20.4, rotation);
+                let plot = kind.rotated_build_footprint(x, z, rotation);
+                for edge in [
+                    x - plot.half_x,
+                    x + plot.half_x,
+                    z - plot.half_z,
+                    z + plot.half_z,
+                ] {
+                    assert_eq!(edge % BUILD_GRID_SIZE, 0.0);
+                }
+                let normal = kind.obstacle(x, z);
+                let turned = kind.rotated_obstacle(x, z, rotation);
+                assert_eq!(
+                    (turned.half_x, turned.half_z),
+                    if rotation % 2 == 0 {
+                        (normal.half_x, normal.half_z)
+                    } else {
+                        (normal.half_z, normal.half_x)
+                    }
+                );
+                for (px, pz) in kind.rotated_build_samples(x, z, rotation) {
+                    assert!(px >= x - plot.half_x && px <= x + plot.half_x);
+                    assert!(pz >= z - plot.half_z && pz <= z + plot.half_z);
+                }
+            }
+        }
+        let kind = BuildingKind::Barracks;
+        assert_eq!(kind.rotated_snap_position(100.3, 100.3, 0), (100.0, 101.0));
+        assert_eq!(kind.rotated_snap_position(100.3, 100.3, 1), (101.0, 100.0));
+        let turned = kind.rotated_build_footprint(101.0, 100.0, 1);
+        assert!(!turned.overlaps(BuildingKind::TowerStairwell.build_footprint(108.0, 100.0)));
+        assert!(kind
+            .build_footprint(101.0, 100.0)
+            .overlaps(BuildingKind::TowerStairwell.build_footprint(108.0, 100.0)));
+    }
+
     #[test]
     fn adjacent_stair_towers_reserve_exactly_eight_by_four_metres() {
         let kind = BuildingKind::TowerStairwell;

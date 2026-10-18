@@ -4,6 +4,7 @@ use stronghold_map::{self as map, BuildingKind};
 #[derive(Resource, Default)]
 pub(crate) struct BuildingInteraction {
     pub placing: Option<BuildingKind>,
+    pub rotation: u8,
     pub category: Option<&'static str>,
     pub selected: Option<u64>,
     pub consumed: bool,
@@ -39,6 +40,11 @@ impl BuildingAssets {
                 .insert(Visibility::Hidden);
         }
     }
+}
+fn placement_transform(x: f32, y: f32, z: f32, rotation: u8) -> Transform {
+    Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(
+        (rotation % 4) as f32 * std::f32::consts::FRAC_PI_2,
+    ))
 }
 fn model_transform(kind: BuildingKind) -> Transform {
     let center = kind.center();
@@ -128,6 +134,14 @@ pub(crate) fn sync_buildings(
         .collect();
     for (entity, mut building) in &mut buildings {
         if let Some(row) = remaining.remove(&building.0.id) {
+            if building.0.rotation != row.rotation {
+                commands.entity(entity).insert(placement_transform(
+                    row.x,
+                    row.y,
+                    row.z,
+                    row.rotation,
+                ));
+            }
             building.0 = row.clone();
         } else {
             commands.entity(entity).despawn();
@@ -139,7 +153,7 @@ pub(crate) fn sync_buildings(
         commands
             .spawn((
                 Building((*row).clone()),
-                Transform::from_xyz(row.x, row.y, row.z),
+                placement_transform(row.x, row.y, row.z, row.rotation),
                 Visibility::default(),
             ))
             .with_children(|parent| {
@@ -189,23 +203,30 @@ pub(crate) fn sync_buildings(
         assets.hide_previews(&mut commands);
     }
 }
-fn placement_valid(kind: BuildingKind, x: f32, z: f32, y: f32, multiplayer: &Multiplayer) -> bool {
-    let shape = kind.build_footprint(x, z);
+fn placement_valid(
+    kind: BuildingKind,
+    x: f32,
+    z: f32,
+    y: f32,
+    rotation: u8,
+    multiplayer: &Multiplayer,
+) -> bool {
+    let shape = kind.rotated_build_footprint(x, z, rotation);
     shape.in_build_area()
         && !multiplayer.snapshot.buildings.iter().any(|b| {
             shape.overlaps(
                 BuildingKind::from_name(&b.kind)
                     .unwrap_or_default()
-                    .build_footprint(b.x, b.z),
+                    .rotated_build_footprint(b.x, b.z, b.rotation),
             )
         })
         && !multiplayer
             .snapshot
             .units
             .iter()
-            .any(|u| kind.blocks_construction_unit(x, z, (u.x, u.z)))
+            .any(|u| kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z)))
         && kind
-            .build_samples(x, z)
+            .rotated_build_samples(x, z, rotation)
             .all(|(px, pz)| (terrain_height(px, pz) - y).abs() <= 0.05)
 }
 
@@ -250,6 +271,7 @@ pub(crate) fn building_input(
     }
     if keys.just_pressed(KeyCode::Escape) {
         state.placing = None;
+        state.rotation = 0;
         state.selected = None;
         state.consumed = true;
         *drag = default();
@@ -260,6 +282,13 @@ pub(crate) fn building_input(
     }
     if state.placing.is_some() {
         *drag = default();
+        if keys.just_pressed(KeyCode::KeyR)
+            && !contexts
+                .ctx_mut()
+                .is_ok_and(|ctx| ctx.egui_wants_keyboard_input())
+        {
+            state.rotation = (state.rotation + 1) % 4;
+        }
     }
     let Some(cursor) = window.cursor_position() else {
         return;
@@ -289,15 +318,16 @@ pub(crate) fn building_input(
     };
     if let Some(kind) = state.placing {
         let model = &assets.models[kind.index()];
-        let (x, z) = kind.snap_position(hit.point.x, hit.point.z);
+        let (x, z) = kind.rotated_snap_position(hit.point.x, hit.point.z, state.rotation);
         let y = terrain_height(x, z);
-        let valid = placement_valid(kind, x, z, y, &multiplayer);
-        commands
-            .entity(model.preview)
-            .insert((Visibility::Visible, Transform::from_xyz(x, y, z)));
+        let valid = placement_valid(kind, x, z, y, state.rotation, &multiplayer);
+        commands.entity(model.preview).insert((
+            Visibility::Visible,
+            placement_transform(x, y, z, state.rotation),
+        ));
         commands.entity(model.preview_footprint).insert((
             Visibility::Visible,
-            Transform::from_xyz(x, y + 0.05, z),
+            placement_transform(x, y + 0.05, z, state.rotation),
             MeshMaterial3d(if valid {
                 assets.valid.clone()
             } else {
@@ -310,6 +340,7 @@ pub(crate) fn building_input(
                 x,
                 z,
                 building: kind.name().into(),
+                rotation: state.rotation,
             };
             if valid && multiplayer.send(action) {
                 state.placing = None;
@@ -505,7 +536,7 @@ pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: boo
     let (width, depth) = kind.grid_size();
     response
         .on_hover_text(format!(
-            "{}: {}×{} Felder ({}×{} m). Linksklick platziert; Rechtsklick oder Esc bricht ab.",
+            "{}: {}×{} Felder ({}×{} m). R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
             kind.label(),
             width,
             depth,
@@ -543,6 +574,7 @@ mod tests {
         .add_systems(Update, sync_buildings);
         let row = network::Building {
             kind: "granary".into(),
+            rotation: 0,
             id: 1,
             color: 0,
             health: 1.0,
@@ -565,6 +597,15 @@ mod tests {
             network.snapshot.buildings.push(row);
         }
         app.update();
+        // Orientation can arrive after the building row through its separate subscription.
+        app.world_mut()
+            .resource_mut::<Multiplayer>()
+            .snapshot
+            .buildings[0]
+            .rotation = 1;
+        app.update();
+        let transform = app.world().get::<Transform>(parent).unwrap();
+        assert!((transform.rotation * Vec3::X).distance(Vec3::NEG_Z) < 0.0001);
         app.world_mut()
             .resource_mut::<Multiplayer>()
             .snapshot
@@ -633,19 +674,26 @@ mod tests {
                 .unwrap()
                 .as_float3()
                 .unwrap();
-            let mut min = Vec3::splat(f32::INFINITY);
-            let mut max = Vec3::splat(f32::NEG_INFINITY);
-            for p in positions {
-                let p = model_transform(kind).transform_point(Vec3::from(*p));
-                min = min.min(p);
-                max = max.max(p);
+            for rotation in 0..4 {
+                let parent = placement_transform(0.0, 0.0, 0.0, rotation);
+                let mut min = Vec3::splat(f32::INFINITY);
+                let mut max = Vec3::splat(f32::NEG_INFINITY);
+                for p in positions {
+                    let p = parent
+                        .transform_point(model_transform(kind).transform_point(Vec3::from(*p)));
+                    min = min.min(p);
+                    max = max.max(p);
+                }
+                let shape = kind.rotated_obstacle(0.0, 0.0, rotation);
+                assert!(
+                    (min.x + shape.half_x).abs() < 0.0001,
+                    "{kind:?} at {rotation} quarter turns"
+                );
+                assert!((max.x - shape.half_x).abs() < 0.0001);
+                assert!((min.z + shape.half_z).abs() < 0.0001);
+                assert!((max.z - shape.half_z).abs() < 0.0001);
+                assert!(min.y.abs() < 0.0001 && max.y > 0.0);
             }
-            let shape = kind.obstacle(0.0, 0.0);
-            assert!((min.x + shape.half_x).abs() < 0.0001);
-            assert!((max.x - shape.half_x).abs() < 0.0001);
-            assert!((min.z + shape.half_z).abs() < 0.0001);
-            assert!((max.z - shape.half_z).abs() < 0.0001);
-            assert!(min.y.abs() < 0.0001 && max.y > 0.0);
         }
     }
 }

@@ -82,6 +82,8 @@ GitHub Pages only hosts the client, so run the database separately.
 - `building`: game ID, owner connection, player color, kind (`granary`, `barracks` or `stockpile`), `x/y/z`,
   and `health: f32` initially `1.0`.
 - Private `unit_order`: unit ID, game ID, waypoint list and optional attack target.
+- `building_rotation`: building ID, game ID and `quarter_turns` (0–3). Buildings
+  without a rotation row use 0; existing building records remain unchanged.
 - Private `movement_tick`: 50 ms server schedule, active only while units move or attack.
 
 `create_game` creates the lobby entry and joins the creator. `join_game` allocates
@@ -107,6 +109,10 @@ Every occupied cell is sampled for level ground. Units in either the plot or the
 physical footprint block construction so model overhangs cannot trap units. There
 is a 128-building limit per game. `remove_building` only accepts the owner's buildings.
 Buildings are removed with their owner's army on leave, disconnect or game switch.
+`build_rotated(x, z, building, quarter_turns)` applies the same checks with a 0–3
+quarter-turn orientation. Odd quarter turns swap plot dimensions before snapping,
+terrain checks and overlap checks. Navigation and attacks use the rotated physical
+footprint. Removing or destroying a building also removes its rotation record.
 
 The supplied collision models are enclosed by axis-aligned XZ footprints.
 `shared/` stores each building type’s bounds and model center at scale 0.01, used
@@ -114,8 +120,9 @@ by selection, navigation and attack positions. Logical construction footprints
 are independent of those mesh bounds. Irregular collision meshes and models without supplied collision meshes use
 conservative rectangular footprints. `shared/src/building_catalog.rs` is generated
 from `game/building-models.json` by `game/import-buildings.py`.
-The client sends one `build` action for all building types. The three legacy server
-reducers remain as compatibility aliases for older published clients.
+The client sends one `build` action for all building types, including `rotation`
+in quarter turns, and forwards it to `build_rotated`. The original `build` reducer
+and three legacy building-specific reducers retain orientation 0 for older clients.
 The map is 800×800 world units. Movement stays inside ±399; complete grid plots
 may extend to the world edges at ±400. Existing buildings keep their stored
 positions when updating the module.

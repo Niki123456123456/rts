@@ -869,6 +869,7 @@ fn selection_ui(
                                         building_interaction.placing =
                                             if active { None } else { Some(kind) };
                                         building_interaction.selected = None;
+                                        building_interaction.rotation = 0;
                                     }
                                 }
                             });
@@ -877,8 +878,9 @@ fn selection_ui(
                 ui.separator();
                 if let Some(kind) = building_interaction.placing {
                     ui.label(format!(
-                        "{} auf grünem Boden platzieren. Rechtsklick / Esc bricht ab.",
-                        kind.label()
+                        "{} ({}°) platzieren. R: 90° drehen. Rechtsklick / Esc bricht ab.",
+                        kind.label(),
+                        building_interaction.rotation as u16 * 90
                     ));
                 } else if let Some(building) = building_interaction
                     .selected

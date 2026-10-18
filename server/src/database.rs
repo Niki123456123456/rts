@@ -89,6 +89,16 @@ pub struct Building {
     pub health: f32,
 }
 
+// Additive orientation metadata preserves the existing building table and saved games.
+#[spacetimedb::table(name = building_rotation, public)]
+pub struct BuildingRotation {
+    #[primary_key]
+    pub building_id: u64,
+    #[index(btree)]
+    pub game_id: u64,
+    pub quarter_turns: u8,
+}
+
 // Paths and attack orders stay authoritative and private. Existing army schema
 // remains unchanged, allowing a non-destructive upgrade of hosted games.
 #[spacetimedb::table(name = unit_order)]
@@ -228,7 +238,7 @@ pub fn leave_game(ctx: &ReducerContext) {
                 .filter(connection_id)
                 .collect::<Vec<_>>()
             {
-                ctx.db.building().id().delete(building.id);
+                delete_building(ctx, building.id);
             }
             replan(ctx, player.game_id);
             ctx.db.participant().connection_id().delete(connection_id);
@@ -387,7 +397,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 stop_unit(ctx, unit);
                 continue;
             };
-            let shape = building_shape(&building);
+            let shape = building_shape(ctx, &building);
             if order.waypoints.is_empty()
                 && map::distance((unit.x, unit.z), (unit.target_x, unit.target_z)) < 0.05
                 && map::distance((unit.x, unit.z), shape.closest((unit.x, unit.z)))
@@ -395,7 +405,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             {
                 building.health = (building.health - 0.05 * TICK_SECONDS).max(0.0);
                 if building.health <= 0.0 {
-                    ctx.db.building().id().delete(id);
+                    delete_building(ctx, id);
                     changed_games.insert(building.game_id);
                     // Replanning is done after this tick to avoid updating a stale
                     // copy of another unit's route while iterating orders.
@@ -494,17 +504,28 @@ fn owned_units(
         })
         .collect()
 }
-fn building_shape(building: &Building) -> Obstacle {
+fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
+    ctx.db
+        .building_rotation()
+        .building_id()
+        .find(building_id)
+        .map_or(0, |row| row.quarter_turns)
+}
+fn delete_building(ctx: &ReducerContext, building_id: u64) {
+    ctx.db.building_rotation().building_id().delete(building_id);
+    ctx.db.building().id().delete(building_id);
+}
+fn building_shape(ctx: &ReducerContext, building: &Building) -> Obstacle {
     map::BuildingKind::from_name(&building.kind)
         .unwrap_or_default()
-        .obstacle(building.x, building.z)
+        .rotated_obstacle(building.x, building.z, rotation(ctx, building.id))
 }
 fn obstacles(ctx: &ReducerContext, game_id: u64) -> Vec<Obstacle> {
     ctx.db
         .building()
         .game_id()
         .filter(game_id)
-        .map(|b| building_shape(&b))
+        .map(|b| building_shape(ctx, &b))
         .collect()
 }
 fn save_order(ctx: &ReducerContext, u: &ArmyUnit, attack: Option<u64>, path: Vec<map::Point>) {
@@ -582,7 +603,7 @@ fn attack_plans(
         .collect::<Vec<_>>();
     plan_attack(
         &starts,
-        building_shape(&b),
+        building_shape(ctx, &b),
         &obstacles(ctx, b.game_id),
         &reserved,
         &occupied,
@@ -660,10 +681,34 @@ pub fn build_stockpile(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), Strin
 // Legacy reducers above remain compatible with already published clients.
 #[spacetimedb::reducer]
 pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(), String> {
+    construct(ctx, x, z, building, 0)
+}
+
+#[spacetimedb::reducer]
+pub fn build_rotated(
+    ctx: &ReducerContext,
+    x: f32,
+    z: f32,
+    building: String,
+    quarter_turns: u8,
+) -> Result<(), String> {
+    construct(ctx, x, z, building, quarter_turns)
+}
+
+fn construct(
+    ctx: &ReducerContext,
+    x: f32,
+    z: f32,
+    building: String,
+    quarter_turns: u8,
+) -> Result<(), String> {
+    if quarter_turns > 3 {
+        return Err("Rotation must be 0, 1, 2 or 3 quarter turns.".into());
+    }
     let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
     let player = participant(ctx)?;
-    let (x, z) = kind.snap_position(x, z);
-    let shape = kind.build_footprint(x, z);
+    let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
+    let shape = kind.rotated_build_footprint(x, z, quarter_turns);
     if !shape.in_build_area() {
         return Err("Place the building inside the map.".into());
     }
@@ -674,7 +719,7 @@ pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(
         shape.overlaps(
             map::BuildingKind::from_name(&b.kind)
                 .unwrap_or_default()
-                .build_footprint(b.x, b.z),
+                .rotated_build_footprint(b.x, b.z, rotation(ctx, b.id)),
         )
     }) {
         return Err("Buildings cannot overlap.".into());
@@ -684,18 +729,18 @@ pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(
         .army_unit()
         .game_id()
         .filter(player.game_id)
-        .any(|u| kind.blocks_construction_unit(x, z, (u.x, u.z)))
+        .any(|u| kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z)))
     {
         return Err("Units are standing in the construction area.".into());
     }
     let y = terrain_height(x, z);
     if kind
-        .build_samples(x, z)
+        .rotated_build_samples(x, z, quarter_turns)
         .any(|(px, pz)| (terrain_height(px, pz) - y).abs() > 0.05)
     {
         return Err("Place the building on level ground.".into());
     }
-    ctx.db.building().insert(Building {
+    let placed = ctx.db.building().insert(Building {
         id: 0,
         game_id: player.game_id,
         owner: player.connection_id,
@@ -705,6 +750,11 @@ pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(
         y,
         z,
         health: 1.0,
+    });
+    ctx.db.building_rotation().insert(BuildingRotation {
+        building_id: placed.id,
+        game_id: placed.game_id,
+        quarter_turns,
     });
     replan(ctx, player.game_id);
     Ok(())
@@ -722,7 +772,7 @@ pub fn remove_building(ctx: &ReducerContext, building_id: u64) -> Result<(), Str
     if b.owner != player.connection_id || b.game_id != player.game_id {
         return Err("You can only remove your own buildings.".into());
     }
-    ctx.db.building().id().delete(building_id);
+    delete_building(ctx, building_id);
     replan(ctx, player.game_id);
     Ok(())
 }
