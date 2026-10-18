@@ -5,6 +5,8 @@ type Action =
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
+  | { action: 'build_stockpile'; x: number; z: number }
+  | { action: 'build_barracks'; x: number; z: number }
   | { action: 'build_granary'; x: number; z: number }
   | { action: 'remove_building'; building_id: string }
   | { action: 'attack_building'; unit_ids: string[]; building_id: string }
@@ -64,6 +66,8 @@ function connect(uri: string, database: string) {
   connection.reducers.onSetTargets(result);
   connection.reducers.onSetFormationTargets(result);
   connection.reducers.onBuildGranary(result);
+  connection.reducers.onBuildBarracks(result);
+  connection.reducers.onBuildStockpile(result);
   connection.reducers.onRemoveBuilding(result);
   connection.reducers.onAttackBuilding(result);
 }
@@ -86,6 +90,8 @@ export const strongholdNetwork = {
       case 'create': conn.reducers.createGame(action.title); break;
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
+      case 'build_stockpile': conn.reducers.buildStockpile(action.x, action.z); break;
+      case 'build_barracks': conn.reducers.buildBarracks(action.x, action.z); break;
       case 'build_granary': conn.reducers.buildGranary(action.x, action.z); break;
       case 'remove_building': conn.reducers.removeBuilding(BigInt(action.building_id)); break;
       case 'attack_building': conn.reducers.attackBuilding(action.unit_ids.map(BigInt), BigInt(action.building_id)); break;
@@ -111,7 +117,7 @@ export const strongholdNetwork = {
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
       buildings: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.building.iter())
         .filter(b => b.gameId === gameId)
-        .map(b => ({ id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],
+        .map(b => ({ kind: b.kind, id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],
       units: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.armyUnit.iter())
         .filter(u => u.gameId === gameId)
         .map(u => ({ id: u.id.toString(), number: u.number, color: u.color, health: u.health, owned: u.owner.toHexString() === conn!.connectionId.toHexString(), x: u.x, y: u.y, z: u.z })) : [],

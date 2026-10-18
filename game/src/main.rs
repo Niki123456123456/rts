@@ -306,7 +306,7 @@ fn select_unit(
     mut drag: ResMut<SelectionDrag>,
     building_interaction: Res<BuildingInteraction>,
 ) {
-    if building_interaction.placing || building_interaction.consumed {
+    if building_interaction.placing.is_some() || building_interaction.consumed {
         *drag = default();
         return;
     }
@@ -413,7 +413,7 @@ fn movement_input(
     mut drag: ResMut<MovementDrag>,
     building_interaction: Res<BuildingInteraction>,
 ) {
-    if building_interaction.placing
+    if building_interaction.placing.is_some()
         || building_interaction.consumed
         || multiplayer.snapshot.game_id.is_none()
         || !multiplayer.snapshot.connected
@@ -824,13 +824,19 @@ fn selection_ui(
                     }
                 });
                 ui.separator();
-                if buildings::granary_button(ui, building_interaction.placing) {
-                    building_interaction.placing = !building_interaction.placing;
-                    building_interaction.selected = None;
+                for kind in stronghold_map::BuildingKind::ALL {
+                    let active = building_interaction.placing == Some(kind);
+                    if buildings::building_button(ui, kind, active) {
+                        building_interaction.placing = if active { None } else { Some(kind) };
+                        building_interaction.selected = None;
+                    }
                 }
                 ui.separator();
-                if building_interaction.placing {
-                    ui.label("Place granary on green ground. Right click / Esc to cancel.");
+                if let Some(kind) = building_interaction.placing {
+                    ui.label(format!(
+                        "{} auf grünem Boden platzieren. Rechtsklick / Esc bricht ab.",
+                        kind.label()
+                    ));
                 } else if let Some(building) = building_interaction
                     .selected
                     .and_then(|id| multiplayer.snapshot.buildings.iter().find(|b| b.id == id))
@@ -844,11 +850,17 @@ fn selection_ui(
                                 (color.green * 255.0) as u8,
                                 (color.blue * 255.0) as u8,
                             ),
-                            if building.owned {
-                                "Your granary"
-                            } else {
-                                "Enemy granary"
-                            },
+                            format!(
+                                "{}: {}",
+                                if building.owned {
+                                    "Eigenes Gebäude"
+                                } else {
+                                    "Feindliches Gebäude"
+                                },
+                                stronghold_map::BuildingKind::from_name(&building.kind)
+                                    .unwrap_or_default()
+                                    .label()
+                            ),
                         );
                         ui.add(
                             egui::ProgressBar::new(building.health)

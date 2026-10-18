@@ -38,7 +38,8 @@ die Kamera per Ziehen.
 
 ## Gebäude
 
-Das **Granary**-Symbol unter **Auswahl** startet den Baumodus. Linksklick platziert
+Unter **Auswahl** starten **Kornspeicher**, **Steinkaserne** und **Vorratslager** den jeweiligen Baumodus.
+Die Steinkaserne verwendet `military/barrack_stone/mesh.glb` mit `collision.glb` im selben Ordner; Einheitenrekrutierung ist noch nicht implementiert. Linksklick platziert
 auf grün markiertem, ebenem Boden. Rot bedeutet, dass die Fläche blockiert ist oder
 über den Kartenrand hinausgeht. Rechtsklick oder Escape bricht den Baumodus ab.
 Gebäude dürfen weder andere Gebäude noch Einheiten überdecken. Die Vorschau
@@ -51,7 +52,7 @@ sich auf freie Positionen um das Gebäude und verursachen
 erst an ihrer Angriffsposition in Reichweite Schaden. Ist die erste Reihe voll,
 warten weitere Einheiten mit Abstand dahinter. Beim Zeigen auf ein feindliches
 Gebäude erscheint mit ausgewählten eigenen Einheiten ein Symbol mit gekreuzten Schwertern.
-Granaries starten mit Gesundheit `1.0` und verschwinden bei
+Alle Gebäudetypen starten mit Gesundheit `1.0` und verschwinden bei
 `0.0`. Die Anzeige unter **Auswahl** zeigt die aktuelle Gesundheit.
 
 Der Server berechnet kürzeste Wege um Gebäude mit Abstand für die Einheiten.
@@ -60,10 +61,14 @@ laufen. Belegte Bewegungsziele werden auf freie benachbarte Positionen verteilt.
 Neue oder entfernte Gebäude aktualisieren laufende Routen. Blockierte oder nicht
 erreichbare Bewegungsziele werden abgelehnt. Pro Spiel sind bis zu 128 Gebäude möglich.
 Eigene Gebäude werden beim Verlassen, Spielwechsel oder Verbindungsabbruch entfernt.
-Die beiden Granary-GLBs einschließlich eingebetteter Texturen liegen versioniert in
-`game/assets/models/buildings/`; die Browser-Pipeline kopiert sie nach `public/assets/`.
-`python3 game/import-granary.py` übernimmt sie erneut aus dem ursprünglichen Asset-Archiv.
-Dabei werden die Materialeinstellungen des geschlossenen Granary auf deckend gestellt,
+Die Gebäude-GLBs einschließlich eingebetteter Texturen liegen versioniert unter
+`game/assets/models/buildings/supply/granary/` (Kornspeicher),
+`supply/stockpile/` (Vorratslager) und `military/barrack_stone/` (Steinkaserne),
+jeweils mit `mesh.glb` und `collision.glb`.
+`housing/` ist für spätere Wohngebäude vorbereitet. Die Browser-Pipeline kopiert diese
+Struktur nach `public/assets/`. `python3 game/import-granary.py` übernimmt die
+Modelle und Kollisionsmodelle erneut aus dem ursprünglichen Asset-Archiv.
+Dabei werden die Materialeinstellungen der Gebäude auf deckend gestellt,
 da die importierten DDS-Alpha-Kanäle sonst Dach und Wände durchsichtig machen.
 Beim Verteilen einer nativen Binärdatei muss der Ordner `assets` neben ihr liegen
 (alternativ `BEVY_ASSET_ROOT` auf das Verzeichnis mit dem Asset-Ordner setzen).
@@ -98,5 +103,5 @@ https://niki123456123456.github.io/rts/.
 
 Der erste Build dauert wegen der Bevy-Kompilierung länger. Folgende Builds
 verwenden den Cargo-Cache. Die extrahierten Stronghold-Assets im Stammverzeichnis
-werden nicht vollständig veröffentlicht; nur die beiden benötigten Granary-Modelle
+werden nicht vollständig veröffentlicht; nur die benötigten Gebäudemodelle
 aus `game/assets` werden mitgeliefert.

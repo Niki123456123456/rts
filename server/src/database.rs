@@ -387,10 +387,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 stop_unit(ctx, unit);
                 continue;
             };
-            let shape = Obstacle {
-                x: building.x,
-                z: building.z,
-            };
+            let shape = building_shape(&building);
             if order.waypoints.is_empty()
                 && map::distance((unit.x, unit.z), (unit.target_x, unit.target_z)) < 0.05
                 && map::distance((unit.x, unit.z), shape.closest((unit.x, unit.z)))
@@ -497,12 +494,17 @@ fn owned_units(
         })
         .collect()
 }
+fn building_shape(building: &Building) -> Obstacle {
+    map::BuildingKind::from_name(&building.kind)
+        .unwrap_or_default()
+        .obstacle(building.x, building.z)
+}
 fn obstacles(ctx: &ReducerContext, game_id: u64) -> Vec<Obstacle> {
     ctx.db
         .building()
         .game_id()
         .filter(game_id)
-        .map(|b| Obstacle { x: b.x, z: b.z })
+        .map(|b| building_shape(&b))
         .collect()
 }
 fn save_order(ctx: &ReducerContext, u: &ArmyUnit, attack: Option<u64>, path: Vec<map::Point>) {
@@ -580,7 +582,7 @@ fn attack_plans(
         .collect::<Vec<_>>();
     plan_attack(
         &starts,
-        Obstacle { x: b.x, z: b.z },
+        building_shape(&b),
         &obstacles(ctx, b.game_id),
         &reserved,
         &occupied,
@@ -642,10 +644,24 @@ fn replan(ctx: &ReducerContext, game_id: u64) {
 
 #[spacetimedb::reducer]
 pub fn build_granary(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String> {
+    build(ctx, map::BuildingKind::Granary, x, z)
+}
+
+#[spacetimedb::reducer]
+pub fn build_barracks(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String> {
+    build(ctx, map::BuildingKind::Barracks, x, z)
+}
+
+#[spacetimedb::reducer]
+pub fn build_stockpile(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String> {
+    build(ctx, map::BuildingKind::Stockpile, x, z)
+}
+
+fn build(ctx: &ReducerContext, kind: map::BuildingKind, x: f32, z: f32) -> Result<(), String> {
     let player = participant(ctx)?;
-    let shape = Obstacle { x, z };
+    let shape = kind.obstacle(x, z);
     if !shape.in_map() {
-        return Err("Place the granary inside the map.".into());
+        return Err("Place the building inside the map.".into());
     }
     if ctx.db.building().game_id().filter(player.game_id).count() >= 128 {
         return Err("This game has reached the 128-building limit.".into());
@@ -666,19 +682,19 @@ pub fn build_granary(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String>
         return Err("Units are standing in the construction area.".into());
     }
     let y = terrain_height(x, z);
-    if [-map::HALF_X, 0.0, map::HALF_X].into_iter().any(|dx| {
-        [-map::HALF_Z, 0.0, map::HALF_Z]
+    if [-shape.half_x, 0.0, shape.half_x].into_iter().any(|dx| {
+        [-shape.half_z, 0.0, shape.half_z]
             .into_iter()
             .any(|dz| (terrain_height(x + dx, z + dz) - y).abs() > 0.05)
     }) {
-        return Err("Place the granary on level ground.".into());
+        return Err("Place the building on level ground.".into());
     }
     ctx.db.building().insert(Building {
         id: 0,
         game_id: player.game_id,
         owner: player.connection_id,
         color: player.color,
-        kind: "granary".into(),
+        kind: kind.name().into(),
         x,
         y,
         z,

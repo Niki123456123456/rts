@@ -36,6 +36,7 @@ pub struct Unit {
 
 #[derive(Clone, Deserialize)]
 pub struct Building {
+    pub kind: String,
     #[serde(deserialize_with = "id")]
     pub id: u64,
     pub color: u32,
@@ -82,6 +83,14 @@ pub enum Action {
         game_id: u64,
     },
     Leave,
+    BuildStockpile {
+        x: f32,
+        z: f32,
+    },
+    BuildBarracks {
+        x: f32,
+        z: f32,
+    },
     BuildGranary {
         x: f32,
         z: f32,
@@ -288,6 +297,12 @@ mod backend {
                     });
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_build_stockpile(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_build_barracks(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_build_granary(move |ctx, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -308,6 +323,8 @@ mod backend {
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
                 Action::BuildGranary { x, z } => conn.reducers.build_granary(x, z),
+                Action::BuildBarracks { x, z } => conn.reducers.build_barracks(x, z),
+                Action::BuildStockpile { x, z } => conn.reducers.build_stockpile(x, z),
                 Action::RemoveBuilding { building_id } => {
                     conn.reducers.remove_building(building_id)
                 }
@@ -408,6 +425,7 @@ mod backend {
                 .iter()
                 .filter(|b| Some(b.game_id) == snapshot.game_id)
                 .map(|b| super::Building {
+                    kind: b.kind,
                     id: b.id,
                     color: b.color,
                     health: b.health,

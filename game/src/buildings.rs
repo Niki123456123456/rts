@@ -1,9 +1,9 @@
 use crate::*;
-use stronghold_map::{self as map, Obstacle};
+use stronghold_map::{self as map, BuildingKind};
 
 #[derive(Resource, Default)]
 pub(crate) struct BuildingInteraction {
-    pub placing: bool,
+    pub placing: Option<BuildingKind>,
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
@@ -14,23 +14,37 @@ pub(crate) struct Building(pub network::Building);
 pub(crate) struct BuildingCollider(u64);
 #[derive(Component)]
 pub(crate) struct BuildingOutline(u64);
-#[derive(Resource)]
-pub(crate) struct BuildingAssets {
+struct BuildingModel {
     scene: Handle<WorldAsset>,
     collision: Handle<Mesh>,
-    invisible: Handle<StandardMaterial>,
     footprint: Handle<Mesh>,
-    valid: Handle<StandardMaterial>,
-    invalid: Handle<StandardMaterial>,
-    selected: Handle<StandardMaterial>,
     preview: Entity,
     preview_footprint: Entity,
 }
-fn model_transform() -> Transform {
+#[derive(Resource)]
+pub(crate) struct BuildingAssets {
+    models: [BuildingModel; BuildingKind::ALL.len()],
+    invisible: Handle<StandardMaterial>,
+    valid: Handle<StandardMaterial>,
+    invalid: Handle<StandardMaterial>,
+    selected: Handle<StandardMaterial>,
+}
+impl BuildingAssets {
+    fn hide_previews(&self, commands: &mut Commands) {
+        for model in &self.models {
+            commands.entity(model.preview).insert(Visibility::Hidden);
+            commands
+                .entity(model.preview_footprint)
+                .insert(Visibility::Hidden);
+        }
+    }
+}
+fn model_transform(kind: BuildingKind) -> Transform {
+    let center = kind.center();
     Transform::from_xyz(
-        -map::MODEL_CENTER.0 * map::MODEL_SCALE,
+        -center.0 * map::MODEL_SCALE,
         0.0,
-        -map::MODEL_CENTER.1 * map::MODEL_SCALE,
+        -center.1 * map::MODEL_SCALE,
     )
     .with_scale(Vec3::splat(map::MODEL_SCALE))
 }
@@ -40,9 +54,6 @@ pub(crate) fn setup_buildings(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let scene = server.load("models/buildings/granary_closed.glb#Scene0");
-    // Pick the supplied collision mesh, rather than the roof/decoration geometry.
-    let collision = server.load("models/buildings/granary_collision.glb#Mesh0/Primitive0");
     let mut material = |color| {
         materials.add(StandardMaterial {
             base_color: color,
@@ -55,31 +66,39 @@ pub(crate) fn setup_buildings(
     let valid = material(Color::srgba(0.1, 0.9, 0.3, 0.45));
     let invalid = material(Color::srgba(1.0, 0.1, 0.1, 0.45));
     let selected = material(Color::srgba(1.0, 0.85, 0.15, 0.45));
-    let footprint = meshes.add(Cuboid::new(map::HALF_X * 2.0, 0.04, map::HALF_Z * 2.0));
-    let preview = commands
-        .spawn((Transform::default(), Visibility::Hidden))
-        .with_children(|parent| {
-            parent.spawn((WorldAssetRoot(scene.clone()), model_transform()));
-        })
-        .id();
-    let preview_footprint = commands
-        .spawn((
-            Mesh3d(footprint.clone()),
-            MeshMaterial3d(valid.clone()),
-            Transform::default(),
-            Visibility::Hidden,
-        ))
-        .id();
+    let models = BuildingKind::ALL.map(|kind| {
+        let scene = server.load(kind.scene());
+        let collision = server.load(kind.collision());
+        let shape = kind.obstacle(0.0, 0.0);
+        let footprint = meshes.add(Cuboid::new(shape.half_x * 2.0, 0.04, shape.half_z * 2.0));
+        let preview = commands
+            .spawn((Transform::default(), Visibility::Hidden))
+            .with_children(|parent| {
+                parent.spawn((WorldAssetRoot(scene.clone()), model_transform(kind)));
+            })
+            .id();
+        let preview_footprint = commands
+            .spawn((
+                Mesh3d(footprint.clone()),
+                MeshMaterial3d(valid.clone()),
+                Transform::default(),
+                Visibility::Hidden,
+            ))
+            .id();
+        BuildingModel {
+            scene,
+            collision,
+            footprint,
+            preview,
+            preview_footprint,
+        }
+    });
     commands.insert_resource(BuildingAssets {
-        scene,
-        collision,
+        models,
         invisible,
-        footprint,
         valid,
         invalid,
         selected,
-        preview,
-        preview_footprint,
     });
 }
 pub(crate) fn sync_buildings(
@@ -114,6 +133,8 @@ pub(crate) fn sync_buildings(
         }
     }
     for row in remaining.values() {
+        let kind = BuildingKind::from_name(&row.kind).unwrap_or_default();
+        let model = &assets.models[kind.index()];
         commands
             .spawn((
                 Building((*row).clone()),
@@ -121,16 +142,16 @@ pub(crate) fn sync_buildings(
                 Visibility::default(),
             ))
             .with_children(|parent| {
-                parent.spawn((WorldAssetRoot(assets.scene.clone()), model_transform()));
+                parent.spawn((WorldAssetRoot(model.scene.clone()), model_transform(kind)));
                 parent.spawn((
                     BuildingCollider(row.id),
-                    Mesh3d(assets.collision.clone()),
+                    Mesh3d(model.collision.clone()),
                     MeshMaterial3d(assets.invisible.clone()),
-                    model_transform(),
+                    model_transform(kind),
                 ));
                 parent.spawn((
                     BuildingOutline(row.id),
-                    Mesh3d(assets.footprint.clone()),
+                    Mesh3d(model.footprint.clone()),
                     MeshMaterial3d(assets.selected.clone()),
                     Transform::from_xyz(0.0, 0.04, 0.0),
                     Visibility::Hidden,
@@ -163,32 +184,32 @@ pub(crate) fn sync_buildings(
                 Visibility::Hidden
             });
     }
-    if !interaction.placing {
-        commands.entity(assets.preview).insert(Visibility::Hidden);
-        commands
-            .entity(assets.preview_footprint)
-            .insert(Visibility::Hidden);
+    if interaction.placing.is_none() {
+        assets.hide_previews(&mut commands);
     }
 }
-fn placement_valid(x: f32, z: f32, y: f32, multiplayer: &Multiplayer) -> bool {
-    let shape = Obstacle { x, z };
+fn placement_valid(kind: BuildingKind, x: f32, z: f32, y: f32, multiplayer: &Multiplayer) -> bool {
+    let shape = kind.obstacle(x, z);
     shape.in_map()
-        && !multiplayer
-            .snapshot
-            .buildings
-            .iter()
-            .any(|b| shape.overlaps(Obstacle { x: b.x, z: b.z }))
+        && !multiplayer.snapshot.buildings.iter().any(|b| {
+            shape.overlaps(
+                BuildingKind::from_name(&b.kind)
+                    .unwrap_or_default()
+                    .obstacle(b.x, b.z),
+            )
+        })
         && !multiplayer
             .snapshot
             .units
             .iter()
             .any(|u| shape.contains((u.x, u.z), map::CLEARANCE))
-        && [-map::HALF_X, 0.0, map::HALF_X].into_iter().all(|dx| {
-            [-map::HALF_Z, 0.0, map::HALF_Z]
+        && [-shape.half_x, 0.0, shape.half_x].into_iter().all(|dx| {
+            [-shape.half_z, 0.0, shape.half_z]
                 .into_iter()
                 .all(|dz| (terrain_height(x + dx, z + dz) - y).abs() <= 0.05)
         })
 }
+
 // Keep this identical to the server's terrain surface for the placement preview.
 pub(crate) fn terrain_height(x: f32, z: f32) -> f32 {
     let mut h: f32 = 0.0;
@@ -224,15 +245,12 @@ pub(crate) fn building_input(
 ) {
     state.consumed = false;
     state.attack_hover = None;
-    commands.entity(assets.preview).insert(Visibility::Hidden);
-    commands
-        .entity(assets.preview_footprint)
-        .insert(Visibility::Hidden);
+    assets.hide_previews(&mut commands);
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
         return;
     }
     if keys.just_pressed(KeyCode::Escape) {
-        state.placing = false;
+        state.placing = None;
         state.selected = None;
         state.consumed = true;
         *drag = default();
@@ -241,7 +259,7 @@ pub(crate) fn building_input(
     if !window.focused {
         return;
     }
-    if state.placing {
+    if state.placing.is_some() {
         *drag = default();
     }
     let Some(cursor) = window.cursor_position() else {
@@ -253,8 +271,8 @@ pub(crate) fn building_input(
     }) {
         return;
     }
-    if state.placing && mouse.just_pressed(MouseButton::Right) {
-        state.placing = false;
+    if state.placing.is_some() && mouse.just_pressed(MouseButton::Right) {
+        state.placing = None;
         state.consumed = true;
         return;
     }
@@ -262,20 +280,23 @@ pub(crate) fn building_input(
     let Ok(ray) = camera.viewport_to_world(transform, cursor) else {
         return;
     };
-    let filter =
-        |e| ground.contains(e) || (!state.placing && (colliders.contains(e) || units.contains(e)));
+    let filter = |e| {
+        ground.contains(e)
+            || (state.placing.is_none() && (colliders.contains(e) || units.contains(e)))
+    };
     let settings = MeshRayCastSettings::default().with_filter(&filter);
     let Some((entity, hit)) = ray_cast.cast_ray(ray, &settings).first() else {
         return;
     };
-    if state.placing {
+    if let Some(kind) = state.placing {
+        let model = &assets.models[kind.index()];
         let (x, z) = (hit.point.x, hit.point.z);
         let y = terrain_height(x, z);
-        let valid = placement_valid(x, z, y, &multiplayer);
+        let valid = placement_valid(kind, x, z, y, &multiplayer);
         commands
-            .entity(assets.preview)
+            .entity(model.preview)
             .insert((Visibility::Visible, Transform::from_xyz(x, y, z)));
-        commands.entity(assets.preview_footprint).insert((
+        commands.entity(model.preview_footprint).insert((
             Visibility::Visible,
             Transform::from_xyz(x, y + 0.05, z),
             MeshMaterial3d(if valid {
@@ -286,8 +307,13 @@ pub(crate) fn building_input(
         ));
         if mouse.just_pressed(MouseButton::Left) {
             state.consumed = true;
-            if valid && multiplayer.send(Action::BuildGranary { x, z }) {
-                state.placing = false;
+            let action = match kind {
+                BuildingKind::Granary => Action::BuildGranary { x, z },
+                BuildingKind::Barracks => Action::BuildBarracks { x, z },
+                BuildingKind::Stockpile => Action::BuildStockpile { x, z },
+            };
+            if valid && multiplayer.send(action) {
+                state.placing = None;
             }
         }
         return;
@@ -396,8 +422,8 @@ pub(crate) fn attack_hover_ui(
     }
     Ok(())
 }
-pub(crate) fn granary_button(ui: &mut egui::Ui, active: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(66.0, 70.0), egui::Sense::click());
+pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> bool {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(88.0, 70.0), egui::Sense::click());
     let painter = ui.painter();
     painter.rect_filled(
         rect,
@@ -415,17 +441,51 @@ pub(crate) fn granary_button(ui: &mut egui::Ui, active: bool) -> bool {
             egui::pos2(c.x + 21.0, rect.top() + 49.0),
         ),
         2.0,
-        egui::Color32::from_rgb(178, 140, 79),
+        if kind == BuildingKind::Barracks {
+            egui::Color32::GRAY
+        } else {
+            egui::Color32::from_rgb(178, 140, 79)
+        },
     );
-    painter.add(egui::Shape::convex_polygon(
-        vec![
-            egui::pos2(c.x - 25.0, rect.top() + 25.0),
-            egui::pos2(c.x, rect.top() + 7.0),
-            egui::pos2(c.x + 25.0, rect.top() + 25.0),
-        ],
-        egui::Color32::from_rgb(125, 75, 40),
-        egui::Stroke::NONE,
-    ));
+    if kind == BuildingKind::Barracks {
+        for i in -2..=2 {
+            let x = c.x + i as f32 * 9.0;
+            painter.rect_filled(
+                egui::Rect::from_min_size(
+                    egui::pos2(x - 3.0, rect.top() + 15.0),
+                    egui::vec2(6.0, 12.0),
+                ),
+                0.0,
+                egui::Color32::GRAY,
+            );
+        }
+    } else if kind == BuildingKind::Stockpile {
+        for row in 0..2 {
+            for column in 0..3 {
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        egui::pos2(
+                            c.x - 21.0 + column as f32 * 15.0,
+                            rect.top() + 14.0 + row as f32 * 16.0,
+                        ),
+                        egui::vec2(12.0, 13.0),
+                    ),
+                    1.0,
+                    egui::Color32::from_rgb(125, 75, 40),
+                );
+            }
+        }
+    } else {
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                egui::pos2(c.x - 25.0, rect.top() + 25.0),
+                egui::pos2(c.x, rect.top() + 7.0),
+                egui::pos2(c.x + 25.0, rect.top() + 25.0),
+            ],
+            egui::Color32::from_rgb(125, 75, 40),
+            egui::Stroke::NONE,
+        ));
+    }
     for i in -1..=1 {
         let x = c.x + i as f32 * 9.0;
         painter.line_segment(
@@ -439,12 +499,15 @@ pub(crate) fn granary_button(ui: &mut egui::Ui, active: bool) -> bool {
     painter.text(
         egui::pos2(c.x, rect.bottom() - 10.0),
         egui::Align2::CENTER_CENTER,
-        "Granary",
+        kind.label(),
         egui::FontId::proportional(12.0),
         ui.visuals().text_color(),
     );
     response
-        .on_hover_text("Build a granary. Left click to place; right click or Esc to cancel.")
+        .on_hover_text(format!(
+            "{} bauen. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
+            kind.label()
+        ))
         .clicked()
 }
 
@@ -457,23 +520,25 @@ mod tests {
     #[test]
     fn replicated_destruction_despawns_building_children_without_stale_commands() {
         let mut app = App::new();
-        let preview = app.world_mut().spawn_empty().id();
-        let preview_footprint = app.world_mut().spawn_empty().id();
-        app.insert_resource(BuildingAssets {
+        let models = BuildingKind::ALL.map(|_| BuildingModel {
             scene: default(),
             collision: default(),
-            invisible: default(),
             footprint: default(),
+            preview: app.world_mut().spawn_empty().id(),
+            preview_footprint: app.world_mut().spawn_empty().id(),
+        });
+        app.insert_resource(BuildingAssets {
+            models,
+            invisible: default(),
             valid: default(),
             invalid: default(),
             selected: default(),
-            preview,
-            preview_footprint,
         })
         .init_resource::<Multiplayer>()
         .init_resource::<BuildingInteraction>()
         .add_systems(Update, sync_buildings);
         let row = network::Building {
+            kind: "granary".into(),
             id: 1,
             color: 0,
             health: 1.0,
@@ -513,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn packaged_granary_assets_load_and_collision_matches_navigation() {
+    fn packaged_building_assets_load_and_collision_matches_navigation() {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -528,53 +593,55 @@ mod tests {
         .init_asset::<WorldAsset>();
         app.finish();
         app.cleanup();
-        let assets = app.world().resource::<AssetServer>();
-        let visual: Handle<WorldAsset> = assets.load("models/buildings/granary_closed.glb#Scene0");
-        let collision: Handle<Mesh> =
-            assets.load("models/buildings/granary_collision.glb#Mesh0/Primitive0");
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            app.update();
+        for kind in BuildingKind::ALL {
             let assets = app.world().resource::<AssetServer>();
-            if assets.is_loaded_with_dependencies(visual.id())
-                && assets.is_loaded_with_dependencies(collision.id())
-            {
-                break;
+            let visual: Handle<WorldAsset> = assets.load(kind.scene());
+            let collision: Handle<Mesh> = assets.load(kind.collision());
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                app.update();
+                let assets = app.world().resource::<AssetServer>();
+                if assets.is_loaded_with_dependencies(visual.id())
+                    && assets.is_loaded_with_dependencies(collision.id())
+                {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "{kind:?} assets failed to load: {:?}, {:?}",
+                    assets.get_load_state(visual.id()),
+                    assets.get_load_state(collision.id())
+                );
+                std::thread::sleep(Duration::from_millis(10));
             }
+            let materials = app.world().resource::<Assets<bevy::gltf::GltfMaterial>>();
             assert!(
-                Instant::now() < deadline,
-                "Granary assets failed to load: {:?}, {:?}",
-                assets.get_load_state(visual.id()),
-                assets.get_load_state(collision.id())
+                materials
+                    .iter()
+                    .all(|(_, material)| material.alpha_mode == AlphaMode::Opaque),
+                "Building walls must not use the DDS data alpha as transparency"
             );
-            std::thread::sleep(Duration::from_millis(10));
+            let meshes = app.world().resource::<Assets<Mesh>>();
+            let positions = meshes
+                .get(&collision)
+                .unwrap()
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .unwrap()
+                .as_float3()
+                .unwrap();
+            let mut min = Vec3::splat(f32::INFINITY);
+            let mut max = Vec3::splat(f32::NEG_INFINITY);
+            for p in positions {
+                let p = model_transform(kind).transform_point(Vec3::from(*p));
+                min = min.min(p);
+                max = max.max(p);
+            }
+            let shape = kind.obstacle(0.0, 0.0);
+            assert!((min.x + shape.half_x).abs() < 0.0001);
+            assert!((max.x - shape.half_x).abs() < 0.0001);
+            assert!((min.z + shape.half_z).abs() < 0.0001);
+            assert!((max.z - shape.half_z).abs() < 0.0001);
+            assert!(min.y.abs() < 0.0001 && max.y > 6.0);
         }
-        let materials = app.world().resource::<Assets<bevy::gltf::GltfMaterial>>();
-        assert!(
-            materials
-                .iter()
-                .all(|(_, material)| material.alpha_mode == AlphaMode::Opaque),
-            "Granary roof and walls must not use the DDS data alpha as transparency"
-        );
-        let meshes = app.world().resource::<Assets<Mesh>>();
-        let positions = meshes
-            .get(&collision)
-            .unwrap()
-            .attribute(Mesh::ATTRIBUTE_POSITION)
-            .unwrap()
-            .as_float3()
-            .unwrap();
-        let mut min = Vec3::splat(f32::INFINITY);
-        let mut max = Vec3::splat(f32::NEG_INFINITY);
-        for p in positions {
-            let p = model_transform().transform_point(Vec3::from(*p));
-            min = min.min(p);
-            max = max.max(p);
-        }
-        assert!((min.x + map::HALF_X).abs() < 0.0001);
-        assert!((max.x - map::HALF_X).abs() < 0.0001);
-        assert!((min.z + map::HALF_Z).abs() < 0.0001);
-        assert!((max.z - map::HALF_Z).abs() < 0.0001);
-        assert!(min.y.abs() < 0.0001 && max.y > 6.0);
     }
 }

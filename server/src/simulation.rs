@@ -171,12 +171,12 @@ fn crowd_waypoint(start: Point, goal: Point, peers: &[Point], obstacles: &[Obsta
     }
     for b in obstacles {
         for x in [
-            b.x - map::HALF_X - map::CLEARANCE - 0.001,
-            b.x + map::HALF_X + map::CLEARANCE + 0.001,
+            b.x - b.half_x - map::CLEARANCE - 0.001,
+            b.x + b.half_x + map::CLEARANCE + 0.001,
         ] {
             for z in [
-                b.z - map::HALF_Z - map::CLEARANCE - 0.001,
-                b.z + map::HALF_Z + map::CLEARANCE + 0.001,
+                b.z - b.half_z - map::CLEARANCE - 0.001,
+                b.z + b.half_z + map::CLEARANCE + 0.001,
             ] {
                 if available((x, z)) {
                     nodes.push((x, z));
@@ -367,7 +367,7 @@ mod crowd_tests {
 
     #[test]
     fn attackers_spread_over_four_sides_and_keep_reserved_slots() {
-        let target = Obstacle { x: 0.0, z: 9.0 };
+        let target = map::BuildingKind::Granary.obstacle(0.0, 9.0);
         let units = (0..20)
             .map(|i| (i, ((i % 5) as f32 * 0.7, (i / 5) as f32 * 0.7), None))
             .collect::<Vec<_>>();
@@ -398,7 +398,7 @@ mod crowd_tests {
     }
     #[test]
     fn full_perimeter_queues_reinforcements_outside_melee_range() {
-        let target = Obstacle { x: 0.0, z: 9.0 };
+        let target = map::BuildingKind::Granary.obstacle(0.0, 9.0);
         let perimeter = map::attack_positions(target)
             .into_iter()
             .filter(|s| s.ring == 0)
@@ -438,7 +438,7 @@ mod crowd_tests {
     }
     #[test]
     fn twenty_attackers_reach_distinct_positions_without_collisions() {
-        let target = Obstacle { x: 0.0, z: 9.0 };
+        let target = map::BuildingKind::Granary.obstacle(0.0, 9.0);
         let starts = (0..20)
             .map(|i| {
                 (
@@ -514,7 +514,7 @@ mod crowd_tests {
 
     #[test]
     fn crowded_corner_avoids_buildings_and_waiting_units() {
-        let obstacle = Obstacle { x: 0.0, z: 0.0 };
+        let obstacle = map::BuildingKind::Granary.obstacle(0.0, 0.0);
         let start = (-4.0, -4.0);
         let peers = [(-3.4, -3.4)];
         let p = move_separated(start, (-3.01, -2.81), 0.15, &peers, &[obstacle]);

@@ -1,9 +1,94 @@
-//! Shared granary collision footprint and continuous shortest-path navigation.
-//! Bounds come from POSITION accessor 0 of granary_collision.glb, scaled 1:100.
+//! Shared building catalog, collision footprints and continuous shortest-path navigation.
+//! Bounds come from POSITION accessor 0 of each collision GLB, scaled 1:100.
 pub const MODEL_SCALE: f32 = 0.01;
 pub const MODEL_CENTER: (f32, f32) = (308.07544, -313.6961);
 pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
+/// Buildable models and their collision bounds (source units, before 1:100 scale).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BuildingKind {
+    #[default]
+    Granary,
+    Barracks,
+    Stockpile,
+}
+impl BuildingKind {
+    pub const ALL: [Self; 3] = [Self::Granary, Self::Barracks, Self::Stockpile];
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "granary" => Some(Self::Granary),
+            "barracks" => Some(Self::Barracks),
+            "stockpile" => Some(Self::Stockpile),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Granary => "granary",
+            Self::Barracks => "barracks",
+            Self::Stockpile => "stockpile",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Granary => "Kornspeicher",
+            Self::Barracks => "Steinkaserne",
+            Self::Stockpile => "Vorratslager",
+        }
+    }
+    pub fn index(self) -> usize {
+        match self {
+            Self::Granary => 0,
+            Self::Barracks => 1,
+            Self::Stockpile => 2,
+        }
+    }
+    pub fn scene(self) -> &'static str {
+        match self {
+            Self::Granary => "models/buildings/supply/granary/mesh.glb#Scene0",
+            Self::Barracks => "models/buildings/military/barrack_stone/mesh.glb#Scene0",
+            Self::Stockpile => "models/buildings/supply/stockpile/mesh.glb#Scene0",
+        }
+    }
+    pub fn collision(self) -> &'static str {
+        match self {
+            Self::Granary => "models/buildings/supply/granary/collision.glb#Mesh0/Primitive0",
+            Self::Stockpile => "models/buildings/supply/stockpile/collision.glb#Mesh0/Primitive0",
+            Self::Barracks => {
+                "models/buildings/military/barrack_stone/collision.glb#Mesh0/Primitive0"
+            }
+        }
+    }
+    pub fn center(self) -> Point {
+        match self {
+            Self::Granary => MODEL_CENTER,
+            Self::Stockpile => (
+                (-5.0412598 + 1438.4318) / 2.0,
+                (-1043.6819 + 27.415283) / 2.0,
+            ),
+            Self::Barracks => (1231.5162 / 2.0, (-1025.0 + 2.5813599) / 2.0),
+        }
+    }
+    pub fn obstacle(self, x: f32, z: f32) -> Obstacle {
+        let (half_x, half_z) = match self {
+            Self::Granary => (HALF_X, HALF_Z),
+            Self::Stockpile => (
+                (1438.4318 + 5.0412598) * MODEL_SCALE / 2.0,
+                (1043.6819 + 27.415283) * MODEL_SCALE / 2.0,
+            ),
+            Self::Barracks => (
+                1231.5162 * MODEL_SCALE / 2.0,
+                (1025.0 + 2.5813599) * MODEL_SCALE / 2.0,
+            ),
+        };
+        Obstacle {
+            x,
+            z,
+            half_x,
+            half_z,
+        }
+    }
+}
 pub const MAP_LIMIT: f32 = 39.0;
 pub const CLEARANCE: f32 = 0.27;
 pub const UNIT_SPACING: f32 = 0.55;
@@ -65,15 +150,19 @@ pub fn attack_positions(target: Obstacle) -> Vec<AttackPosition> {
     for ring in 0..4 {
         let extra = ring as f32 * 0.75;
         for side in 0..4 {
-            let half = if side < 2 { HALF_Z } else { HALF_X } + extra;
+            let half = if side < 2 {
+                target.half_z
+            } else {
+                target.half_x
+            } + extra;
             let intervals = (half * 2.0 / 0.7).floor() as usize;
             for index in 0..=intervals {
                 let along = -half + half * 2.0 * index as f32 / intervals as f32;
                 let point = match side {
-                    0 => (target.x - HALF_X - 0.6 - extra, target.z + along),
-                    1 => (target.x + HALF_X + 0.6 + extra, target.z + along),
-                    2 => (target.x + along, target.z - HALF_Z - 0.6 - extra),
-                    _ => (target.x + along, target.z + HALF_Z + 0.6 + extra),
+                    0 => (target.x - target.half_x - 0.6 - extra, target.z + along),
+                    1 => (target.x + target.half_x + 0.6 + extra, target.z + along),
+                    2 => (target.x + along, target.z - target.half_z - 0.6 - extra),
+                    _ => (target.x + along, target.z + target.half_z + 0.6 + extra),
                 };
                 positions.push(AttackPosition { point, side, ring });
             }
@@ -86,24 +175,27 @@ pub fn attack_positions(target: Obstacle) -> Vec<AttackPosition> {
 pub struct Obstacle {
     pub x: f32,
     pub z: f32,
+    pub half_x: f32,
+    pub half_z: f32,
 }
 impl Obstacle {
     pub fn contains(self, p: Point, margin: f32) -> bool {
-        (p.0 - self.x).abs() < HALF_X + margin && (p.1 - self.z).abs() < HALF_Z + margin
+        (p.0 - self.x).abs() < self.half_x + margin && (p.1 - self.z).abs() < self.half_z + margin
     }
     pub fn overlaps(self, other: Self) -> bool {
-        (self.x - other.x).abs() < HALF_X * 2.0 && (self.z - other.z).abs() < HALF_Z * 2.0
+        (self.x - other.x).abs() < self.half_x + other.half_x
+            && (self.z - other.z).abs() < self.half_z + other.half_z
     }
     pub fn in_map(self) -> bool {
         self.x.is_finite()
             && self.z.is_finite()
-            && self.x.abs() + HALF_X <= MAP_LIMIT
-            && self.z.abs() + HALF_Z <= MAP_LIMIT
+            && self.x.abs() + self.half_x <= MAP_LIMIT
+            && self.z.abs() + self.half_z <= MAP_LIMIT
     }
     pub fn closest(self, p: Point) -> Point {
         (
-            p.0.clamp(self.x - HALF_X, self.x + HALF_X),
-            p.1.clamp(self.z - HALF_Z, self.z + HALF_Z),
+            p.0.clamp(self.x - self.half_x, self.x + self.half_x),
+            p.1.clamp(self.z - self.half_z, self.z + self.half_z),
         )
     }
 }
@@ -137,14 +229,14 @@ fn segment_clear_with_clearance(
             (
                 a.0,
                 b.0 - a.0,
-                o.x - HALF_X - clearance,
-                o.x + HALF_X + clearance,
+                o.x - o.half_x - clearance,
+                o.x + o.half_x + clearance,
             ),
             (
                 a.1,
                 b.1 - a.1,
-                o.z - HALF_Z - clearance,
-                o.z + HALF_Z + clearance,
+                o.z - o.half_z - clearance,
+                o.z + o.half_z + clearance,
             ),
         ] {
             if d.abs() < 1e-7 {
@@ -183,12 +275,12 @@ pub fn shortest_path_with_clearance(
     let mut nodes = vec![start, goal];
     for b in obstacles {
         for x in [
-            b.x - HALF_X - clearance - 0.001,
-            b.x + HALF_X + clearance + 0.001,
+            b.x - b.half_x - clearance - 0.001,
+            b.x + b.half_x + clearance + 0.001,
         ] {
             for z in [
-                b.z - HALF_Z - clearance - 0.001,
-                b.z + HALF_Z + clearance + 0.001,
+                b.z - b.half_z - clearance - 0.001,
+                b.z + b.half_z + clearance + 0.001,
             ] {
                 if free_with_clearance((x, z), obstacles, clearance) {
                     nodes.push((x, z));
@@ -244,15 +336,31 @@ pub fn visibility_path(
 
 pub fn attack_path(start: Point, target: Obstacle, obstacles: &[Obstacle]) -> Option<Vec<Point>> {
     let mut candidates = Vec::new();
-    for x in [target.x - HALF_X - 0.6, target.x + HALF_X + 0.6] {
-        candidates.push((x, start.1.clamp(target.z - HALF_Z, target.z + HALF_Z)));
-        for z in [target.z - HALF_Z, target.z + HALF_Z] {
+    for x in [
+        target.x - target.half_x - 0.6,
+        target.x + target.half_x + 0.6,
+    ] {
+        candidates.push((
+            x,
+            start
+                .1
+                .clamp(target.z - target.half_z, target.z + target.half_z),
+        ));
+        for z in [target.z - target.half_z, target.z + target.half_z] {
             candidates.push((x, z));
         }
     }
-    for z in [target.z - HALF_Z - 0.6, target.z + HALF_Z + 0.6] {
-        candidates.push((start.0.clamp(target.x - HALF_X, target.x + HALF_X), z));
-        for x in [target.x - HALF_X, target.x + HALF_X] {
+    for z in [
+        target.z - target.half_z - 0.6,
+        target.z + target.half_z + 0.6,
+    ] {
+        candidates.push((
+            start
+                .0
+                .clamp(target.x - target.half_x, target.x + target.half_x),
+            z,
+        ));
+        for x in [target.x - target.half_x, target.x + target.half_x] {
             candidates.push((x, z));
         }
     }
@@ -275,6 +383,33 @@ pub fn path_length(start: Point, path: &[Point]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn different_buildings_use_their_own_bounds_for_overlap_paths_and_attacks() {
+        let granary = BuildingKind::Granary.obstacle(0.0, 0.0);
+        let barracks = BuildingKind::Barracks.obstacle(8.0, 0.0);
+        assert!(granary.overlaps(barracks));
+        assert!(barracks.overlaps(granary));
+        assert!(!granary.overlaps(BuildingKind::Granary.obstacle(8.0, 0.0)));
+        assert!(!BuildingKind::Barracks.obstacle(34.0, 0.0).in_map());
+        let barracks = BuildingKind::Barracks.obstacle(0.0, 0.0);
+        assert!(barracks.contains((5.0, 0.0), CLEARANCE));
+        assert!(!granary.contains((5.0, 0.0), CLEARANCE));
+        let mut start = (-10.0, 0.0);
+        let path = shortest_path(start, (10.0, 0.0), &[barracks]).unwrap();
+        assert_eq!(path.len(), 3);
+        for point in path {
+            assert!(segment_clear(start, point, &[barracks]));
+            start = point;
+        }
+        for slot in attack_positions(barracks)
+            .into_iter()
+            .filter(|s| s.ring == 0)
+        {
+            assert!((distance(slot.point, barracks.closest(slot.point)) - 0.6).abs() < 0.0001);
+            assert!(free(slot.point, &[barracks]));
+        }
+    }
+
     #[test]
     fn formation_rows_span_drag_and_center_partial_row() {
         let positions = formation_positions((2.0, 3.0), (6.0, 3.0), 10);
@@ -320,7 +455,7 @@ mod tests {
 
     #[test]
     fn routes_around_building_without_cutting_corners() {
-        let obstacles = [Obstacle { x: 0.0, z: 0.0 }];
+        let obstacles = [BuildingKind::Granary.obstacle(0.0, 0.0)];
         let start = (-8.0, 0.0);
         let goal = (8.0, 0.0);
         let path = shortest_path(start, goal, &obstacles).unwrap();
@@ -338,25 +473,19 @@ mod tests {
     #[test]
     fn wall_blocks_routes_and_attack_stops_outside_collision() {
         let wall: Vec<_> = (-8..=8)
-            .map(|i| Obstacle {
-                x: 0.0,
-                z: i as f32 * 5.1,
-            })
+            .map(|i| BuildingKind::Granary.obstacle(0.0, i as f32 * 5.1))
             .collect();
         assert!(shortest_path((-8.0, 0.0), (8.0, 0.0), &wall).is_none());
-        let target = Obstacle { x: 0.0, z: 0.0 };
+        let target = BuildingKind::Granary.obstacle(0.0, 0.0);
         let path = attack_path((-8.0, 0.0), target, &[target]).unwrap();
         let end = *path.last().unwrap();
         assert!((distance(end, target.closest(end)) - 0.6).abs() < 0.001);
     }
     #[test]
     fn collision_footprint_overlap_and_map_bounds() {
-        let a = Obstacle { x: 0.0, z: 0.0 };
-        assert!(a.overlaps(Obstacle { x: 5.0, z: 0.0 }));
-        assert!(!a.overlaps(Obstacle {
-            x: HALF_X * 2.0,
-            z: 0.0
-        }));
-        assert!(!Obstacle { x: 38.0, z: 0.0 }.in_map());
+        let a = BuildingKind::Granary.obstacle(0.0, 0.0);
+        assert!(a.overlaps(BuildingKind::Granary.obstacle(5.0, 0.0)));
+        assert!(!a.overlaps(BuildingKind::Granary.obstacle(HALF_X * 2.0, 0.0)));
+        assert!(!BuildingKind::Granary.obstacle(38.0, 0.0).in_map());
     }
 }
