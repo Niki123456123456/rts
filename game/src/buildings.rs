@@ -1176,6 +1176,14 @@ fn enemy_surface_accessible(snapshot: &network::Snapshot, selected: &[u64], targ
             })
         })
         .collect::<Vec<_>>();
+    // Archers can reach firing positions without entering the enemy roof.
+    if snapshot
+        .units
+        .iter()
+        .any(|u| selected.contains(&u.id) && u.kind == "archer")
+    {
+        return true;
+    }
     let surface = pieces.iter().find(|p| {
         p.roof().roof_contains((enemy.x, enemy.z))
             && (enemy.y - p.roof().roof_y() - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.2

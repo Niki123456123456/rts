@@ -9,16 +9,19 @@ async function connect(){return new Promise<DbConnection>((resolve,reject)=>DbCo
 function call(db:DbConnection,name:string,args:unknown[]=[]){return new Promise<string>((resolve,reject)=>{let done=false;const timer=setTimeout(()=>reject(new Error(`Timeout ${name}`)),8000);(db.reducers as any)['on'+name[0].toUpperCase()+name.slice(1)]((c:ReducerEventContext)=>{if(done||c.event.callerConnectionId?.toHexString()!==db.connectionId.toHexString())return;done=true;clearTimeout(timer);resolve(c.event.status.tag)});(db.reducers as any)[name](...args)});}
 try {
  const a=await connect(),b=await connect();
+ let activeGame=0n;
  const rows=()=>Array.from(a.db.armyUnit.iter());
- const own=(db:DbConnection)=>rows().filter(u=>u.owner.toHexString()===db.connectionId.toHexString());
+ const own=(db:DbConnection)=>rows().filter(u=>u.owner.toHexString()===db.connectionId.toHexString()&&u.gameId===activeGame);
  const unit=(id:bigint)=>a.db.armyUnit.id.find(id);
  const activity=(id:bigint)=>a.db.unitProfile.unitId.find(id)?.activity;
  const near=(id:bigint,x:number,z:number)=>{const u=unit(id);return !!u&&Math.hypot(u.x-x,u.z-z)<.12};
  async function fresh(label:string){
   assert.equal(await call(a,'leaveGame'),'Committed');assert.equal(await call(b,'leaveGame'),'Committed');
-  assert.equal(await call(a,'createGame',[`Melee ${label} ${Date.now()}`]),'Committed');
-  const game=Array.from(a.db.participant.iter()).find(p=>p.connectionId.toHexString()===a.connectionId.toHexString())!.gameId;
-  assert.equal(await call(b,'joinGame',[game]),'Committed');await until(()=>own(a).length===1&&own(b).length===1,'Armies replicate');return game;
+  const title=`Melee ${label} ${Date.now()}`;
+  assert.equal(await call(a,'createGame',[title]),'Committed');
+  await until(()=>{const game=Array.from(a.db.game.iter()).find(g=>g.title===title);return !!game&&Array.from(a.db.participant.iter()).some(p=>p.connectionId.toHexString()===a.connectionId.toHexString()&&p.gameId===game.id)},'New game membership');
+  const game=Array.from(a.db.game.iter()).find(g=>g.title===title)!.id;
+  activeGame=game;assert.equal(await call(b,'joinGame',[game]),'Committed');await until(()=>own(a).length===1&&own(b).length===1,'Armies replicate');return game;
  }
  async function move(db:DbConnection,id:bigint,x:number,z:number){assert.equal(await call(db,'setTargets',[[id],x,z]),'Committed');}
  async function recruit(db:DbConnection,x:number,n:number){

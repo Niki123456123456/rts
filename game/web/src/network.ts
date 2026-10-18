@@ -115,7 +115,7 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
@@ -129,6 +129,7 @@ export const strongholdNetwork = {
       warehouses: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.warehouseStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),wood:s.wood,stone:s.stone,iron:s.iron})) : [],
       workers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.worker.iter()).filter(w=>w.gameId===gameId).map(w=>({unit_id:w.unitId.toString(),source_building:w.sourceBuilding.toString(),resource:w.resource,cargo:w.cargo})) : [],
       producers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.producer.iter()).filter(p=>p.gameId===gameId).map(p=>({building_id:p.buildingId.toString(),resource:p.resource,buffer:p.buffer})) : [],
+      arrows: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.arrowProjectile.iter()).filter(a=>a.gameId===gameId).map(a=>({id:a.id.toString(),target_id:a.targetId.toString(),building:a.building,start_x:a.startX,start_y:a.startY,start_z:a.startZ,end_x:a.endX,end_y:a.endY,end_z:a.endZ,age:a.age,flight_seconds:a.flightSeconds})) : [],
       roof_occupants: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.towerOccupant.iter())
         .filter(o => o.gameId === gameId)
         .map(o => ({ unit_id: o.unitId.toString(), building_id: o.buildingId.toString(), slot: o.slot, next_building: o.nextBuilding?.toString() ?? null, next_slot: o.nextSlot })) : [],

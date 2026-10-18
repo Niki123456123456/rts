@@ -309,11 +309,11 @@ demolition, fresh participation and browser snapshots.
 
 ### Typed combat units
 
-The additive public `unit_profile` table stores kind (`lord` or `armed_peasant`),
+The additive public `unit_profile` table stores kind (`lord`, `armed_peasant` or `archer`),
 activity (0 idle / 1 walking / 2 fighting) and normalized facing direction. New
 participants receive one lord. Existing armies are preserved on upgrades and get
 profiles on connection: number 1 becomes a lord, others armed peasants.
-`recruit_unit(building_id, kind)` recruits armed peasants at an own, same-game
+`recruit_unit(building_id, kind)` recruits armed peasants or archers at an own, same-game
 barracks. It validates the type, ownership, army limit (200 excluding workers),
 front spawn positions after rotation, obstacle clearance and unit reservations
 atomically. Recruitment is currently immediate and free. Profiles are removed
@@ -357,3 +357,23 @@ alone. Client hover validates network access/capacity and shows an error for
 isolated or inaccessible walls. Normal roof-movement ownership checks stay intact.
 `test:wall-combat` covers ascent, counterattack, returning to the original wall
 slot, full garrisons and disconnected fortifications.
+
+### Archers and projectiles
+
+`ranged.rs` adds public `arrow_projectile` rows and private `archer_cooldown` and
+`ranged_building_order` tables without changing existing army/profile schemas.
+Archers never use melee damage. Explicit unit/building attacks reserve a reachable
+firing position and stop once range and a clear ballistic arc permit a shot.
+Automatic defense fires only from the current position and never chases targets.
+
+`shared/src/ranged.rs` defines 14 m base range plus 0.6 m per meter of elevation,
+a 1.25 s cooldown, 22 m/s projectile speed and shared arc/obstruction geometry.
+Each projectile is replicated during flight and resolves damage on impact (0.18
+against units, 0.06 against buildings); arrows track moving unit targets. Buildings
+and terrain block both launch and impact paths. Cooldowns survive new commands;
+casualties and leaving participants release their private state. In-flight arrows
+can still hit after their shooter dies, and are removed when their owner leaves.
+
+`npm --prefix game/web run test:ranged` covers recruitment, range stops, stationary
+defense, elevated firing, isolated wall targets, obstruction, building attacks,
+point-blank projectile damage, cancellation, browser snapshots and cleanup.

@@ -7,6 +7,7 @@ mod menu_ui;
 #[cfg(not(target_arch = "wasm32"))]
 mod module_bindings;
 mod network;
+mod projectiles;
 mod resources;
 mod storage_models;
 mod unit_ui;
@@ -71,6 +72,7 @@ fn main() {
                 combat_units::load_combat_models,
                 combat_units::sync_combat_visuals,
                 combat_units::animate_combat_units,
+                (projectiles::sync_arrows, projectiles::range_preview).chain(),
                 logistics::sync_storage_visuals,
                 buildings::building_input,
                 select_unit,
@@ -1005,21 +1007,12 @@ fn selection_ui(
                             });
                         }
                     });
-                    if building.owned
-                        && building.kind == "barracks"
-                        && unit_ui::portrait(
-                            ui,
-                            portrait_texture,
-                            stronghold_map::units::UnitKind::ArmedPeasant,
-                            None,
-                            true,
-                        )
-                        .clicked()
-                    {
-                        multiplayer.send(Action::RecruitUnit {
-                            building_id: building.id,
-                            kind: "armed_peasant".into(),
-                        });
+                    if building.owned && building.kind == "barracks" {
+                        for kind in [stronghold_map::units::UnitKind::ArmedPeasant, stronghold_map::units::UnitKind::Archer] {
+                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).clicked() {
+                                multiplayer.send(Action::RecruitUnit {building_id:building.id,kind:kind.name().into()});
+                            }
+                        }
                     }
                 } else if !selected.0.is_empty() {
                     egui::ScrollArea::horizontal()
@@ -1029,6 +1022,7 @@ fn selection_ui(
                                 for kind in [
                                     stronghold_map::units::UnitKind::Lord,
                                     stronghold_map::units::UnitKind::ArmedPeasant,
+                                    stronghold_map::units::UnitKind::Archer,
                                 ] {
                                     let count = selected
                                         .0

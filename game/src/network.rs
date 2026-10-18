@@ -22,6 +22,25 @@ pub struct Snapshot {
     pub workers: Vec<WorkerState>,
     #[serde(default)]
     pub producers: Vec<ProducerState>,
+    #[serde(default)]
+    pub arrows: Vec<Arrow>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Arrow {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    #[serde(deserialize_with = "id")]
+    pub target_id: u64,
+    pub building: bool,
+    pub start_x: f32,
+    pub start_y: f32,
+    pub start_z: f32,
+    pub end_x: f32,
+    pub end_y: f32,
+    pub end_z: f32,
+    pub age: f32,
+    pub flight_seconds: f32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -522,6 +541,7 @@ mod backend {
                                 format!("SELECT * FROM worker WHERE game_id = {id}"),
                                 format!("SELECT * FROM producer WHERE game_id = {id}"),
                                 format!("SELECT * FROM unit_profile WHERE game_id = {id}"),
+                                format!("SELECT * FROM arrow_projectile WHERE game_id = {id}"),
                             ]),
                     );
                 }
@@ -570,6 +590,25 @@ mod backend {
                     building_id: p.building_id,
                     resource: p.resource,
                     buffer: p.buffer,
+                })
+                .collect();
+            snapshot.arrows = conn
+                .db
+                .arrow_projectile()
+                .iter()
+                .filter(|a| Some(a.game_id) == snapshot.game_id)
+                .map(|a| super::Arrow {
+                    id: a.id,
+                    target_id: a.target_id,
+                    building: a.building,
+                    start_x: a.start_x,
+                    start_y: a.start_y,
+                    start_z: a.start_z,
+                    end_x: a.end_x,
+                    end_y: a.end_y,
+                    end_z: a.end_z,
+                    age: a.age,
+                    flight_seconds: a.flight_seconds,
                 })
                 .collect();
             snapshot.units = conn

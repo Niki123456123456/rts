@@ -673,3 +673,4 @@ mod tests {
 pub mod units;
 
 pub mod combat;
+pub mod ranged;

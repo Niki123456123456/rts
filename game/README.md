@@ -285,16 +285,18 @@ Auch diese Modelle werden nacheinander geladen.
 ### Einheitentypen und Rekrutierung
 
 Neue Teilnahmen starten mit genau einem **Burgherrn** (`lord.glb`). Wähle eine
-eigene **Steinkaserne** aus und klicke **Bewaffneten Bauern ausbilden**, um einen
-**bewaffneten Bauern** (`armed_peasant.glb`) zu rekrutieren. Er erscheint sofort
+eigene **Steinkaserne** aus und klicke auf das Bauern- oder Bogenschützensymbol,
+um **bewaffnete Bauern** (`armed_peasant.glb`) oder **Bogenschützen** (`archer.glb`)
+zu rekrutieren. Die neue Einheit erscheint sofort
 auf einer freien Position vor der Kaserne; deren Rotation dreht den Aufstellbereich
 mit. Ohne freien Platz schlägt die Rekrutierung fehl. Sie ist derzeit kostenlos;
 bis zu 200 Kampfeinheiten pro Spieler sind möglich. Transportbauern bleiben
 automatisch gesteuert und zählen nicht zu diesem Limit.
 
-Beide Typen verwenden ihre Original-Skelettmodelle: Der Burgherr trägt
+Die Typen verwenden ihre Original-Skelettmodelle: Der Burgherr trägt
 `lord_sword.glb`, der bewaffnete Bauer `armed_peasant_fork.glb`. Die Waffen sind
-am rechten Handknochen befestigt. Da die gelieferten Modelle keine passenden
+am rechten Handknochen befestigt. Bogenschützen tragen `archer_bow.glb` an der
+linken Hand; die Schussanimation zieht die rechte Hand zur Wange. Da die gelieferten Modelle keine passenden
 Clips enthalten, erzeugt `python3 game/import-units.py` eigene Skelettanimationen
 für `idle`, `walking` und `fighting` in `game/assets/models/units/`. Die Clips
 bewegen Arme, Beine und Oberkörper; Waffen folgen der Hand. Animationen laufen
@@ -338,3 +340,18 @@ Nachbarstücke angegriffen werden kann. Nahkampf funktioniert auch über die Gre
 zweier Mauerstücke. Verteidiger greifen zurück an und kehren danach auf ihren
 ursprünglichen Dachplatz zurück. Fehlender Zugang oder voller Platz wird in der
 Vorschau rot angezeigt; es gibt keine Treffer vom Boden durch die Mauer hindurch.
+
+### Bogenschützen
+
+Bogenschützen verwenden ausschließlich Pfeile, auch aus nächster Nähe. Auf einen
+Angriffsbefehl laufen sie bis zur nächsten freien Schussposition und bleiben stehen,
+sobald der Gegner in Reichweite und die Schussbahn frei ist. Bei automatischer
+Verteidigung bleiben sie an ihrer Position und verfolgen keine Gegner.
+Die Grundreichweite beträgt 14 m; jeder Meter Höhe über der Kartenebene bringt
+0,6 m hinzu, auch auf Hügeln. Ausgewählte Bogenschützen zeigen ihre maximale
+Reichweite als hellblauen Kreis. Gelände und Gebäude können die Pfeilbahn blockieren.
+
+Alle 1,25 s wird ein sichtbarer Pfeil (`archer_arrow.glb`) abgeschossen. Er fliegt
+mit 22 m/s auf einer Bogenbahn zum Ziel und verursacht beim Einschlag 0,18 Schaden
+an einer Einheit bzw. 0,06 an einem Gebäude. Der Server berechnet Schüsse und Treffer;
+Browser und native Anwendung stellen dieselben replizierten Projektile dar.

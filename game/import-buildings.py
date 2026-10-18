@@ -132,6 +132,7 @@ impl BuildingKind {
         let d = &DEFINITIONS[self.index()];
         ((d.min[0] + d.max[0]) * 0.5, (d.min[2] + d.max[2]) * 0.5)
     }
+    pub fn height(self) -> f32 { let d = &DEFINITIONS[self.index()]; (d.max[1] - d.min[1]) * MODEL_SCALE }
     pub fn ground_offset(self) -> f32 { -DEFINITIONS[self.index()].min[1] * MODEL_SCALE }
     pub fn obstacle(self, x: f32, z: f32) -> Obstacle {
         let d = &DEFINITIONS[self.index()];

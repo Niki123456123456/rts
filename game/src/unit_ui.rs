@@ -27,6 +27,7 @@ pub(crate) fn portrait(
     let (column, row) = match kind {
         UnitKind::ArmedPeasant => (0., 0.),
         UnitKind::Lord => (3., 3.),
+        UnitKind::Archer => (2., 0.),
     };
     let uv = egui::Rect::from_min_max(
         egui::pos2(column * 57. / 512., row * 92. / 512.),

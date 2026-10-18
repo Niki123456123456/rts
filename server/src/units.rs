@@ -83,8 +83,8 @@ fn update_unit_activity(
 pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Result<(), String> {
     let player = participant(ctx)?;
     let kind = map::units::UnitKind::from_name(&kind)
-        .filter(|k| *k == map::units::UnitKind::ArmedPeasant)
-        .ok_or("Only armed peasants can be recruited.")?;
+        .filter(|k| *k != map::units::UnitKind::Lord)
+        .ok_or("Recruit armed peasants or archers.")?;
     let b = ctx
         .db
         .building()

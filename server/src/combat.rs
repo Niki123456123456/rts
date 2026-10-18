@@ -36,7 +36,10 @@ fn hostile_pair(units: &[ArmyUnit]) -> bool {
 }
 fn start_combat_scan(ctx: &ReducerContext) {
     if ctx.db.combat_tick().iter().next().is_none()
-        && (ctx.db.unit_engagement().iter().next().is_some() || hostile_pair(&combatants(ctx)))
+        && (ctx.db.unit_engagement().iter().next().is_some()
+            || ctx.db.ranged_building_order().iter().next().is_some()
+            || ctx.db.arrow_projectile().iter().next().is_some()
+            || hostile_pair(&combatants(ctx)))
     {
         ctx.db.combat_tick().insert(CombatTick {
             scheduled_id: 0,
@@ -83,13 +86,16 @@ fn melee_contact(ctx: &ReducerContext, u: &ArmyUnit, v: &ArmyUnit) -> bool {
     }
 }
 fn unit_combat_facing(ctx: &ReducerContext, u: &ArmyUnit) -> Option<(f32, f32)> {
+    if let Some(facing) = ranged_building_facing(ctx, u) {
+        return Some(facing);
+    }
     let e = ctx
         .db
         .unit_engagement()
         .unit_id()
         .find(u.id)
         .filter(|e| !e.returning)?;
-    let v = valid_enemy(ctx, u, e.target).filter(|v| melee_contact(ctx, u, v))?;
+    let v = valid_enemy(ctx, u, e.target).filter(|v| attack_contact(ctx, u, v))?;
     Some((v.x - u.x, v.z - u.z))
 }
 fn combat_pose(ctx: &ReducerContext, u: &ArmyUnit) {
@@ -132,6 +138,9 @@ fn begin_engagement(ctx: &ReducerContext, u: &ArmyUnit, target: &ArmyUnit, autom
     });
 }
 fn approach_enemy(ctx: &ReducerContext, u: &mut ArmyUnit, target: &ArmyUnit) -> bool {
+    if is_archer(ctx, u) {
+        return approach_bow_target(ctx, u, &BowTarget::Unit(target.clone()));
+    }
     if !on_ground(ctx, target) {
         return approach_surface_enemy(ctx, u, target);
     }
@@ -249,6 +258,8 @@ fn kill_combat_unit(ctx: &ReducerContext, id: u64) {
     ctx.db.unit_order().unit_id().delete(id);
     ctx.db.unit_engagement().unit_id().delete(id);
     ctx.db.combat_surface_home().unit_id().delete(id);
+    ctx.db.archer_cooldown().unit_id().delete(id);
+    ctx.db.ranged_building_order().unit_id().delete(id);
     ctx.db.unit_profile().unit_id().delete(id);
     ctx.db.army_unit().id().delete(id);
 }
@@ -285,7 +296,7 @@ pub fn attack_units(
             continue;
         };
         begin_engagement(ctx, &u, &enemy, false);
-        if melee_contact(ctx, &u, &enemy) {
+        if attack_contact(ctx, &u, &enemy) {
             stop_unit(ctx, u.clone());
             accepted += 1;
         } else if approach_enemy(ctx, &mut u, &enemy) {
@@ -305,10 +316,18 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
     if ctx.sender != ctx.identity() {
         return Err("Combat is server controlled.".into());
     }
+    step_arrows(ctx);
+    step_ranged_buildings(ctx);
     let units = combatants(ctx);
     // Only idle combatants acquire targets; a new explicit move order wins.
     for u in &units {
         if ctx.db.unit_engagement().unit_id().find(u.id).is_some()
+            || ctx
+                .db
+                .ranged_building_order()
+                .unit_id()
+                .find(u.id)
+                .is_some()
             || ctx
                 .db
                 .unit_order()
@@ -324,8 +343,13 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             .filter(|v| {
                 v.game_id == u.game_id
                     && v.owner != u.owner
-                    && (on_ground(ctx, u) || (!on_ground(ctx, v) && (v.y - u.y).abs() < 0.6))
-                    && map::distance((u.x, u.z), (v.x, v.z)).hypot(u.y - v.y) <= melee::SENSE_RADIUS
+                    && (if is_archer(ctx, u) {
+                        attack_contact(ctx, u, v)
+                    } else {
+                        (on_ground(ctx, u) || (!on_ground(ctx, v) && (v.y - u.y).abs() < 0.6))
+                            && map::distance((u.x, u.z), (v.x, v.z)).hypot(u.y - v.y)
+                                <= melee::SENSE_RADIUS
+                    })
             })
             .collect::<Vec<_>>();
         near.sort_by(|a, b| {
@@ -335,7 +359,9 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             let mut copy = u.clone();
             let previous_order = ctx.db.unit_order().unit_id().find(u.id);
             begin_engagement(ctx, u, enemy, true);
-            if melee_contact(ctx, u, enemy) || approach_enemy(ctx, &mut copy, enemy) {
+            if attack_contact(ctx, u, enemy)
+                || (!is_archer(ctx, u) && approach_enemy(ctx, &mut copy, enemy))
+            {
                 break;
             }
             ctx.db.unit_engagement().unit_id().delete(u.id);
@@ -358,14 +384,18 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
         }
         let eligible = |v: &ArmyUnit| {
             !e.automatic
-                || (map::distance((e.home_x, e.home_z), (v.x, v.z)) <= melee::PURSUIT_RADIUS
-                    && map::distance((e.home_x, e.home_z), (u.x, u.z)) <= melee::PURSUIT_RADIUS)
+                || (if is_archer(ctx, &u) {
+                    attack_contact(ctx, &u, v)
+                } else {
+                    map::distance((e.home_x, e.home_z), (v.x, v.z)) <= melee::PURSUIT_RADIUS
+                        && map::distance((e.home_x, e.home_z), (u.x, u.z)) <= melee::PURSUIT_RADIUS
+                })
         };
         let current = e
             .enemies
             .iter()
             .filter_map(|id| valid_enemy(ctx, &u, *id))
-            .filter(|v| eligible(v) && melee_contact(ctx, &u, v))
+            .filter(|v| eligible(v) && attack_contact(ctx, &u, v))
             .min_by(|a, b| {
                 map::distance((u.x, u.z), (a.x, a.z))
                     .total_cmp(&map::distance((u.x, u.z), (b.x, b.z)))
@@ -397,6 +427,12 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
                 })
         };
         let Some(enemy) = target else {
+            if is_archer(ctx, &u) && e.automatic {
+                ctx.db.unit_engagement().unit_id().delete(u.id);
+                ctx.db.combat_surface_home().unit_id().delete(u.id);
+                combat_pose(ctx, &u);
+                continue;
+            }
             if on_ground(ctx, &u)
                 && (u.y - terrain_height(u.x, u.z) - roof::UNIT_CENTER_HEIGHT).abs() < 0.1
             {
@@ -422,10 +458,15 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             ctx.db.unit_engagement().unit_id().update(e.clone());
             ctx.db.unit_order().unit_id().delete(u.id);
         }
-        if melee_contact(ctx, &u, &enemy) {
+        if attack_contact(ctx, &u, &enemy) {
             ctx.db.tower_travel().unit_id().delete(u.id);
             if ctx.db.unit_order().unit_id().find(u.id).is_some() {
                 stop_unit(ctx, u.clone());
+            }
+            if is_archer(ctx, &u) {
+                launch_arrow(ctx, &u, &BowTarget::Unit(enemy.clone()));
+                combat_pose(ctx, &u);
+                continue;
             }
             let dps = ctx
                 .db
@@ -454,7 +495,11 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             }
         }
     }
-    if ctx.db.unit_engagement().iter().next().is_none() && !hostile_pair(&combatants(ctx)) {
+    if ctx.db.unit_engagement().iter().next().is_none()
+        && ctx.db.ranged_building_order().iter().next().is_none()
+        && ctx.db.arrow_projectile().iter().next().is_none()
+        && !hostile_pair(&combatants(ctx))
+    {
         ctx.db
             .combat_tick()
             .scheduled_id()

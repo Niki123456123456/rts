@@ -102,6 +102,7 @@ fn ensure_resources(ctx: &ReducerContext, player: &Participant) -> PlayerResourc
         })
 }
 
+#[derive(Clone)]
 #[spacetimedb::table(name = building, public)]
 pub struct Building {
     #[primary_key]
@@ -311,8 +312,20 @@ pub fn leave_game(ctx: &ReducerContext) {
             if player.identity != ctx.sender {
                 return;
             }
+            for arrow in ctx
+                .db
+                .arrow_projectile()
+                .game_id()
+                .filter(player.game_id)
+                .filter(|a| a.owner == connection_id)
+                .collect::<Vec<_>>()
+            {
+                ctx.db.arrow_projectile().id().delete(arrow.id);
+            }
             let units: Vec<_> = ctx.db.army_unit().owner().filter(connection_id).collect();
             for unit in units {
+                ctx.db.archer_cooldown().unit_id().delete(unit.id);
+                ctx.db.ranged_building_order().unit_id().delete(unit.id);
                 ctx.db.worker().unit_id().delete(unit.id);
                 ctx.db.unit_profile().unit_id().delete(unit.id);
                 ctx.db.unit_engagement().unit_id().delete(unit.id);
@@ -572,6 +585,10 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 continue;
             }
         }
+        if is_archer(ctx, &unit) && unit_combat_facing(ctx, &unit).is_some() {
+            stop_unit(ctx, unit);
+            continue;
+        }
         let peers = ctx
             .db
             .army_unit()
@@ -663,6 +680,7 @@ fn owned_units(
                 return Err("Transportbauern sind nicht steuerbar.".into());
             }
             ctx.db.unit_engagement().unit_id().delete(u.id);
+            ctx.db.ranged_building_order().unit_id().delete(u.id);
             ctx.db.combat_surface_home().unit_id().delete(u.id);
             Ok(u)
         })
@@ -1062,12 +1080,27 @@ pub fn attack_building(
     if b.game_id != player.game_id || b.owner == player.connection_id {
         return Err("Choose an enemy building in your game.".into());
     }
-    for unit in &units {
-        depart_tower(ctx, unit)?;
+    let mut melee_units = Vec::new();
+    for mut unit in units {
+        if is_archer(ctx, &unit) {
+            if !approach_bow_target(ctx, &mut unit, &BowTarget::Building(b.clone())) {
+                return Err("No reachable firing position.".into());
+            }
+            ctx.db.ranged_building_order().insert(RangedBuildingOrder {
+                unit_id: unit.id,
+                building_id: b.id,
+            });
+        } else {
+            depart_tower(ctx, &unit)?;
+            melee_units.push(unit);
+        }
     }
-    let plans =
-        attack_plans(ctx, &units, &b, false).ok_or("No reachable space around this building.")?;
-    apply_attack_plans(ctx, building_id, plans);
+    if !melee_units.is_empty() {
+        let plans = attack_plans(ctx, &melee_units, &b, false)
+            .ok_or("No reachable space around this building.")?;
+        apply_attack_plans(ctx, building_id, plans);
+    }
+    start_combat_scan(ctx);
     start_tick(ctx);
     Ok(())
 }
@@ -1082,3 +1115,5 @@ include!("units.rs");
 include!("combat.rs");
 
 include!("combat_surfaces.rs");
+
+include!("ranged.rs");

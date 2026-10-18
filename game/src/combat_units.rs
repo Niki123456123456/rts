@@ -5,6 +5,7 @@ use std::time::Duration;
 pub(crate) struct CombatAssets {
     loading: Option<Handle<Gltf>>,
     models: Vec<CombatModel>,
+    pub(crate) arrow_scene: Option<Handle<WorldAsset>>,
 }
 struct CombatModel {
     scene: Handle<WorldAsset>,
@@ -22,12 +23,17 @@ pub(crate) struct RigPlayer {
     kind: usize,
     activity: u8,
 }
-const PATHS: [&str; 2] = [
+const PATHS: [&str; 3] = [
     "models/units/lord/mesh.glb",
     "models/units/armed_peasant/mesh.glb",
+    "models/units/archer/mesh.glb",
 ];
 fn kind_index(kind: &str) -> usize {
-    usize::from(kind == "armed_peasant")
+    match kind {
+        "armed_peasant" => 1,
+        "archer" => 2,
+        _ => 0,
+    }
 }
 pub(crate) fn load_combat_models(
     server: Res<AssetServer>,
@@ -52,6 +58,8 @@ pub(crate) fn load_combat_models(
     }
     if assets.models.len() < PATHS.len() && assets.loading.is_none() {
         assets.loading = Some(server.load(PATHS[assets.models.len()]));
+    } else if assets.models.len() == PATHS.len() && assets.arrow_scene.is_none() {
+        assets.arrow_scene = Some(server.load("models/units/archer/arrow.glb#Scene0"));
     }
 }
 pub(crate) fn sync_combat_visuals(
@@ -84,10 +92,10 @@ pub(crate) fn sync_combat_visuals(
         let Some(model) = assets.models.get(kind) else {
             continue;
         };
-        let (scale, base) = if kind == 0 {
-            (0.007653524, -0.12237549)
-        } else {
-            (0.00802919, -1.5127563)
+        let (scale, base) = match kind {
+            0 => (0.007653524, -0.12237549),
+            1 => (0.00802919, -1.5127563),
+            _ => (0.008200814, -1.4188614),
         };
         commands.entity(owner).with_children(|parent| {
             parent
@@ -163,7 +171,7 @@ mod tests {
     };
     use std::time::Instant;
     #[test]
-    fn both_rigs_have_three_playable_states_and_weapons_follow_animated_hands() {
+    fn all_rigs_have_three_playable_states_and_weapons_follow_animated_hands() {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -212,6 +220,17 @@ mod tests {
                 Transform::default(),
             ))
             .id();
+        let archer = app
+            .world_mut()
+            .spawn((
+                Unit {
+                    kind: "archer".into(),
+                    health: 1.,
+                    ..default()
+                },
+                Transform::default(),
+            ))
+            .id();
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             app.update();
@@ -220,20 +239,20 @@ mod tests {
                 .query::<&RigPlayer>()
                 .iter(app.world())
                 .count()
-                == 2
+                == 3
             {
                 break;
             }
             assert!(
                 Instant::now() < deadline,
-                "Both animated rig instances should load"
+                "All animated rig instances should load"
             );
             std::thread::sleep(Duration::from_millis(10));
         }
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
             Duration::from_secs_f64(1. / 60.),
         ));
-        for owner in [lord, peasant] {
+        for owner in [lord, peasant, archer] {
             let mut descendants = vec![owner];
             let mut index = 0;
             while index < descendants.len() {
@@ -252,7 +271,11 @@ mod tests {
                 .expect("Weapon attached to each rig");
             assert_eq!(
                 app.world().get::<Name>(hand).unwrap().as_str(),
-                "Bip01 R Hand"
+                if owner == archer {
+                    "Bip01 L Hand"
+                } else {
+                    "Bip01 R Hand"
+                }
             );
             for state in 0..=2 {
                 app.world_mut().get_mut::<Unit>(owner).unwrap().activity = state;
@@ -273,6 +296,22 @@ mod tests {
                 for _ in 0..180 {
                     app.update();
                     let weapon_transform = app.world().get::<GlobalTransform>(weapon).unwrap();
+                    if owner == archer {
+                        if state == 2 {
+                            let grip = app
+                                .world()
+                                .get::<GlobalTransform>(hand)
+                                .unwrap()
+                                .translation();
+                            assert!(grip.x>0.05 && grip.z>0.3 && grip.y>0.45,"Bow must be held forward on the left-hand side, without crossing arms: {grip:?}");
+                        }
+                        let bow_axis = weapon_transform.rotation() * Vec3::Z;
+                        assert!(
+                            bow_axis.y > 0.9,
+                            "Bow stays upright in state {state}: {bow_axis:?}"
+                        );
+                        continue;
+                    }
                     let blade_direction = weapon_transform.rotation() * Vec3::Y;
                     assert!(
                         blade_direction.z > 0.05,
