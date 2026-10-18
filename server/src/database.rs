@@ -115,6 +115,14 @@ pub struct TowerOccupant {
     pub next_slot: u8,
 }
 
+// Entry tower is separate metadata, so existing hosted table schemas stay intact.
+#[spacetimedb::table(name = wall_entry)]
+pub struct WallEntry {
+    #[primary_key]
+    pub unit_id: u64,
+    pub tower_id: u64,
+}
+
 #[spacetimedb::table(name = tower_travel)]
 pub struct TowerTravel {
     #[primary_key]
@@ -123,7 +131,7 @@ pub struct TowerTravel {
     pub game_id: u64,
     pub building_id: u64,
     pub path: Vec<f32>,
-    // Per-waypoint movement: 0 = roof walk, 3 = door/hatch teleport; 1/2 are upgraded legacy routes.
+    // Waypoints: 0 roof walk, 3 door/hatch teleport, 4 wall walk, 5 internal transfer; 1/2 legacy.
     pub modes: Vec<u8>,
     pub next: u32,
     pub leaving: bool,
@@ -570,6 +578,7 @@ fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
         .map_or(0, |row| row.quarter_turns)
 }
 fn delete_building(ctx: &ReducerContext, building_id: u64) {
+    cancel_surface_routes_through(ctx, building_id);
     ctx.db.building_rotation().building_id().delete(building_id);
     ctx.db.building().id().delete(building_id);
     evacuate_tower(ctx, building_id);
@@ -780,6 +789,44 @@ fn construct(
     building: String,
     quarter_turns: u8,
 ) -> Result<(), String> {
+    place_building(ctx, x, z, building, quarter_turns)?;
+    replan(ctx, participant(ctx)?.game_id);
+    Ok(())
+}
+
+/// One atomic reducer places the complete line, or leaves the map unchanged.
+#[spacetimedb::reducer]
+pub fn build_wall(
+    ctx: &ReducerContext,
+    start_x: f32,
+    start_z: f32,
+    end_x: f32,
+    end_z: f32,
+) -> Result<(), String> {
+    let player = participant(ctx)?;
+    let line = map::walls::wall_line((start_x, start_z), (end_x, end_z));
+    if line.is_empty() {
+        return Err("Choose valid wall endpoints inside the map.".into());
+    }
+    for (x, z) in line {
+        if ctx.db.building().game_id().filter(player.game_id).any(|b| {
+            b.kind == "stone_wall" && b.owner == player.connection_id && b.x == x && b.z == z
+        }) {
+            continue;
+        }
+        place_building(ctx, x, z, "stone_wall".into(), 0)?;
+    }
+    replan(ctx, player.game_id);
+    Ok(())
+}
+
+fn place_building(
+    ctx: &ReducerContext,
+    x: f32,
+    z: f32,
+    building: String,
+    quarter_turns: u8,
+) -> Result<(), String> {
     if quarter_turns > 3 {
         return Err("Rotation must be 0, 1, 2 or 3 quarter turns.".into());
     }
@@ -790,8 +837,25 @@ fn construct(
     if !shape.in_build_area() {
         return Err("Place the building inside the map.".into());
     }
-    if ctx.db.building().game_id().filter(player.game_id).count() >= 128 {
-        return Err("This game has reached the 128-building limit.".into());
+    let wall = kind == map::BuildingKind::StoneWall;
+    let limit = if wall {
+        map::walls::MAX_WALL_SEGMENTS
+    } else {
+        128
+    };
+    if ctx
+        .db
+        .building()
+        .game_id()
+        .filter(player.game_id)
+        .filter(|b| (b.kind == "stone_wall") == wall)
+        .count()
+        >= limit
+    {
+        return Err(format!(
+            "This game has reached the {limit}-{} limit.",
+            if wall { "wall-segment" } else { "building" }
+        ));
     }
     if ctx.db.building().game_id().filter(player.game_id).any(|b| {
         shape.overlaps(
@@ -807,7 +871,10 @@ fn construct(
         .army_unit()
         .game_id()
         .filter(player.game_id)
-        .any(|u| kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z)))
+        .any(|u| {
+            on_ground(ctx, &u)
+                && kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z))
+        })
     {
         return Err("Units are standing in the construction area.".into());
     }
@@ -834,7 +901,6 @@ fn construct(
         game_id: placed.game_id,
         quarter_turns,
     });
-    replan(ctx, player.game_id);
     Ok(())
 }
 
@@ -882,4 +948,5 @@ pub fn attack_building(
     Ok(())
 }
 
+include!("walls.rs");
 include!("tower.rs");

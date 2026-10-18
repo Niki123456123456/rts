@@ -6,6 +6,8 @@ without the source archive. Closed buildings use OPAQUE materials because the
 exported DDS alpha channels contain surface data rather than transparency.
 Models without supplied collision geometry receive a conservative bounding box.
 """
+import sys
+sys.dont_write_bytecode = True
 import json
 from pathlib import Path
 import struct
@@ -62,20 +64,27 @@ def main():
     for item in catalog:
         if len(item['grid']) != 2 or any(type(n) is not int or not 1 <= n <= 400 for n in item['grid']):
             raise ValueError(f"Invalid grid size for {item['id']}")
-        visual, tail = unpack((SOURCE / (item['source'] + '.glb')).read_bytes())
-        for material in visual.get('materials', []):
-            material['alphaMode'] = 'OPAQUE'
-        if item['collision']:
-            collision = (SOURCE / (item['collision'] + '.glb')).read_bytes()
-            minimum, maximum = bounds(unpack(collision)[0])
-        else:
-            minimum, maximum = bounds(visual)
-            collision = box_collision(minimum, maximum)
         relative = f"models/buildings/{item['category']}/{item['folder']}"
         folder = ROOT / 'assets' / relative
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / 'mesh.glb').write_bytes(pack(visual, tail))
-        (folder / 'collision.glb').write_bytes(collision)
+        if item.get('procedural') == 'stone_wall':
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('stone_wall', ROOT / 'create-stone-wall.py')
+            generator = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(generator)
+            minimum, maximum = generator.generate()
+        else:
+            visual, tail = unpack((SOURCE / (item['source'] + '.glb')).read_bytes())
+            for material in visual.get('materials', []):
+                material['alphaMode'] = 'OPAQUE'
+            if item['collision']:
+                collision = (SOURCE / (item['collision'] + '.glb')).read_bytes()
+                minimum, maximum = bounds(unpack(collision)[0])
+            else:
+                minimum, maximum = bounds(visual)
+                collision = box_collision(minimum, maximum)
+            (folder / 'mesh.glb').write_bytes(pack(visual, tail))
+            (folder / 'collision.glb').write_bytes(collision)
         definitions.append('    Definition { name: %s, label: %s, category: %s, scene: %s, collision: %s, min: %s, max: %s, grid: %s },' % (
             json.dumps(item['id']), json.dumps(item['label'], ensure_ascii=False), json.dumps(item['category']),
             json.dumps(relative + '/mesh.glb#Scene0'), json.dumps(relative + '/collision.glb#Mesh0/Primitive0'),

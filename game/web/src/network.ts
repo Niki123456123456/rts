@@ -6,6 +6,7 @@ type Action =
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
   | { action: 'build'; x: number; z: number; building: string; rotation?: number }
+  | { action: 'build_wall'; start_x: number; start_z: number; end_x: number; end_z: number }
   | { action: 'remove_building'; building_id: string }
   | { action: 'move_to_roof'; unit_ids: string[]; building_id: string; x: number; z: number }
   | { action: 'attack_building'; unit_ids: string[]; building_id: string }
@@ -66,6 +67,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onSetFormationTargets(result);
   connection.reducers.onBuild(result);
   connection.reducers.onBuildRotated(result);
+  connection.reducers.onBuildWall(result);
   connection.reducers.onMoveToRoof(result);
   connection.reducers.onRemoveBuilding(result);
   connection.reducers.onAttackBuilding(result);
@@ -90,6 +92,7 @@ export const strongholdNetwork = {
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
       case 'build': conn.reducers.buildRotated(action.x, action.z, action.building, action.rotation ?? 0); break;
+      case 'build_wall': conn.reducers.buildWall(action.start_x, action.start_z, action.end_x, action.end_z); break;
       case 'remove_building': conn.reducers.removeBuilding(BigInt(action.building_id)); break;
       case 'move_to_roof': conn.reducers.moveToRoof(action.unit_ids.map(BigInt), BigInt(action.building_id), action.x, action.z); break;
       case 'attack_building': conn.reducers.attackBuilding(action.unit_ids.map(BigInt), BigInt(action.building_id)); break;

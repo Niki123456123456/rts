@@ -11,6 +11,7 @@ fn tower_geometry(ctx: &ReducerContext, b: &Building) -> BuildingRoof {
     .expect("Roof reservations only reference buildings with a roof profile")
 }
 fn clear_tower(ctx: &ReducerContext, id: u64) {
+    ctx.db.wall_entry().unit_id().delete(id);
     ctx.db.tower_travel().unit_id().delete(id);
     ctx.db.tower_occupant().unit_id().delete(id);
 }
@@ -85,7 +86,10 @@ fn entry_plan(
     u: &ArmyUnit,
     b: &Building,
     _slot: u8,
-) -> Option<(u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
+) -> Option<(u64, u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
+    if is_wall(b) {
+        return wall_entry_plan(ctx, u, b);
+    }
     let tower = tower_geometry(ctx, b);
     let obstacles = obstacles(ctx, u.game_id);
     (0..tower.door_count())
@@ -102,7 +106,7 @@ fn entry_plan(
             ))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, door, path, points, modes)| (door, path, points, modes))
+        .map(|(_, door, path, points, modes)| (b.id, door, path, points, modes))
 }
 fn start_roof_entry(
     ctx: &ReducerContext,
@@ -110,14 +114,25 @@ fn start_roof_entry(
     b: &Building,
     slot: u8,
 ) -> Result<(), String> {
-    let (door, approach, mut points, mut modes) =
+    let (access, door, approach, mut points, mut modes) =
         entry_plan(ctx, &u, b, slot).ok_or("No tower door is reachable.")?;
     let tower = tower_geometry(ctx, b);
-    let roof = tower
-        .roof_path(tower.hatch(), tower.slot(slot as usize))
-        .ok_or("Roof destination is unreachable.")?;
-    points.extend(roof);
-    modes.resize(points.len(), 0);
+    if is_wall(b) {
+        let goal = tower.slot(slot as usize);
+        points.push((goal.0, wall_level(b), goal.1));
+        modes.push(4);
+        ctx.db.wall_entry().unit_id().delete(u.id);
+        ctx.db.wall_entry().insert(WallEntry {
+            unit_id: u.id,
+            tower_id: access,
+        });
+    } else {
+        let roof = tower
+            .roof_path(tower.hatch(), tower.slot(slot as usize))
+            .ok_or("Roof destination is unreachable.")?;
+        points.extend(roof);
+        modes.resize(points.len(), 0);
+    }
     let goal = *approach.last().ok_or("No tower approach.")?;
     u.target_x = goal.0;
     u.target_z = goal.1;
@@ -162,6 +177,9 @@ pub fn move_to_roof(
     let tower = tower_geometry(ctx, &b);
     if !x.is_finite() || !z.is_finite() || !tower.roof_contains((x, z)) {
         return Err("Choose a point on the roof.".into());
+    }
+    if is_wall(&b) {
+        return move_to_wall(ctx, units, &b, (x, z));
     }
     normalize_roof_slots(ctx);
     // Existing occupants retain their reservations; extra ground units keep their orders.
@@ -278,6 +296,9 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
         .id()
         .find(o.building_id)
         .ok_or("Tower no longer exists.")?;
+    if is_wall(&b) {
+        return depart_wall(ctx, u, &b, o);
+    }
     let tower = tower_geometry(ctx, &b);
     if !door_clear(ctx, &b, o.door) {
         o.door = (0..tower.door_count())
@@ -329,7 +350,12 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
         }
         if !t.leaving && ctx.db.unit_order().unit_id().find(u.id).is_some() {
             let o = ctx.db.tower_occupant().unit_id().find(u.id).unwrap();
-            let door = tower_geometry(ctx, &b).door(o.door);
+            let Some(access) = access_building(ctx, u.id, &b) else {
+                clear_tower(ctx, u.id);
+                stop_unit(ctx, u);
+                continue;
+            };
+            let door = tower_geometry(ctx, &access).door(o.door);
             if map::distance((u.x, u.z), door) > 0.55 {
                 continue;
             }
@@ -372,9 +398,9 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
             let i = t.next as usize;
             let goal = points[i];
             let start = (u.x, u.y, u.z);
-            if t.modes[i] == 3 {
+            if t.modes[i] == 3 || t.modes[i] == 5 {
                 // Door <-> hatch is instantaneous and may run for every unit this tick.
-                if t.leaving {
+                if t.leaving && t.modes[i] == 3 {
                     let obstacles = obstacles(ctx, u.game_id);
                     let reserved = ctx
                         .db
@@ -408,13 +434,23 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
                 t.next += 1;
                 continue;
             }
-            let obstacles = tower.roof_obstacles();
-            // Transfers fan out from a shared hatch concurrently. Slot reservations
-            // prevent stacking at rest; moving arrivals may pass one another.
-            let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &[], &obstacles);
-            u.x = p.0;
-            u.z = p.1;
-            u.y = tower.roof_y() + roof::UNIT_CENTER_HEIGHT;
+            if t.modes[i] == 4 {
+                let length = map::distance((u.x, u.z), (goal.0, goal.2));
+                let fraction = if length < 0.00001 {
+                    1.
+                } else {
+                    (budget / length).min(1.)
+                };
+                u.x += (goal.0 - u.x) * fraction;
+                u.z += (goal.2 - u.z) * fraction;
+                u.y += (goal.1 - u.y) * fraction;
+            } else {
+                let obstacles = tower.roof_obstacles();
+                let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &[], &obstacles);
+                u.x = p.0;
+                u.z = p.1;
+                u.y = tower.roof_y() + roof::UNIT_CENTER_HEIGHT;
+            }
             let travelled =
                 ((u.x - start.0).powi(2) + (u.y - start.1).powi(2) + (u.z - start.2).powi(2))
                     .sqrt();
@@ -451,7 +487,8 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
             }
             if !t.leaving {
                 if let Some(mut o) = ctx.db.tower_occupant().unit_id().find(u.id) {
-                    if o.next_building == Some(o.building_id) {
+                    if let Some(next) = o.next_building {
+                        o.building_id = next;
                         o.slot = o.next_slot;
                         o.next_building = None;
                         ctx.db.tower_occupant().unit_id().update(o);
@@ -509,6 +546,15 @@ fn normalize_roof_slots(ctx: &ReducerContext) {
         let Some(u) = ctx.db.army_unit().id().find(o.unit_id) else {
             continue;
         };
+        if ctx
+            .db
+            .tower_travel()
+            .unit_id()
+            .find(u.id)
+            .is_some_and(|t| t.modes.contains(&4))
+        {
+            continue;
+        }
         let tower = tower_geometry(ctx, &b);
         let slot = if o.next_building == Some(b.id) {
             o.next_slot

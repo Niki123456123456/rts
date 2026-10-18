@@ -96,8 +96,8 @@ Die Gebäude-GLBs einschließlich eingebetteter Texturen liegen versioniert unte
 `game/assets/models/buildings/supply/granary/` (Kornspeicher),
 `supply/stockpile/` (Vorratslager) und `military/barrack_stone/` (Steinkaserne),
 jeweils mit `mesh.glb` und `collision.glb`.
-`fortifications/` enthält 18 Befestigungsmodelle: vier Torhäuser, Ausfallpforte,
-Wachposten, sieben Turmtypen, Turmflagge, Wehrgang und drei Brückenelemente.
+`fortifications/` enthält 19 Befestigungsmodelle: vier Torhäuser, Ausfallpforte,
+Wachposten, sieben Turmtypen, Turmflagge, Wehrgang, drei Brückenelemente und die Steinmauer.
 `housing/` ist für spätere Wohngebäude vorbereitet. Die Browser-Pipeline kopiert diese
 Struktur nach `public/assets/`. `python3 game/import-buildings.py` übernimmt die
 Modelle und Kollisionsmodelle erneut aus dem ursprünglichen Asset-Archiv.
@@ -176,3 +176,33 @@ Der erste Build dauert wegen der Bevy-Kompilierung länger. Folgende Builds
 verwenden den Cargo-Cache. Die extrahierten Stronghold-Assets im Stammverzeichnis
 werden nicht vollständig veröffentlicht; nur die benötigten Gebäudemodelle
 aus `game/assets` werden mitgeliefert.
+
+### Steinmauern
+
+Unter **Befestigungen → Steinmauer** zuerst die Startzelle, dann die Endzelle
+anklicken. Während der Auswahl zeigt eine grüne beziehungsweise rote Vorschau die
+vollständige Linie. Nach dem Platzieren können weitere Linien gebaut werden;
+Rechtsklick oder Esc beendet den Modus. Schräge Linien bilden lückenlose Rasterstufen.
+Vorhandene eigene Mauersegmente werden beim Verlängern wiederverwendet. Die gesamte
+Linie wird atomar geprüft: Ein belegtes Feld verhindert den kompletten Auftrag.
+
+Jedes Segment belegt eine 2×2-m-Zelle und hat eine 6,663 m hohe Mauerkrone, exakt auf
+Höhe des Treppenturmdachs. Ein Segment bietet neun reservierbare Plätze; ein Rechtsklick
+mit ausgewählten Einheiten verteilt diese auf die nächsten freien Plätze des gesamten
+zusammenhängenden Mauerabschnitts. Kleine Kreise zeigen die Zielpositionen vorab.
+Nur seitlich verbundene eigene Segmente auf gleicher Geländehöhe bilden einen Weg.
+Eckkontakt zählt nicht als Verbindung.
+
+Ein Abschnitt muss an einen eigenen Treppen-, Aussichts- oder viereckigen Turm
+anschließen. Einheiten gehen zur erreichbaren Turmtür, werden durch die Luke versetzt
+und laufen über die Mauerkrone. Höhere Türme haben einen internen Übergang zur
+Mauerebene. Der Rückweg führt über eine freie Tür eines angeschlossenen Turms.
+Ohne Turmverbindung sind keine neuen Mauerbefehle oder Abstiege möglich. Bei Abriss
+werden betroffene Einheiten auf freien Boden evakuiert und betroffene Laufwege beendet.
+Alle Mauersegmente blockieren die Bodennavigation, unabhängig von ihrer Begehbarkeit.
+Pro Spiel sind zusätzlich zu den 128 Gebäuden bis zu 4096 Mauersegmente möglich.
+
+`game/create-stone-wall.py` erzeugt `fortifications/stone_wall/{mesh,collision}.glb`
+und wird auch vom Modellimport aufgerufen. Eingebettet werden die vorhandenen
+Texturen `assets/images/Source/meshes/buildings/castle_wall.png` (Seiten) und
+`walltop.png` (Mauerkrone). Bestehende Turmmodelle werden dabei nicht verändert.

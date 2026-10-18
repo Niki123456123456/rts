@@ -271,5 +271,19 @@
       2,
       23
     ]
+  },
+  {
+    "variant": "StoneWall",
+    "id": "stone_wall",
+    "label": "Steinmauer",
+    "category": "fortifications",
+    "source": null,
+    "collision": null,
+    "folder": "stone_wall",
+    "grid": [
+      1,
+      1
+    ],
+    "procedural": "stone_wall"
   }
 ]

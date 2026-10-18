@@ -26,6 +26,7 @@ pub enum BuildingKind {
     BridgeEnd,
     BridgeMiddle,
     BridgeWooden,
+    StoneWall,
 }
 struct Definition {
     name: &'static str,
@@ -37,7 +38,7 @@ struct Definition {
     max: [f32; 3],
     grid: [u16; 2],
 }
-const DEFINITIONS: [Definition; 21] = [
+const DEFINITIONS: [Definition; 22] = [
     Definition {
         name: "granary",
         label: "Kornspeicher",
@@ -260,9 +261,19 @@ const DEFINITIONS: [Definition; 21] = [
         max: [446.7037048339844, 377.5419921875, 24.455078125],
         grid: [2, 23],
     },
+    Definition {
+        name: "stone_wall",
+        label: "Steinmauer",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/stone_wall/mesh.glb#Scene0",
+        collision: "models/buildings/fortifications/stone_wall/collision.glb#Mesh0/Primitive0",
+        min: [-100.0, 0.0, -100.0],
+        max: [100.0, 666.3, 100.0],
+        grid: [1, 1],
+    },
 ];
 impl BuildingKind {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::Granary,
         Self::Barracks,
         Self::Stockpile,
@@ -284,6 +295,7 @@ impl BuildingKind {
         Self::BridgeEnd,
         Self::BridgeMiddle,
         Self::BridgeWooden,
+        Self::StoneWall,
     ];
     pub fn index(self) -> usize {
         self as usize

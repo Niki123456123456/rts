@@ -131,7 +131,7 @@ try {
   assert.equal(buildings().length, beforeUnknown, 'Unknown types do not create buildings');
   const catalog = JSON.parse(readFileSync(new URL('../../building-models.json', import.meta.url), 'utf8')) as {id: string; category: string; grid: [number, number]}[];
   const fortifications = catalog.filter(x => x.category === 'fortifications');
-  assert.equal(fortifications.length, 18);
+  assert.equal(fortifications.length, 19);
   for (const [index, entry] of fortifications.entries()) {
     const x = -250 + index % 6 * 70;
     const z = 140 + Math.floor(index / 6) * 60;

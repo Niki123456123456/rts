@@ -6,6 +6,7 @@ pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
 pub mod building_roof;
+pub mod walls;
 pub use building_catalog::BuildingKind;
 
 pub const MAP_SIZE: f32 = 800.0;
@@ -514,7 +515,7 @@ mod tests {
                 .iter()
                 .filter(|kind| kind.category() == "fortifications")
                 .count(),
-            18
+            19
         );
         for (index, kind) in BuildingKind::ALL.into_iter().enumerate() {
             assert_eq!(kind.index(), index);

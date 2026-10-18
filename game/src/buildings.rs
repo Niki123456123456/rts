@@ -5,12 +5,14 @@ use stronghold_map::{self as map, BuildingKind};
 pub(crate) struct BuildingInteraction {
     pub placing: Option<BuildingKind>,
     pub rotation: u8,
+    pub wall_start: Option<map::Point>,
     pub category: Option<&'static str>,
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
     roof_hover: Option<(Vec2, usize, usize)>,
     roof_preview: Vec<Vec3>,
+    roof_error: Option<&'static str>,
 }
 #[derive(Component)]
 pub(crate) struct Building(pub network::Building);
@@ -28,6 +30,7 @@ struct BuildingModel {
 #[derive(Resource)]
 pub(crate) struct BuildingAssets {
     models: [BuildingModel; BuildingKind::ALL.len()],
+    wall_previews: Vec<Entity>,
     invisible: Handle<StandardMaterial>,
     valid: Handle<StandardMaterial>,
     invalid: Handle<StandardMaterial>,
@@ -35,6 +38,9 @@ pub(crate) struct BuildingAssets {
 }
 impl BuildingAssets {
     fn hide_previews(&self, commands: &mut Commands) {
+        for entity in &self.wall_previews {
+            commands.entity(*entity).insert(Visibility::Hidden);
+        }
         for model in &self.models {
             commands.entity(model.preview).insert(Visibility::Hidden);
             commands
@@ -104,6 +110,7 @@ pub(crate) fn setup_buildings(
     });
     commands.insert_resource(BuildingAssets {
         models,
+        wall_previews: Vec::new(),
         invisible,
         valid,
         invalid,
@@ -222,11 +229,10 @@ fn placement_valid(
                     .rotated_build_footprint(b.x, b.z, b.rotation),
             )
         })
-        && !multiplayer
-            .snapshot
-            .units
-            .iter()
-            .any(|u| kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z)))
+        && !multiplayer.snapshot.units.iter().any(|u| {
+            (u.y - terrain_height(u.x, u.z) - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
+                && kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z))
+        })
         && kind
             .rotated_build_samples(x, z, rotation)
             .all(|(px, pz)| (terrain_height(px, pz) - y).abs() <= 0.05)
@@ -263,11 +269,12 @@ pub(crate) fn building_input(
     panel: Res<SelectionPanel>,
     mut contexts: EguiContexts,
     mut state: ResMut<BuildingInteraction>,
-    assets: Res<BuildingAssets>,
+    mut assets: ResMut<BuildingAssets>,
 ) {
     state.consumed = false;
     state.attack_hover = None;
     state.roof_hover = None;
+    state.roof_error = None;
     state.roof_preview.clear();
     assets.hide_previews(&mut commands);
     if multiplayer.snapshot.game_id.is_none() || !multiplayer.snapshot.connected {
@@ -275,6 +282,7 @@ pub(crate) fn building_input(
     }
     if keys.just_pressed(KeyCode::Escape) {
         state.placing = None;
+        state.wall_start = None;
         state.rotation = 0;
         state.selected = None;
         state.consumed = true;
@@ -305,6 +313,7 @@ pub(crate) fn building_input(
     }
     if state.placing.is_some() && mouse.just_pressed(MouseButton::Right) {
         state.placing = None;
+        state.wall_start = None;
         state.consumed = true;
         return;
     }
@@ -321,6 +330,74 @@ pub(crate) fn building_input(
         return;
     };
     if let Some(kind) = state.placing {
+        if kind == BuildingKind::StoneWall {
+            let end = kind.snap_position(hit.point.x, hit.point.z);
+            let start = state.wall_start.unwrap_or(end);
+            let line = map::walls::wall_line(start, end);
+            let existing = |x: f32, z: f32| {
+                multiplayer
+                    .snapshot
+                    .buildings
+                    .iter()
+                    .any(|b| b.owned && b.kind == "stone_wall" && b.x == x && b.z == z)
+            };
+            let wall_count = multiplayer
+                .snapshot
+                .buildings
+                .iter()
+                .filter(|b| b.kind == "stone_wall")
+                .count();
+            let valid = !line.is_empty()
+                && wall_count + line.iter().filter(|p| !existing(p.0, p.1)).count()
+                    <= map::walls::MAX_WALL_SEGMENTS
+                && line.iter().all(|&(x, z)| {
+                    existing(x, z)
+                        || placement_valid(kind, x, z, terrain_height(x, z), 0, &multiplayer)
+                });
+            let material = if valid {
+                assets.valid.clone()
+            } else {
+                assets.invalid.clone()
+            };
+            let collision = assets.models[kind.index()].collision.clone();
+            for (index, &(x, z)) in line.iter().enumerate() {
+                if index >= assets.wall_previews.len() {
+                    let entity = commands
+                        .spawn((
+                            Mesh3d(collision.clone()),
+                            MeshMaterial3d(material.clone()),
+                            Transform::default(),
+                            Visibility::Hidden,
+                        ))
+                        .id();
+                    assets.wall_previews.push(entity);
+                }
+                commands.entity(assets.wall_previews[index]).insert((
+                    Visibility::Visible,
+                    placement_transform(x, terrain_height(x, z) + 0.01, z, 0)
+                        .mul_transform(model_transform(kind)),
+                    MeshMaterial3d(material.clone()),
+                ));
+            }
+            if mouse.just_pressed(MouseButton::Left) {
+                state.consumed = true;
+                if state.wall_start.is_none() {
+                    if valid {
+                        state.wall_start = Some(end);
+                    }
+                } else if valid
+                    && multiplayer.send(Action::BuildWall {
+                        start_x: start.0,
+                        start_z: start.1,
+                        end_x: end.0,
+                        end_z: end.1,
+                    })
+                {
+                    state.wall_start = None;
+                }
+            }
+            return;
+        }
         let model = &assets.models[kind.index()];
         let (x, z) = kind.rotated_snap_position(hit.point.x, hit.point.z, state.rotation);
         let y = terrain_height(x, z);
@@ -370,35 +447,62 @@ pub(crate) fn building_input(
         if let Some((building, _, point)) = target {
             let id = building.id;
             let tower = roof_geometry(building).unwrap();
-            let free = tower
-                .sorted_slots((point.x, point.z))
+            let accessible = building.kind != "stone_wall"
+                || !map::walls::tower_routes(id, &owned_roof_pieces(&multiplayer.snapshot))
+                    .is_empty();
+            if !accessible {
+                state.roof_error = Some("Mauer zuerst mit einem eigenen Turm verbinden");
+            }
+            let pieces = owned_roof_pieces(&multiplayer.snapshot);
+            let surfaces = if building.kind == "stone_wall" {
+                map::walls::wall_component(id, &pieces)
+                    .into_iter()
+                    .map(|p| (p.id, p.roof()))
+                    .collect::<Vec<_>>()
+            } else {
+                vec![(id, tower)]
+            };
+            let mut slots = surfaces
+                .iter()
+                .flat_map(|(id, roof)| (0..roof.capacity()).map(move |slot| (*id, *roof, slot)))
+                .collect::<Vec<_>>();
+            let capacity = slots.len();
+            slots.sort_by(|a, b| {
+                map::distance(a.1.slot(a.2), (point.x, point.z))
+                    .total_cmp(&map::distance(b.1.slot(b.2), (point.x, point.z)))
+                    .then(a.0.cmp(&b.0))
+                    .then(a.2.cmp(&b.2))
+            });
+            let free = slots
                 .into_iter()
-                .filter(|slot| {
+                .filter(|(id, _, slot)| {
                     !multiplayer.snapshot.roof_occupants.iter().any(|o| {
                         !roof_units.contains(&o.unit_id)
-                            && ((o.building_id == id && o.slot as usize == *slot)
-                                || (o.next_building == Some(id) && o.next_slot as usize == *slot))
+                            && ((o.building_id == *id && o.slot as usize == *slot)
+                                || (o.next_building == Some(*id) && o.next_slot as usize == *slot))
                     })
                 })
-                .take(roof_units.len())
+                .take(if accessible { roof_units.len() } else { 0 })
                 .collect::<Vec<_>>();
-            state.roof_hover = Some((cursor, free.len(), tower.capacity()));
+            state.roof_hover = Some((cursor, free.len(), capacity));
             state.roof_preview = free
                 .iter()
-                .map(|slot| {
-                    let p = tower.slot(*slot);
-                    Vec3::new(p.0, tower.roof_y() + 0.08, p.1)
+                .map(|(_, roof, slot)| {
+                    let p = roof.slot(*slot);
+                    Vec3::new(p.0, roof.roof_y() + 0.08, p.1)
                 })
                 .collect();
             if mouse.just_pressed(MouseButton::Right) {
                 state.consumed = true;
                 *drag = default();
-                multiplayer.send(Action::MoveToRoof {
-                    unit_ids: roof_units,
-                    building_id: id,
-                    x: point.x,
-                    z: point.z,
-                });
+                if accessible {
+                    multiplayer.send(Action::MoveToRoof {
+                        unit_ids: roof_units,
+                        building_id: id,
+                        x: point.x,
+                        z: point.z,
+                    });
+                }
                 return;
             }
         }
@@ -449,6 +553,23 @@ pub(crate) fn building_input(
     }
 }
 
+fn owned_roof_pieces(snapshot: &network::Snapshot) -> Vec<map::walls::RoofPiece> {
+    snapshot
+        .buildings
+        .iter()
+        .filter(|b| b.owned)
+        .filter_map(|b| {
+            Some(map::walls::RoofPiece {
+                id: b.id,
+                kind: BuildingKind::from_name(&b.kind).filter(|k| k.roof_profile().is_some())?,
+                x: b.x,
+                y: b.y,
+                z: b.z,
+                rotation: b.rotation,
+            })
+        })
+        .collect()
+}
 fn roof_geometry(building: &network::Building) -> Option<map::building_roof::BuildingRoof> {
     map::building_roof::BuildingRoof::new(
         BuildingKind::from_name(&building.kind)?,
@@ -498,7 +619,9 @@ pub(crate) fn attack_hover_ui(
         painter.text(
             egui::pos2(cursor.x + 20., cursor.y - 25.),
             egui::Align2::LEFT_BOTTOM,
-            if count == 0 {
+            if let Some(error) = interaction.roof_error {
+                error.into()
+            } else if count == 0 {
                 "Dach voll".into()
             } else {
                 format!("Rechtsklick: {count} aufs Dach (max. {capacity})")
@@ -641,6 +764,9 @@ pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: boo
         egui::FontId::proportional(12.0),
         ui.visuals().text_color(),
     );
+    if kind == BuildingKind::StoneWall {
+        return response.on_hover_text("Steinmauer: 2×2-m-Segmente. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
+    }
     let (width, depth) = kind.grid_size();
     response
         .on_hover_text(format!(
@@ -704,6 +830,7 @@ mod tests {
         });
         app.insert_resource(BuildingAssets {
             models,
+            wall_previews: Vec::new(),
             invisible: default(),
             valid: default(),
             invalid: default(),
@@ -783,10 +910,10 @@ mod tests {
             let visual: Handle<WorldAsset> = assets.load(kind.scene());
             let collision: Handle<Mesh> = assets.load(kind.collision());
             let roof_mesh: Option<Handle<Mesh>> = kind.roof_profile().map(|_| {
-                let primitive = if kind == BuildingKind::TowerSquare {
-                    1
-                } else {
-                    0
+                let primitive = match kind {
+                    BuildingKind::TowerSquare => 1,
+                    BuildingKind::StoneWall => 4,
+                    _ => 0,
                 };
                 assets.load(format!(
                     "{}#Mesh0/Primitive{primitive}",

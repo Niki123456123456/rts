@@ -871,6 +871,7 @@ fn selection_ui(
                                             if active { None } else { Some(kind) };
                                         building_interaction.selected = None;
                                         building_interaction.rotation = 0;
+                                        building_interaction.wall_start = None;
                                     }
                                 }
                             });
@@ -878,11 +879,19 @@ fn selection_ui(
                 });
                 ui.separator();
                 if let Some(kind) = building_interaction.placing {
-                    ui.label(format!(
-                        "{} ({}°) platzieren. R: 90° drehen. Rechtsklick / Esc bricht ab.",
-                        kind.label(),
-                        building_interaction.rotation as u16 * 90
-                    ));
+                    if kind == stronghold_map::BuildingKind::StoneWall {
+                        ui.label(if building_interaction.wall_start.is_some() {
+                            "Mauer: Endpunkt anklicken. Rechtsklick / Esc bricht ab."
+                        } else {
+                            "Mauer: Startpunkt anklicken, dann Endpunkt wählen."
+                        });
+                    } else {
+                        ui.label(format!(
+                            "{} ({}°) platzieren. R: 90° drehen. Rechtsklick / Esc bricht ab.",
+                            kind.label(),
+                            building_interaction.rotation as u16 * 90
+                        ));
+                    }
                 } else if let Some(building) = building_interaction
                     .selected
                     .and_then(|id| multiplayer.snapshot.buildings.iter().find(|b| b.id == id))

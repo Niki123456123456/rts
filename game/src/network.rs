@@ -105,6 +105,12 @@ pub enum Action {
         building: String,
         rotation: u8,
     },
+    BuildWall {
+        start_x: f32,
+        start_z: f32,
+        end_x: f32,
+        end_z: f32,
+    },
     RemoveBuilding {
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
@@ -321,6 +327,9 @@ mod backend {
                     .on_build_rotated(move |ctx, _, _, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_build_wall(move |ctx, _, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_move_to_roof(move |ctx, _, _, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -346,6 +355,12 @@ mod backend {
                     building,
                     rotation,
                 } => conn.reducers.build_rotated(x, z, building, rotation),
+                Action::BuildWall {
+                    start_x,
+                    start_z,
+                    end_x,
+                    end_z,
+                } => conn.reducers.build_wall(start_x, start_z, end_x, end_z),
                 Action::MoveToRoof {
                     unit_ids,
                     building_id,

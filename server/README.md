@@ -232,3 +232,27 @@ The integration test uses two real connections to verify the shared lobby, movem
 scheduler protection, leaving, and disconnect cleanup. The building test additionally
 checks placement, overlap, ownership, route safety, live replanning, damage, destruction,
 game isolation and browser building actions.
+
+### Stone walls
+
+`build_wall(start_x, start_z, end_x, end_z)` constructs an inclusive four-connected
+2 m raster line in one transaction. Existing owned wall cells can be reused;
+terrain, plot overlap, ground units and map boundaries are validated for every
+new cell. Wall segments have their own 4096-per-game limit; buildings retain 128.
+`build` / `build_rotated` also accept `stone_wall` for a single cell.
+
+The shared wall graph uses full side contact on equal ground elevations. Only
+owned walls and the three supported owned tower types participate. `move_to_roof`
+accepts a wall ID and fills nearest available slots across its connected component
+(nine per segment). Ground entrants use reachable tower doors and hatch teleports;
+wall travel follows segment centres at the stair-tower roof height. Higher towers
+transfer internally between their hatch and wall level. `wall_entry` is additive
+private metadata identifying the approach tower; existing table schemas and saved
+games remain compatible. Travel modes 4 and 5 represent wall walking and internal
+height transfers. Removing a connection cancels crossing routes; isolated idle
+occupants retain their places but cannot descend without a new tower connection.
+
+Run `SPACETIMEDB_DATABASE=<local-database> npm --prefix game/web run test:walls`
+against a disposable local server to check raster lines, atomic rejection, capacity,
+all three tower access types, surface transfers, severed connections, ground
+navigation, ownership, demolition and replication.
