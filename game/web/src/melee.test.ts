@@ -21,7 +21,7 @@ try {
   assert.equal(await call(a,'createGame',[title]),'Committed');
   await until(()=>{const game=Array.from(a.db.game.iter()).find(g=>g.title===title);return !!game&&Array.from(a.db.participant.iter()).some(p=>p.connectionId.toHexString()===a.connectionId.toHexString()&&p.gameId===game.id)},'New game membership');
   const game=Array.from(a.db.game.iter()).find(g=>g.title===title)!.id;
-  activeGame=game;assert.equal(await call(b,'joinGame',[game]),'Committed');await until(()=>own(a).length===1&&own(b).length===1,'Armies replicate');return game;
+  activeGame=game;assert.equal(await call(b,'joinGame',[game]),'Committed');await until(()=>own(a).length===1&&own(b).length===1,'Armies replicate');for(const [db,x] of [[a,-121],[b,121]] as const) for(let i=0;i<3;i++) assert.equal(await call(db,'build',[x,45+i*10,'housing']),'Committed');assert.equal(await call(a,'build',[-71,65,'stockpile']),'Committed');assert.equal(await call(b,'build',[71,65,'stockpile']),'Committed');return game;
  }
  async function move(db:DbConnection,id:bigint,x:number,z:number){assert.equal(await call(db,'setTargets',[[id],x,z]),'Committed');}
  async function recruit(db:DbConnection,x:number,n:number){

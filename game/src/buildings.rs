@@ -261,6 +261,7 @@ fn placement_valid(
 ) -> bool {
     let shape = kind.rotated_build_footprint(x, z, rotation);
     shape.in_build_area()
+        && resources::population(multiplayer).can_build(kind, 1)
         && (kind.stone_cost() == 0
             || multiplayer
                 .snapshot
@@ -396,6 +397,10 @@ pub(crate) fn building_input(
             state.wall_cost =
                 line.iter().filter(|p| !existing(p.0, p.1)).count() as u32 * kind.stone_cost();
             let valid = !line.is_empty()
+                && resources::population(&multiplayer).can_build(
+                    kind,
+                    line.iter().filter(|p| !existing(p.0, p.1)).count() as u32,
+                )
                 && multiplayer
                     .snapshot
                     .resources
@@ -838,18 +843,19 @@ pub(crate) fn building_button(
 ) -> bool {
     let response = menu_ui::building_button(ui, texture, kind, active);
     if kind == BuildingKind::StoneWall {
-        return response.on_hover_text("Steinmauer: 2×2-m-Segmente, je 1 Stein. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
+        return response.on_hover_text("Steinmauer: 2×2-m-Segmente, je 1 Stein. Kein Bauernbedarf. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
     }
     let (width, depth) = kind.grid_size();
     response
         .on_hover_text(format!(
-            "{}: {}×{} Felder ({}×{} m). Kosten: {} Stein. R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
+            "{}: {}×{} Felder ({}×{} m). Kosten: {} Stein. {} R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
             kind.label(),
             width,
             depth,
             width * 2,
             depth * 2,
-            kind.stone_cost()
+            kind.stone_cost(),
+            if kind == BuildingKind::Housing { "Bietet Platz für 4 Bauern." } else if kind.peasant_cost() > 0 { "Benötigt 1 Bauern." } else { "Kein Bauernbedarf." }
         ))
         .clicked()
 }
@@ -1095,6 +1101,23 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(10));
             }
             let materials = app.world().resource::<Assets<bevy::gltf::GltfMaterial>>();
+            if kind == BuildingKind::Housing {
+                let server = app.world().resource::<AssetServer>();
+                let images = app.world().resource::<Assets<Image>>();
+                for index in 0..2 {
+                    let handle: Handle<bevy::gltf::GltfMaterial> = server.load(format!(
+                        "{}#Material{index}",
+                        kind.scene().split('#').next().unwrap()
+                    ));
+                    let texture = materials
+                        .get(&handle)
+                        .unwrap()
+                        .base_color_texture
+                        .as_ref()
+                        .expect("Housing walls and roof must have embedded textures");
+                    assert!(images.get(texture).is_some(), "Housing texture must decode");
+                }
+            }
             assert!(
                 materials
                     .iter()

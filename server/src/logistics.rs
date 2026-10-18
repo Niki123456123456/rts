@@ -115,122 +115,6 @@ fn debit_stone_stock(
     }
     Ok(())
 }
-fn starting_warehouse_position(ctx: &ReducerContext, player: &Participant) -> Option<map::Point> {
-    let home = ctx
-        .db
-        .army_unit()
-        .owner()
-        .filter(player.connection_id)
-        .next()
-        .map(|u| (u.x, u.z))
-        .unwrap_or((0., 0.));
-    let kind = map::BuildingKind::Stockpile;
-    for ring in 0i32..=35 {
-        for dx in -ring..=ring {
-            for dz in -ring..=ring {
-                if dx.abs().max(dz.abs()) != ring {
-                    continue;
-                }
-                let (x, z) =
-                    kind.snap_position(home.0 + dx as f32 * 16., home.1 + 46. + dz as f32 * 14.);
-                let plot = kind.build_footprint(x, z);
-                let y = terrain_height(x, z);
-                if !plot.in_build_area()
-                    || kind
-                        .build_samples(x, z)
-                        .any(|p| (terrain_height(p.0, p.1) - y).abs() > 0.05)
-                {
-                    continue;
-                }
-                if ctx.db.building().game_id().filter(player.game_id).any(|b| {
-                    plot.overlaps(
-                        map::BuildingKind::from_name(&b.kind)
-                            .unwrap()
-                            .rotated_build_footprint(b.x, b.z, rotation(ctx, b.id)),
-                    )
-                }) {
-                    continue;
-                }
-                if ctx
-                    .db
-                    .army_unit()
-                    .game_id()
-                    .filter(player.game_id)
-                    .any(|u| on_ground(ctx, &u) && kind.blocks_construction_unit(x, z, (u.x, u.z)))
-                {
-                    continue;
-                }
-                return Some((x, z));
-            }
-        }
-    }
-    None
-}
-fn ensure_logistics_player(ctx: &ReducerContext, player: &Participant) -> Result<(), String> {
-    if ctx
-        .db
-        .logistics_player()
-        .connection_id()
-        .find(player.connection_id)
-        .is_some()
-    {
-        return Ok(());
-    }
-    let stock = ensure_resources(ctx, player);
-    let warehouse = if let Some(b) = ctx
-        .db
-        .building()
-        .owner()
-        .filter(player.connection_id)
-        .find(|b| b.game_id == player.game_id && b.kind == "stockpile")
-    {
-        b
-    } else {
-        let (x, z) = starting_warehouse_position(ctx, player)
-            .ok_or("Kein Platz für das Start-Vorratslager.")?;
-        place_building_for(ctx, player, x, z, "stockpile".into(), 0)?;
-        ctx.db
-            .building()
-            .owner()
-            .filter(player.connection_id)
-            .find(|b| b.kind == "stockpile")
-            .unwrap()
-    };
-    let mut physical = ctx
-        .db
-        .warehouse_stock()
-        .building_id()
-        .find(warehouse.id)
-        .unwrap_or(WarehouseStock {
-            building_id: warehouse.id,
-            game_id: player.game_id,
-            wood: 0,
-            stone: 0,
-            iron: 0,
-        });
-    // Existing participants keep their previously earned balances during upgrades.
-    physical.wood = stock.wood;
-    physical.stone = stock.stone;
-    physical.iron = stock.iron;
-    if economy::storage_cells(physical.amounts()) > economy::STORAGE_CELLS as u64 {
-        return Err("Der vorhandene Bestand passt nicht ins Startlager.".into());
-    }
-    if ctx
-        .db
-        .warehouse_stock()
-        .building_id()
-        .find(warehouse.id)
-        .is_some()
-    {
-        ctx.db.warehouse_stock().building_id().update(physical);
-    } else {
-        ctx.db.warehouse_stock().insert(physical);
-    }
-    ctx.db.logistics_player().insert(LogisticsPlayer {
-        connection_id: player.connection_id,
-    });
-    Ok(())
-}
 fn access_route(
     ctx: &ReducerContext,
     u: &ArmyUnit,
@@ -274,13 +158,42 @@ fn route_worker(ctx: &ReducerContext, u: &mut ArmyUnit, b: &Building) -> bool {
 }
 fn register_logistics_building(ctx: &ReducerContext, b: &Building) -> Result<(), String> {
     if b.kind == "stockpile" && ctx.db.warehouse_stock().building_id().find(b.id).is_none() {
+        let first = ctx
+            .db
+            .logistics_player()
+            .connection_id()
+            .find(b.owner)
+            .is_none();
+        let gift = if first {
+            map::STARTING_RESOURCE_AMOUNT
+        } else {
+            0
+        };
         ctx.db.warehouse_stock().insert(WarehouseStock {
             building_id: b.id,
             game_id: b.game_id,
-            wood: 0,
-            stone: 0,
-            iron: 0,
+            wood: gift,
+            stone: gift,
+            iron: gift,
         });
+        if first {
+            // This marker survives demolition, so replacement/additional stockpiles
+            // never grant the starting gift again during the same participation.
+            ctx.db.logistics_player().insert(LogisticsPlayer {
+                connection_id: b.owner,
+            });
+            let player = ctx
+                .db
+                .participant()
+                .connection_id()
+                .find(b.owner)
+                .ok_or("Unknown warehouse owner.")?;
+            let mut stock = ensure_resources(ctx, &player);
+            stock.wood += gift;
+            stock.stone += gift;
+            stock.iron += gift;
+            ctx.db.player_resources().connection_id().update(stock);
+        }
     }
     let Some(resource) = map::BuildingKind::from_name(&b.kind).and_then(|k| k.produces()) else {
         return Ok(());

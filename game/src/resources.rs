@@ -1,5 +1,6 @@
 use crate::*;
 use bevy_egui::EguiTextureHandle;
+use stronghold_map::{self as map, BuildingKind};
 
 #[derive(Resource)]
 pub(crate) struct ResourceAtlas(Handle<Image>);
@@ -10,6 +11,16 @@ impl ResourceAtlas {
 }
 pub(crate) fn setup_resource_ui(mut commands: Commands, server: Res<AssetServer>) {
     commands.insert_resource(ResourceAtlas(server.load("ui/ingameui.png")));
+}
+pub(crate) fn population(multiplayer: &Multiplayer) -> map::population::Population {
+    map::population::Population::from_buildings(
+        multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .filter(|b| b.owned)
+            .filter_map(|b| BuildingKind::from_name(&b.kind)),
+    )
 }
 // One-based row 9, columns 6–8, on the original 1024 px atlas. Tile pitch 56;
 // the first icon row starts at y=44. Trim the surrounding gap by two pixels.
@@ -67,6 +78,23 @@ pub(crate) fn resource_ui(
                             )
                             .on_hover_text(name);
                         }
+                        ui.separator();
+                        let peasants = population(&multiplayer);
+                        let tooltip = format!(
+                            "Bauern: {} von {} belegt. Jede Unterkunft bietet vier Bauern; nur Produktionsgebäude benötigen einen Bauern.",
+                            peasants.used, peasants.capacity
+                        );
+                        ui.add(egui::Image::new((texture, egui::vec2(28., 36.))).uv(
+                            egui::Rect::from_min_max(
+                                egui::pos2(837. / 1024., 2. / 1024.),
+                                egui::pos2(859. / 1024., 30. / 1024.),
+                            ),
+                        )).on_hover_text(&tooltip);
+                        ui.label(egui::RichText::new(format!("{}/{}", peasants.used, peasants.capacity))
+                            .size(21.).color(if peasants.used > peasants.capacity {
+                                egui::Color32::LIGHT_RED
+                            } else { egui::Color32::WHITE }))
+                            .on_hover_text(tooltip);
                     });
                 });
         });

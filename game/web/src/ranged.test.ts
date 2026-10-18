@@ -27,6 +27,7 @@ try {
   assert.equal(await call(b,'joinGame',[activeGame]),'Committed');
   await until(()=>own(a).length===1&&own(b).length===1&&Array.from(b.db.participant.iter()).some(p=>p.connectionId.toHexString()===b.connectionId.toHexString()&&p.gameId===activeGame),'Starting armies');
   await move(a,own(a)[0].id,-60,45);await move(b,own(b)[0].id,60,45);
+  for(const [db,x] of [[a,-121],[b,121]] as const) for(let i=0;i<3;i++) assert.equal(await call(db,'build',[x,45+i*10,'housing']),'Committed');assert.equal(await call(a,'build',[-71,65,'stockpile']),'Committed');assert.equal(await call(b,'build',[71,65,'stockpile']),'Committed');
  }
  async function recruit(db:DbConnection,x:number,kind='archer'){
   let barracks=buildings(db).find(v=>v.kind==='barracks');

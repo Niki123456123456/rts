@@ -7,6 +7,7 @@ pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
 pub mod building_roof;
 pub mod logistics;
+pub mod population;
 pub mod walls;
 pub use building_catalog::BuildingKind;
 

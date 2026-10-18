@@ -38,7 +38,11 @@ try {
   const producers=()=>Array.from(a.db.producer.iter()).filter(s=>s.gameId===game);
   const sums=()=>warehouses().reduce((n,s)=>[n[0]+s.wood,n[1]+s.stone,n[2]+s.iron],[0,0,0]);
   const balances=()=>[balance().wood,balance().stone,balance().iron];
-  await until(()=>warehouses().length===1,'Starting warehouse replicated');
+  await until(()=>!!balance(),'Initial balance');
+  assert.deepEqual(balances(),[0,0,0]);assert.equal(warehouses().length,0);assert.equal(buildings().length,0);
+  for(let i=0;i<3;i++) assert.equal(await call(a,'build',[-121,45+i*10,'housing']),'Committed');
+  assert.equal(await call(a,'build',[-1,45,'stockpile']),'Committed');
+  await until(()=>warehouses().length===1&&balance().stone===20,'First warehouse gift replicated');
   assert.deepEqual(balances(),[20,20,20]); assert.deepEqual(sums(),[20,20,20]);
   const warehouse=buildings().find(b=>b.kind==='stockpile')!;
   assert.equal(await call(a,'joinGame',[game]),'Committed');
@@ -83,13 +87,21 @@ try {
   assert.deepEqual(balances(),[0,0,0],'New warehouse is empty');
   assert.equal(await call(a,'leaveGame'),'Committed');
   assert.equal(await call(a,'joinGame',[game]),'Committed');
-  await until(()=>!!balance()&&warehouses().length===1,'Rejoin creates fresh storage');
+  await until(()=>!!balance()&&warehouses().length===0,'Rejoin starts without storage');
+  assert.deepEqual(balances(),[0,0,0]);
+  for(let i=0;i<3;i++) assert.equal(await call(a,'build',[-121,45+i*10,'housing']),'Committed');
+  assert.equal(await call(a,'build',[-1,45,'stockpile']),'Committed');await until(()=>warehouses().length===1&&balance().stone===20,'New participation first warehouse gift');
   assert.deepEqual(balances(),[20,20,20]);assert.deepEqual(sums(),[20,20,20]);
   strongholdNetwork.send(JSON.stringify({action:'connect',uri,database}));
   const snapshot=()=>JSON.parse(strongholdNetwork.snapshot());
   await until(()=>snapshot().ready,'Browser bridge ready');
   strongholdNetwork.send(JSON.stringify({action:'create',title:`Logistics bridge ${Date.now()}`}));
-  await until(()=>snapshot().resources?.stone===20&&snapshot().warehouses.length===1,'Browser receives physical starting stock');
+  await until(()=>snapshot().game_id!==null&&snapshot().resources?.stone===0,'Browser starts empty');
+  assert.equal(snapshot().warehouses.length,0);
+  strongholdNetwork.send(JSON.stringify({action:'build',x:-121,z:45,building:'housing'}));
+  await until(()=>snapshot().buildings.some((b:any)=>b.kind==='housing'),'Browser housing');
+  strongholdNetwork.send(JSON.stringify({action:'build',x:-1,z:45,building:'stockpile'}));
+  await until(()=>snapshot().resources?.stone===20&&snapshot().warehouses.length===1,'Browser receives first warehouse stock');
   strongholdNetwork.send(JSON.stringify({action:'build',x:20,z:35,building:'quarry'}));
   await until(()=>snapshot().workers.length===1,'Browser receives worker');
   const worker=snapshot().units.find((u:any)=>u.worker);
@@ -98,5 +110,5 @@ try {
   await until(()=>snapshot().game_id===null&&snapshot().warehouses.length===0,'Browser clears logistics');
   assert.equal(await call(a,'leaveGame'),'Committed');
   await until(()=>warehouses().length===0&&workers().length===0&&producers().length===0,'Participation cleanup');
-  console.log('PASS: 20 physical starting resources, three producers, autonomous unselectable workers, real transport and delivery, costs, atomic rollback, replication, demolition, cleanup and browser snapshots.');
+  console.log('PASS: empty starts and first warehouse physical gifts, three producers, autonomous unselectable workers, real transport and delivery, costs, atomic rollback, replication, demolition, cleanup and browser snapshots.');
 } finally {strongholdNetwork.disconnect();for(const client of clients)client.disconnect();}

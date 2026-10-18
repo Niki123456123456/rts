@@ -562,7 +562,7 @@
   {
     "variant": "SawPit",
     "id": "saw_pit",
-    "label": "Sägegrube",
+    "label": "Holzfällerhütte",
     "category": "supply",
     "source": "saw_pit",
     "collision": "saw_pit_collision",
@@ -739,6 +739,23 @@
     "grid": [
       3,
       4
+    ]
+  },
+  {
+    "variant": "Housing",
+    "id": "housing",
+    "label": "Unterkunft",
+    "category": "supply",
+    "source": "hovel_small",
+    "material_textures": {
+      "0": "stone_mossy.png",
+      "1": "hovel_small_roof_2.alphatest.png"
+    },
+    "collision": "hovel_small_collision",
+    "folder": "housing",
+    "grid": [
+      3,
+      3
     ]
   }
 ]

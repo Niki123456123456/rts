@@ -16,6 +16,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT.parent / 'assets/models/meshes/buildings'
 DESTINATION = ROOT / 'assets/models/buildings'
+TEXTURES = ROOT.parent / 'assets/images/Source/meshes/buildings'
 
 
 def unpack(data):
@@ -28,6 +29,44 @@ def pack(document, tail):
     encoded += b' ' * (-len(encoded) % 4)
     return (struct.pack('<III', 0x46546c67, 2, 20 + len(encoded) + len(tail))
             + struct.pack('<II', len(encoded), 0x4e4f534a) + encoded + tail)
+
+
+def embed_material_textures(document, tail, overrides):
+    """Repair legacy models whose material paths have no embedded image.
+
+    Keep the existing geometry, indices and UVs intact. Explicit catalog mappings
+    also make replacements for textures missing from the source archive repeatable.
+    """
+    if not overrides:
+        return tail
+    binary = bytearray(tail[8:8 + document['buffers'][0]['byteLength']])
+    samplers = document.setdefault('samplers', [])
+    sampler = len(samplers)
+    samplers.append({'wrapS': 10497, 'wrapT': 10497})
+    for material_index, filename in overrides.items():
+        pixels = (TEXTURES / filename).read_bytes()
+        if not pixels.startswith(b'\x89PNG\r\n\x1a\n'):
+            raise ValueError(f'Expected a PNG texture: {filename}')
+        binary += b'\0' * (-len(binary) % 4)
+        views = document.setdefault('bufferViews', [])
+        view = len(views)
+        views.append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': len(pixels)})
+        binary += pixels
+        images = document.setdefault('images', [])
+        image = len(images)
+        images.append({'bufferView': view, 'mimeType': 'image/png', 'name': filename})
+        textures = document.setdefault('textures', [])
+        texture = len(textures)
+        textures.append({'source': image, 'sampler': sampler})
+        material = document['materials'][int(material_index)]
+        pbr = material.setdefault('pbrMetallicRoughness', {})
+        pbr['baseColorTexture'] = {'index': texture}
+        pbr['baseColorFactor'] = [1, 1, 1, 1]
+        pbr['metallicFactor'] = 0
+        pbr['roughnessFactor'] = 0.9
+    document['buffers'][0]['byteLength'] = len(binary)
+    binary += b'\0' * (-len(binary) % 4)
+    return struct.pack('<II', len(binary), 0x004e4942) + binary
 
 
 def bounds(document):
@@ -75,6 +114,7 @@ def main():
             minimum, maximum = generator.generate()
         else:
             visual, tail = unpack((SOURCE / (item['source'] + '.glb')).read_bytes())
+            tail = embed_material_textures(visual, tail, item.get('material_textures'))
             for material in visual.get('materials', []):
                 material['alphaMode'] = 'OPAQUE'
             if item['collision']:

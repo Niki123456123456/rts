@@ -1,7 +1,8 @@
 use crate::*;
 use stronghold_map::BuildingKind;
 
-pub(crate) const BUILD_MENU: [BuildingKind; 7] = [
+pub(crate) const BUILD_MENU: [BuildingKind; 11] = [
+    BuildingKind::Housing,
     BuildingKind::Barracks,
     BuildingKind::Stockpile,
     BuildingKind::Granary,
@@ -9,6 +10,9 @@ pub(crate) const BUILD_MENU: [BuildingKind; 7] = [
     BuildingKind::TowerLookout,
     BuildingKind::TowerSquare,
     BuildingKind::TowerStairwell,
+    BuildingKind::Quarry,
+    BuildingKind::IronMine,
+    BuildingKind::SawPit,
 ];
 
 fn uv(x: f32, y: f32, width: f32, height: f32) -> egui::Rect {
@@ -108,6 +112,7 @@ pub(crate) fn building_button(
 ) -> egui::Response {
     use BuildingKind::*;
     let (row, column) = match kind {
+        Housing => (6, 5),
         Barracks => (2, 7),
         Stockpile => (4, 5),
         Granary => (3, 6),
@@ -151,9 +156,9 @@ pub(crate) fn building_button(
         ServantsPantry => (4, 12),
         Inn => (4, 13),
         Market => (2, 10),
-        SawPit => (3, 2),
-        Quarry => (3, 3),
-        IronMine => (3, 4),
+        SawPit => (4, 6),
+        Quarry => (4, 7),
+        IronMine => (4, 8),
         PitchRig => (4, 8),
         OxTether => (2, 11),
         CartersPost => (4, 7),

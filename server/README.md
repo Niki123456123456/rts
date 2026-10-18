@@ -265,10 +265,25 @@ these models alone does not enable their production chains; quarry, iron mine an
 building test checks placement, grid alignment, collision, navigation targets,
 combat approach and removal for every newly imported supply kind.
 
+### Peasant capacity
+
+`housing` imports `hovel_small.glb` on a 3×3-cell plot and adds four peasant
+places. Only actual resource producers (quarry, iron mine and saw pit) occupy one
+place each. Fortifications, storage, granaries and barracks employ no peasants.
+Participants start at 0/0; housing itself needs no worker or resources.
+Shared `population::Population` derives used/capacity from surviving owned
+buildings, so demolition/destruction releases workers without extra tables.
+Losing housing can leave existing businesses over capacity; new production
+construction is blocked until capacity is restored. Each placement reducer
+checks the current population; walls and other non-working buildings remain
+buildable without free capacity. Military recruitment is independent of this limit.
+The resource bar shows used/capacity using the peasant head in the atlas header.
+Run `npm --prefix game/web run test:housing` against a disposable test database.
+
 ### Resource balances
 
 The additive public `player_resources` table is keyed by participant connection and
-indexed by game. Each participation starts with 20 wood, stone and iron. Native and
+indexed by game. Each participation starts with zero wood, stone and iron; the first player-built stockpile grants 20 of each. Native and
 browser snapshots expose only the local participant's balance. Rejoining the same
 active game never replenishes stock; leaving deletes the balance alongside membership.
 For hosted upgrades, missing balances of existing participants are initialized once,
@@ -288,8 +303,12 @@ cleanup and browser snapshot replication.
 ### Storage and automatic transport
 
 Additive `warehouse_stock`, `producer`, `worker` and private `logistics_player` tables
-keep existing schemas intact. A participation gets one starting stockpile with its
-20/20/20 stock. Existing balances are preserved and moved into storage once on upgrade.
+keep existing schemas intact. New participations start with no warehouse or resources.
+The first successful stockpile build grants 20 wood, stone and iron physically and
+in the balance table, atomically. `logistics_player` records that the gift was claimed;
+extra stockpiles, demolition/rebuilding and repeated joins cannot claim it again.
+Leaving clears this marker for the next participation. Existing games retain their
+warehouses, balances and already-claimed marker during upgrades.
 The shared `logistics` module defines the 24-cell grid, capacities, exact model layout,
 production interval (one item/3 seconds), buffer (20), and carrying capacity (5).
 

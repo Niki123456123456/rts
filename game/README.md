@@ -216,7 +216,7 @@ sind alle zivilen Versorgungsketten als platzierbare Modelle importiert:
   Schafzucht, Jägerstand, Fischteich, Taubenschlag, Gärtnerhütte, Gemüsebeet und Bienenstock.
 - Verarbeitung und Vorräte: Mühle, Bäckerei, Brauerei, Weingut, Burgküche,
   Vorratskammer der Diener, Schenke und Markt.
-- Rohstoffe und Transport: Sägegrube, Steinbruch, Eisenmine, Pechgrube,
+- Rohstoffe und Transport: Holzfällerhütte, Steinbruch, Eisenmine, Pechgrube,
   Ochsenjoch und Fuhrmannsposten.
 - Weitere Versorgung: Weberei, Kerzengießerei, Brunnen, Wassertrog, Jauchegrube,
   Apotheke, Falknerposten und Schatzkammer.
@@ -227,7 +227,7 @@ Der Import verwendet die vollständigen Basismodelle, bevorzugt die geschlossene
 Variante, und vorhandene Kollisionsmodelle. Für Fischteich, Taubenschlag,
 Gemüsebeet und Wassertrog wird eine konservative Box erzeugt. Der gemeinsame
 Katalog liefert Rastergröße, Rotation, Bauvorschau, Auswahl und Bodennavigation.
-Die Modelle sind baubar. Steinbruch, Eisenmine und Sägegrube produzieren bereits
+Die Modelle sind baubar. Steinbruch, Eisenmine und Holzfällerhütte produzieren bereits
 Rohstoffe; weitere Produktionsketten sind noch nicht implementiert.
 
 Beim Start lädt eine begrenzte Warteschlange jeweils nur das Modell- und
@@ -239,7 +239,29 @@ im Test `startup_loads_full_catalog_with_only_one_building_pair_in_flight` gepr�
 
 ### Ressourcen und Baukosten
 
-Jeder neue Spielbeitritt beginnt mit **20 Holz, 20 Stein und 20 Eisen**.
+Unter **Versorgung** lässt sich die **Unterkunft** bauen (Symbol: Zeile 6,
+Spalte 5). Sie verwendet `hovel_small.glb` mit dem zugehörigen Kollisionsmodell,
+liegt unter `assets/models/buildings/supply/housing/` und belegt 3×3 Rasterfelder
+(6×6 m). Jede Unterkunft bietet vier Bauern und benötigt selbst keinen Bauern.
+Die im alten Mesh fehlenden Materialien werden beim Import eingebettet:
+`stone_mossy.png` für die Wände (Ersatz für die nicht enthaltene
+`hovel_small.bmp`) und `hovel_small_roof_2.alphatest.png` für das Strohdach.
+Nur Gebäude mit tatsächlicher Produktion (Steinbruch, Eisenmine und
+Holzfällerhütte) belegen je einen Bauern. Befestigungen, Vorratslager,
+Kornspeicher und Kaserne benötigen keine Bauern. Oben rechts steht beim
+Bauernsymbol **belegt/Kapazität**, etwa **4/8**. Man beginnt bei **0/0**; eine Unterkunft ist erst für Produktionsgebäude nötig.
+Abriss oder Zerstörung gibt den belegten Bauern frei; bei Unterkünften sinkt die
+Kapazität. Bestehende Betriebe bleiben bei Überbelegung erhalten, weitere
+Produktionsgebäude benötigen wieder freie Bauern. Die Begrenzung gilt pro Spieler
+und wird vom Server geprüft. Mauern lassen sich auch ohne freie Bauern bauen.
+Kampfeinheiten werden weiterhin unabhängig davon in der Kaserne ausgebildet.
+
+Integrationstest: `npm --prefix game/web run test:housing` gegen eine Testdatenbank.
+
+Jeder neue Spielbeitritt beginnt **ohne Lager und mit 0 Holz, 0 Stein und 0 Eisen**.
+Beim Bau des ersten eigenen Vorratslagers gibt es einmalig **20 Holz, 20 Stein und
+20 Eisen** direkt in dieses Lager. Weitere Lager und Wiederaufbauten gewähren
+keinen zusätzlichen Bonus. Das erste Lager ist kostenlos.
 Oben rechts zeigt die Ressourcenleiste den vom Server bestätigten eigenen Bestand.
 Die Symbole stammen aus `assets/images/Source/ui/ingameui.png`, Reihe 9 ab Spalte 6
 (1-basiert), und werden aus dem unveränderten Atlas unter `game/assets/ui/` angezeigt.
@@ -256,11 +278,12 @@ Abriss erstattet keine Ressourcen.
 
 Bestände gelten pro Spieler und Spielteilnahme. Ein wiederholter Beitritt zum bereits
 aktiven Spiel setzt sie nicht zurück; beim Verlassen werden sie mit der Teilnahme
-entfernt. Ein neuer Beitritt beginnt wieder mit dem Startbestand.
+entfernt. Ein neuer Beitritt beginnt wieder ohne Lager und Bestand; die Gabe gibt es erst
+beim Bau des ersten Lagers dieser neuen Teilnahme.
 
 ### Physisches Lager und Produktion
 
-Jeder Spieler erhält ein eigenes Start-Vorratslager nahe seiner Armee. Der Bestand
+Das erste Vorratslager wird vom Spieler selbst platziert. Der geschenkte Bestand
 liegt darin als sichtbare Holz-, Stein- und Eisenmodelle auf einem inneren Raster
 mit 6×4 Plätzen im Abstand von 2 m. Teilmengen und volle Lagen stellen die Anzahl
 exakt dar. Pro Platz passen 20 Holz, 54 Steine oder 96 Eisen; Ressourcen teilen
@@ -268,7 +291,7 @@ sich keinen Platz. Das Lager verwendet das offene Originalmodell, damit der Inha
 sichtbar bleibt. Zusätzliche Vorratslager starten leer. Baukosten entnehmen Stein
 aus den eigenen Lagern. Wird ein Lager zerstört oder abgerissen, geht dessen Inhalt verloren.
 
-**Sägegrube → Holz**, **Steinbruch → Stein**, **Eisenmine → Eisen**: Jeder Betrieb
+**Holzfällerhütte → Holz**, **Steinbruch → Stein**, **Eisenmine → Eisen**: Jeder Betrieb
 erzeugt eine Einheit alle 3 Sekunden und puffert höchstens 20 Einheiten. Beim Bau
 entsteht automatisch ein brauner Transportbauer mit Hut. Er lässt sich nicht auswählen
 oder befehligen und trägt bis zu 5 Einheiten pro Weg. Bauern verwenden dieselben

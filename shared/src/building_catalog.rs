@@ -62,6 +62,7 @@ pub enum BuildingKind {
     Apothecary,
     FalconersPost,
     Treasury,
+    Housing,
 }
 struct Definition {
     name: &'static str,
@@ -73,7 +74,7 @@ struct Definition {
     max: [f32; 3],
     grid: [u16; 2],
 }
-const DEFINITIONS: [Definition; 57] = [
+const DEFINITIONS: [Definition; 58] = [
     Definition {
         name: "granary",
         label: "Kornspeicher",
@@ -530,7 +531,7 @@ const DEFINITIONS: [Definition; 57] = [
     },
     Definition {
         name: "saw_pit",
-        label: "Sägegrube",
+        label: "Holzfällerhütte",
         category: "supply",
         scene: "models/buildings/supply/saw_pit/mesh.glb#Scene0",
         collision: "models/buildings/supply/saw_pit/collision.glb#Mesh0/Primitive0",
@@ -672,9 +673,19 @@ const DEFINITIONS: [Definition; 57] = [
         max: [613.7741088867188, 924.135986328125, 3.546396017074585],
         grid: [3, 4],
     },
+    Definition {
+        name: "housing",
+        label: "Unterkunft",
+        category: "supply",
+        scene: "models/buildings/supply/housing/mesh.glb#Scene0",
+        collision: "models/buildings/supply/housing/collision.glb#Mesh0/Primitive0",
+        min: [-10.0, 0.0, -547.7056884765625],
+        max: [418.60150146484375, 378.88885498046875, -55.13133239746094],
+        grid: [3, 3],
+    },
 ];
 impl BuildingKind {
-    pub const ALL: [Self; 57] = [
+    pub const ALL: [Self; 58] = [
         Self::Granary,
         Self::Barracks,
         Self::Stockpile,
@@ -732,6 +743,7 @@ impl BuildingKind {
         Self::Apothecary,
         Self::FalconersPost,
         Self::Treasury,
+        Self::Housing,
     ];
     pub fn index(self) -> usize {
         self as usize

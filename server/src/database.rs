@@ -95,9 +95,9 @@ fn ensure_resources(ctx: &ReducerContext, player: &Participant) -> PlayerResourc
             ctx.db.player_resources().insert(PlayerResources {
                 connection_id: player.connection_id,
                 game_id: player.game_id,
-                wood: map::STARTING_RESOURCE_AMOUNT,
-                stone: map::STARTING_RESOURCE_AMOUNT,
-                iron: map::STARTING_RESOURCE_AMOUNT,
+                wood: 0,
+                stone: 0,
+                iron: 0,
             })
         })
 }
@@ -215,7 +215,6 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         }
         if player.game_id == game_id {
             ensure_resources(ctx, &player);
-            ensure_logistics_player(ctx, &player)?;
             return Ok(());
         }
     }
@@ -294,14 +293,6 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         target_z: z,
     });
     register_combat_unit(ctx, &unit, map::units::UnitKind::Lord);
-    ensure_logistics_player(
-        ctx,
-        &ctx.db
-            .participant()
-            .connection_id()
-            .find(connection_id)
-            .unwrap(),
-    )?;
     Ok(())
 }
 
@@ -362,9 +353,6 @@ pub fn leave_game(ctx: &ReducerContext) {
 pub fn connected(ctx: &ReducerContext) {
     for player in ctx.db.participant().iter() {
         ensure_resources(ctx, &player);
-        if let Err(error) = ensure_logistics_player(ctx, &player) {
-            spacetimedb::log::warn!("{error}");
-        }
     }
     for b in ctx.db.building().iter().collect::<Vec<_>>() {
         if let Err(error) = register_logistics_building(ctx, &b) {
@@ -906,7 +894,7 @@ fn construct(
     building: String,
     quarter_turns: u8,
 ) -> Result<(), String> {
-    ensure_logistics_player(ctx, &participant(ctx)?)?;
+    ensure_resources(ctx, &participant(ctx)?);
     place_building(ctx, x, z, building, quarter_turns)?;
     replan(ctx, participant(ctx)?.game_id);
     Ok(())
@@ -922,7 +910,7 @@ pub fn build_wall(
     end_z: f32,
 ) -> Result<(), String> {
     let player = participant(ctx)?;
-    ensure_logistics_player(ctx, &player)?;
+    ensure_resources(ctx, &player);
     let line = map::walls::wall_line((start_x, start_z), (end_x, end_z));
     if line.is_empty() {
         return Err("Choose valid wall endpoints inside the map.".into());
@@ -961,6 +949,20 @@ fn place_building_for(
         return Err("Rotation must be 0, 1, 2 or 3 quarter turns.".into());
     }
     let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
+    let population = map::population::Population::from_buildings(
+        ctx.db
+            .building()
+            .game_id()
+            .filter(player.game_id)
+            .filter(|b| b.owner == player.connection_id)
+            .filter_map(|b| map::BuildingKind::from_name(&b.kind)),
+    );
+    if !population.can_build(kind, 1) {
+        return Err(format!(
+            "Nicht genug freie Bauern ({}/{} belegt). Eine Unterkunft bietet Platz für vier Bauern.",
+            population.used, population.capacity
+        ));
+    }
     let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
     let shape = kind.rotated_build_footprint(x, z, quarter_turns);
     if !shape.in_build_area() {

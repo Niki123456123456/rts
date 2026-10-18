@@ -13,7 +13,7 @@ try {
  const unit=(id:bigint)=>a.db.armyUnit.id.find(id);
  const activity=(id:bigint)=>a.db.unitProfile.unitId.find(id)?.activity;
  const ownBuildings=(db:DbConnection)=>Array.from(db.db.building.iter()).filter(v=>v.owner.toHexString()===db.connectionId.toHexString());
- async function fresh(label:string){await call(a,'leaveGame');await call(b,'leaveGame');assert.equal(await call(a,'createGame',[`${label} ${Date.now()}`]),'Committed');const game=Array.from(a.db.participant.iter()).find(p=>p.connectionId.toHexString()===a.connectionId.toHexString())!.gameId;assert.equal(await call(b,'joinGame',[game]),'Committed');await until(()=>army(a).length===1&&army(b).length===1,'Armies');}
+ async function fresh(label:string){await call(a,'leaveGame');await call(b,'leaveGame');assert.equal(await call(a,'createGame',[`${label} ${Date.now()}`]),'Committed');const game=Array.from(a.db.participant.iter()).find(p=>p.connectionId.toHexString()===a.connectionId.toHexString())!.gameId;assert.equal(await call(b,'joinGame',[game]),'Committed');await until(()=>army(a).length===1&&army(b).length===1,'Armies');for(const [db,x] of [[a,-121],[b,121]] as const) for(let i=0;i<3;i++) assert.equal(await call(db,'build',[x,45+i*10,'housing']),'Committed');assert.equal(await call(a,'build',[-71,65,'stockpile']),'Committed');assert.equal(await call(b,'build',[71,65,'stockpile']),'Committed');}
  async function move(db:DbConnection,id:bigint,x:number,z:number){assert.equal(await call(db,'setTargets',[[id],x,z]),'Committed');}
  async function wall(kind='tower_stairwell'){
   assert.equal(await call(b,'build',[10,18,kind]),'Committed');
