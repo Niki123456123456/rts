@@ -345,6 +345,10 @@ pub fn leave_game(ctx: &ReducerContext) {
             .logistics_player()
             .connection_id()
             .delete(connection_id);
+        ctx.db
+            .granary_player()
+            .connection_id()
+            .delete(connection_id);
         ctx.db.player().connection_id().delete(connection_id);
     }
 }

@@ -25,10 +25,15 @@ pub(crate) fn population(multiplayer: &Multiplayer) -> map::population::Populati
 // One-based row 9, columns 6–8, on the original 1024 px atlas. Tile pitch 56;
 // the first icon row starts at y=44. Trim the surrounding gap by two pixels.
 fn resource_uv(index: usize) -> egui::Rect {
-    let x = 280. + index as f32 * 56.;
+    // Food: row 10, columns 5–8 (apples, bread, cheese, meat).
+    let (x, y) = if index < 3 {
+        (280. + index as f32 * 56., 494.)
+    } else {
+        (224. + (index - 3) as f32 * 56., 550.)
+    };
     egui::Rect::from_min_max(
-        egui::pos2((x + 2.) / 1024., 494. / 1024.),
-        egui::pos2((x + 54.) / 1024., 546. / 1024.),
+        egui::pos2((x + 2.) / 1024., y / 1024.),
+        egui::pos2((x + 54.) / 1024., (y + 52.) / 1024.),
     )
 }
 pub(crate) fn resource_ui(
@@ -42,21 +47,26 @@ pub(crate) fn resource_ui(
     let texture = atlas.texture(&mut contexts);
     let ctx = contexts.ctx_mut()?;
     egui::Area::new("resource_stock".into())
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12., 12.))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-6., 6.))
         .show(ctx, |ui| {
             egui::Frame::new()
                 .fill(egui::Color32::from_black_alpha(215))
                 .stroke(egui::Stroke::new(1., egui::Color32::from_rgb(150, 125, 75)))
-                .inner_margin(8.)
-                .corner_radius(5.)
+                .inner_margin(4.)
+                .corner_radius(2.5)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.;
+                        ui.spacing_mut().item_spacing.x = 4.;
+                        ui.spacing_mut().interact_size.y = 18.;
                         let stock = multiplayer.snapshot.resources;
                         for (index, (name, value)) in [
                             ("Holz", stock.map(|s| s.wood)),
                             ("Stein", stock.map(|s| s.stone)),
                             ("Eisen", stock.map(|s| s.iron)),
+                            ("Äpfel", stock.map(|s| s.apples)),
+                            ("Brot", stock.map(|s| s.bread)),
+                            ("Käse", stock.map(|s| s.cheese)),
+                            ("Fleisch", stock.map(|s| s.meat)),
                         ]
                         .into_iter()
                         .enumerate()
@@ -65,7 +75,7 @@ pub(crate) fn resource_ui(
                                 ui.separator();
                             }
                             ui.add(
-                                egui::Image::new((texture, egui::vec2(36., 36.)))
+                                egui::Image::new((texture, egui::vec2(18., 18.)))
                                     .uv(resource_uv(index)),
                             )
                             .on_hover_text(name);
@@ -73,7 +83,7 @@ pub(crate) fn resource_ui(
                                 egui::RichText::new(
                                     value.map_or_else(|| "…".into(), |v| v.to_string()),
                                 )
-                                .size(21.)
+                                .size(10.5)
                                 .color(egui::Color32::WHITE),
                             )
                             .on_hover_text(name);
@@ -84,14 +94,14 @@ pub(crate) fn resource_ui(
                             "Bauern: {} von {} belegt. Jede Unterkunft bietet vier Bauern; nur Produktionsgebäude benötigen einen Bauern.",
                             peasants.used, peasants.capacity
                         );
-                        ui.add(egui::Image::new((texture, egui::vec2(28., 36.))).uv(
+                        ui.add(egui::Image::new((texture, egui::vec2(14., 18.))).uv(
                             egui::Rect::from_min_max(
                                 egui::pos2(837. / 1024., 2. / 1024.),
                                 egui::pos2(859. / 1024., 30. / 1024.),
                             ),
                         )).on_hover_text(&tooltip);
                         ui.label(egui::RichText::new(format!("{}/{}", peasants.used, peasants.capacity))
-                            .size(21.).color(if peasants.used > peasants.capacity {
+                            .size(10.5).color(if peasants.used > peasants.capacity {
                                 egui::Color32::LIGHT_RED
                             } else { egui::Color32::WHITE }))
                             .on_hover_text(tooltip);

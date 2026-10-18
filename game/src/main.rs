@@ -956,6 +956,9 @@ fn selection_ui(
                                 ])
                             ));
                         }
+                        if let Some(stock) = multiplayer.snapshot.granaries.iter().find(|s| s.building_id == building.id) {
+                            ui.label(format!("Äpfel {} · Brot {} · Käse {} · Fleisch {}", stock.apples, stock.bread, stock.cheese, stock.meat));
+                        }
                         if let Some(producer) = multiplayer
                             .snapshot
                             .producers

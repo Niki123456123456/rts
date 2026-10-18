@@ -283,6 +283,21 @@ beim Bau des ersten Lagers dieser neuen Teilnahme.
 
 ### Physisches Lager und Produktion
 
+**Äpfel, Brot, Käse und Fleisch** werden getrennt von Baumaterialien im
+**Kornspeicher** gelagert. Der erste eigene Kornspeicher einer Teilnahme erhält
+einmalig **je 5** Lebensmittel; weitere Kornspeicher und Wiederaufbauten bleiben
+leer. Beim Abriss geht der darin gelagerte Bestand verloren. Ohne Kornspeicher
+beginnen alle Lebensmittel bei null. Die kompakte Ressourcenleiste oben rechts
+zeigt die Summe der eigenen Speicher; Symbole und Schrift sind halb so groß wie
+zuvor. Die Lebensmittelsymbole stammen aus Zeile 10, Spalten 5–8 des UI-Atlas.
+
+Das offene Kornspeichermodell macht die Vorräte sichtbar. An seinen Innenrändern
+stehen je nach Bestand exakt so viele Apfelkörbe, Brot-, Käse- und Fleischmodelle
+wie vorhanden, in kleinen Stapeln; der Eingang bleibt frei. Die Modelle stammen
+aus `apples_01.glb`, `bread_01.glb`, `cheese_01.glb` und `goods_meat.glb` und liegen
+als `food_*.glb` unter `game/assets/models/resources/`. Import:
+`python3 game/import-storage.py`. Test: `npm --prefix game/web run test:food`.
+
 Das erste Vorratslager wird vom Spieler selbst platziert. Der geschenkte Bestand
 liegt darin als sichtbare Holz-, Stein- und Eisenmodelle auf einem inneren Raster
 mit 6×4 Plätzen im Abstand von 2 m. Teilmengen und volle Lagen stellen die Anzahl

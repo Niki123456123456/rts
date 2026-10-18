@@ -102,7 +102,7 @@ try {
   await until(()=>snapshot().buildings.some((b:any)=>b.kind==='housing'),'Browser housing');
   strongholdNetwork.send(JSON.stringify({action:'build',x:-1,z:45,building:'stockpile'}));
   await until(()=>snapshot().resources?.stone===20,'Browser receives first warehouse gift');
-  assert.deepEqual(snapshot().resources,{wood:20,stone:20,iron:20});
+  assert.deepEqual(snapshot().resources,{wood:20,stone:20,iron:20,apples:0,bread:0,cheese:0,meat:0});
   strongholdNetwork.send(JSON.stringify({action:'build_wall',start_x:13,start_z:19,end_x:17,end_z:19}));
   await until(()=>snapshot().resources?.stone===17,'Browser snapshot receives wall payment');
   strongholdNetwork.send(JSON.stringify({action:'leave'}));

@@ -3,13 +3,19 @@ use crate::*;
 use stronghold_map::logistics as economy;
 #[derive(Resource)]
 pub(crate) struct StorageAssets {
-    scenes: [Option<Handle<WorldAsset>>; 22],
+    scenes: [Option<Handle<WorldAsset>>; MODELS.len()],
     loading: Option<usize>,
 }
 #[derive(Component)]
 pub(crate) struct WarehouseVisual {
     id: u64,
     stock: [u32; 3],
+    rotation: u8,
+}
+#[derive(Component)]
+pub(crate) struct GranaryVisual {
+    id: u64,
+    stock: [u32; 4],
     rotation: u8,
 }
 #[derive(Component)]
@@ -48,11 +54,22 @@ fn stock_transform(model: usize, cell: usize, height: f32) -> Transform {
     Transform::from_xyz(x, 0.221 + height - MODELS[model].base * 0.0085, z)
         .with_scale(Vec3::splat(0.0085))
 }
+fn food_transform(food: &economy::FoodVisual) -> Transform {
+    let model = &MODELS[food.model];
+    let scale = 0.01;
+    Transform::from_xyz(
+        food.position.0 - model.center[0] * scale,
+        0.23 + food.layer as f32 * (model.height * scale + 0.02) - model.base * scale,
+        food.position.1 - model.center[1] * scale,
+    )
+    .with_scale(Vec3::splat(scale))
+}
 pub(crate) fn sync_storage_visuals(
     mut commands: Commands,
     multiplayer: Res<Multiplayer>,
     assets: Res<StorageAssets>,
     warehouses: Query<(Entity, &WarehouseVisual)>,
+    granaries: Query<(Entity, &GranaryVisual)>,
     mut cargo: Query<(Entity, &CargoVisual, &mut Transform)>,
 ) {
     let snapshot = &multiplayer.snapshot;
@@ -109,6 +126,59 @@ pub(crate) fn sync_storage_visuals(
                         parent.spawn((
                             WorldAssetRoot(assets.scenes[p.model].as_ref().unwrap().clone()),
                             stock_transform(p.model, p.cell, p.height),
+                        ));
+                    }
+                });
+        }
+    }
+    let mut existing_granaries = std::collections::HashSet::new();
+    for (entity, visual) in &granaries {
+        let row = snapshot
+            .granaries
+            .iter()
+            .find(|s| s.building_id == visual.id);
+        let building = snapshot.buildings.iter().find(|b| b.id == visual.id);
+        if active
+            && row.zip(building).is_some_and(|(s, b)| {
+                visual.stock == [s.apples, s.bread, s.cheese, s.meat]
+                    && visual.rotation == b.rotation
+            })
+        {
+            existing_granaries.insert(visual.id);
+        } else {
+            commands.entity(entity).despawn();
+        }
+    }
+    if active {
+        for row in &snapshot.granaries {
+            if existing_granaries.contains(&row.building_id) {
+                continue;
+            }
+            let Some(b) = snapshot.buildings.iter().find(|b| b.id == row.building_id) else {
+                continue;
+            };
+            let stock = [row.apples, row.bread, row.cheese, row.meat];
+            let models = economy::food_visuals(stock);
+            if models.iter().any(|p| assets.scenes[p.model].is_none()) {
+                continue;
+            }
+            commands
+                .spawn((
+                    GranaryVisual {
+                        id: b.id,
+                        stock,
+                        rotation: b.rotation,
+                    },
+                    Transform::from_xyz(b.x, b.y, b.z).with_rotation(Quat::from_rotation_y(
+                        b.rotation as f32 * std::f32::consts::FRAC_PI_2,
+                    )),
+                    Visibility::default(),
+                ))
+                .with_children(|parent| {
+                    for p in models {
+                        parent.spawn((
+                            WorldAssetRoot(assets.scenes[p.model].as_ref().unwrap().clone()),
+                            food_transform(&p),
                         ));
                     }
                 });
@@ -184,6 +254,81 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn granary_replication_rebuilds_exact_food_stacks_and_cleans_up() {
+        let mut app = App::new();
+        app.init_resource::<Multiplayer>()
+            .insert_resource(StorageAssets {
+                scenes: std::array::from_fn(|_| Some(default())),
+                loading: None,
+            })
+            .add_systems(Update, sync_storage_visuals);
+        {
+            let mut multiplayer = app.world_mut().resource_mut::<Multiplayer>();
+            let snapshot = &mut multiplayer.snapshot;
+            snapshot.connected = true;
+            snapshot.game_id = Some(1);
+            snapshot.buildings.push(network::Building {
+                id: 7,
+                kind: "granary".into(),
+                rotation: 1,
+                color: 0,
+                health: 1.,
+                owned: true,
+                x: 20.,
+                y: 0.,
+                z: 30.,
+            });
+            snapshot.granaries.push(network::Granary {
+                building_id: 7,
+                apples: 5,
+                bread: 5,
+                cheese: 5,
+                meat: 5,
+            });
+        }
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query::<&WorldAssetRoot>()
+                .iter(app.world())
+                .count(),
+            20
+        );
+        let transform = app
+            .world_mut()
+            .query_filtered::<&Transform, With<GranaryVisual>>()
+            .single(app.world())
+            .unwrap();
+        assert!((transform.rotation * Vec3::X).distance(Vec3::NEG_Z) < 0.001);
+        app.world_mut()
+            .resource_mut::<Multiplayer>()
+            .snapshot
+            .granaries[0]
+            .apples = 4;
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query::<&WorldAssetRoot>()
+                .iter(app.world())
+                .count(),
+            19
+        );
+        app.world_mut()
+            .resource_mut::<Multiplayer>()
+            .snapshot
+            .granaries
+            .clear();
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query::<&WorldAssetRoot>()
+                .iter(app.world())
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn storage_models_load_sequentially_and_fit_their_two_metre_cells() {
         let mut app = App::new();
         app.add_plugins((
@@ -251,6 +396,19 @@ mod tests {
                     model.path
                 );
                 assert!(point.y >= 0.22, "Goods must sit above the storage floor");
+                if i >= 22 {
+                    for food in economy::food_visuals([5; 4])
+                        .iter()
+                        .filter(|v| v.model == i)
+                    {
+                        let point = food_transform(food).transform_point(Vec3::from(*p));
+                        assert!(
+                            point.x.abs() < 2.6 && point.z.abs() < 2.6,
+                            "Food must fit inside the granary walls"
+                        );
+                        assert!(point.y >= 0.229, "Food must sit above the granary floor");
+                    }
+                }
             }
         }
     }

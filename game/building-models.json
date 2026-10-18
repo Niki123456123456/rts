@@ -4,7 +4,7 @@
     "id": "granary",
     "label": "Kornspeicher",
     "category": "supply",
-    "source": "granary_closed",
+    "source": "granary_open",
     "collision": "granary_collision",
     "folder": "granary",
     "grid": [

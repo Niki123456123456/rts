@@ -302,6 +302,16 @@ cleanup and browser snapshot replication.
 
 ### Storage and automatic transport
 
+Food uses additive public `granary_stock` rows (one per building, with owner and
+game) and private `granary_player` gift markers. The first granary per participation
+gets 5 apples, bread, cheese and meat. Further granaries/rebuilds are empty;
+demolition deletes their food, and leaving clears the gift marker. Existing table
+schemas and construction balances are unchanged. Native and browser snapshots
+sum only owned granary food in the active game into the seven-resource display;
+all players can see replicated physical food stacks. Food production/consumption
+is not enabled by this change. `npm --prefix game/web run test:food` checks gifts,
+ownership, observer replication, demolition, repeated joins and browser snapshots.
+
 Additive `warehouse_stock`, `producer`, `worker` and private `logistics_player` tables
 keep existing schemas intact. New participations start with no warehouse or resources.
 The first successful stockpile build grants 20 wood, stone and iron physically and

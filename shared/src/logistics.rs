@@ -6,6 +6,38 @@ pub const STORAGE_CELLS: usize = STORAGE_COLUMNS * STORAGE_ROWS;
 pub const CARRY_CAPACITY: u32 = 5;
 pub const PRODUCTION_SECONDS: u32 = 3;
 pub const PRODUCTION_BUFFER: u32 = 20;
+pub const STARTING_FOOD_AMOUNT: u32 = 5;
+
+#[derive(Clone, Copy, Debug)]
+pub struct FoodVisual {
+    pub model: usize,
+    pub position: Point,
+    pub layer: u32,
+}
+
+/// Four separated stacks per food type along the inner walls. Leave the
+/// middle of the front edge clear for the granary entrance.
+pub fn food_visuals(stock: [u32; 4]) -> Vec<FoodVisual> {
+    let mut result = Vec::new();
+    for (resource, amount) in stock.into_iter().enumerate() {
+        for unit in 0..amount {
+            let slot = (unit % 4) as usize;
+            let along = [-1.2, -0.4, 0.4, 1.2][slot];
+            let position = match resource {
+                0 => (along, -2.0),
+                1 => (-2.0, along),
+                2 => (2.0, along),
+                _ => ([-1.8, -1.1, 1.1, 1.8][slot], 2.0),
+            };
+            result.push(FoodVisual {
+                model: 22 + resource,
+                position,
+                layer: unit / 4,
+            });
+        }
+    }
+    result
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Commodity {
@@ -135,6 +167,24 @@ pub fn stock_visuals(stock: [u32; 3]) -> Vec<StockVisual> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn food_stacks_show_exact_counts_along_walls_and_keep_the_entry_clear() {
+        for amount in 0..=40 {
+            let visuals = food_visuals([amount; 4]);
+            assert_eq!(visuals.len(), amount as usize * 4);
+            for resource in 0..4 {
+                assert_eq!(
+                    visuals.iter().filter(|v| v.model == 22 + resource).count(),
+                    amount as usize
+                );
+            }
+            for p in visuals {
+                assert!(p.position.0.abs() <= 2. && p.position.1.abs() <= 2.);
+                assert!(p.position.0.abs() == 2. || p.position.1.abs() == 2.);
+                assert!(!(p.position.1 == 2. && p.position.0.abs() < 1.));
+            }
+        }
+    }
     #[test]
     fn every_quantity_is_represented_exactly_and_inside_the_grid() {
         for resource in 0..3 {

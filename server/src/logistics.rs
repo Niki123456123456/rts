@@ -1,5 +1,23 @@
 use map::logistics::{self as economy, Commodity};
 #[derive(Clone)]
+#[spacetimedb::table(name = granary_stock, public)]
+pub struct GranaryStock {
+    #[primary_key]
+    pub building_id: u64,
+    #[index(btree)]
+    pub game_id: u64,
+    pub owner: spacetimedb::ConnectionId,
+    pub apples: u32,
+    pub bread: u32,
+    pub cheese: u32,
+    pub meat: u32,
+}
+#[spacetimedb::table(name = granary_player)]
+pub struct GranaryPlayer {
+    #[primary_key]
+    pub connection_id: spacetimedb::ConnectionId,
+}
+#[derive(Clone)]
 #[spacetimedb::table(name = warehouse_stock, public)]
 pub struct WarehouseStock {
     #[primary_key]
@@ -157,6 +175,33 @@ fn route_worker(ctx: &ReducerContext, u: &mut ArmyUnit, b: &Building) -> bool {
     true
 }
 fn register_logistics_building(ctx: &ReducerContext, b: &Building) -> Result<(), String> {
+    if b.kind == "granary" && ctx.db.granary_stock().building_id().find(b.id).is_none() {
+        let first = ctx
+            .db
+            .granary_player()
+            .connection_id()
+            .find(b.owner)
+            .is_none();
+        let gift = if first {
+            economy::STARTING_FOOD_AMOUNT
+        } else {
+            0
+        };
+        ctx.db.granary_stock().insert(GranaryStock {
+            building_id: b.id,
+            game_id: b.game_id,
+            owner: b.owner,
+            apples: gift,
+            bread: gift,
+            cheese: gift,
+            meat: gift,
+        });
+        if first {
+            ctx.db.granary_player().insert(GranaryPlayer {
+                connection_id: b.owner,
+            });
+        }
+    }
     if b.kind == "stockpile" && ctx.db.warehouse_stock().building_id().find(b.id).is_none() {
         let first = ctx
             .db
@@ -258,6 +303,7 @@ fn register_logistics_building(ctx: &ReducerContext, b: &Building) -> Result<(),
     Ok(())
 }
 fn remove_logistics_building(ctx: &ReducerContext, id: u64) {
+    ctx.db.granary_stock().building_id().delete(id);
     if let Some(stock) = ctx.db.warehouse_stock().building_id().find(id) {
         if let Some(b) = ctx.db.building().id().find(id) {
             if let Some(mut r) = ctx.db.player_resources().connection_id().find(b.owner) {

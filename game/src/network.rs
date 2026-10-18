@@ -19,6 +19,8 @@ pub struct Snapshot {
     #[serde(default)]
     pub warehouses: Vec<Warehouse>,
     #[serde(default)]
+    pub granaries: Vec<Granary>,
+    #[serde(default)]
     pub workers: Vec<WorkerState>,
     #[serde(default)]
     pub producers: Vec<ProducerState>,
@@ -48,6 +50,24 @@ pub struct Resources {
     pub wood: u32,
     pub stone: u32,
     pub iron: u32,
+    #[serde(default)]
+    pub apples: u32,
+    #[serde(default)]
+    pub bread: u32,
+    #[serde(default)]
+    pub cheese: u32,
+    #[serde(default)]
+    pub meat: u32,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Granary {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub apples: u32,
+    pub bread: u32,
+    pub cheese: u32,
+    pub meat: u32,
 }
 
 #[derive(Clone, Deserialize)]
@@ -538,6 +558,7 @@ mod backend {
                                 format!("SELECT * FROM tower_occupant WHERE game_id = {id}"),
                                 format!("SELECT * FROM player_resources WHERE game_id = {id}"),
                                 format!("SELECT * FROM warehouse_stock WHERE game_id = {id}"),
+                                format!("SELECT * FROM granary_stock WHERE game_id = {id}"),
                                 format!("SELECT * FROM worker WHERE game_id = {id}"),
                                 format!("SELECT * FROM producer WHERE game_id = {id}"),
                                 format!("SELECT * FROM unit_profile WHERE game_id = {id}"),
@@ -546,6 +567,32 @@ mod backend {
                     );
                 }
             }
+            let food = conn
+                .db
+                .granary_stock()
+                .iter()
+                .filter(|s| Some(s.game_id) == snapshot.game_id && s.owner == conn.connection_id())
+                .fold([0u32; 4], |n, s| {
+                    [
+                        n[0].saturating_add(s.apples),
+                        n[1].saturating_add(s.bread),
+                        n[2].saturating_add(s.cheese),
+                        n[3].saturating_add(s.meat),
+                    ]
+                });
+            snapshot.granaries = conn
+                .db
+                .granary_stock()
+                .iter()
+                .filter(|s| Some(s.game_id) == snapshot.game_id)
+                .map(|s| super::Granary {
+                    building_id: s.building_id,
+                    apples: s.apples,
+                    bread: s.bread,
+                    cheese: s.cheese,
+                    meat: s.meat,
+                })
+                .collect();
             snapshot.resources = conn
                 .db
                 .player_resources()
@@ -556,6 +603,10 @@ mod backend {
                     wood: r.wood,
                     stone: r.stone,
                     iron: r.iron,
+                    apples: food[0],
+                    bread: food[1],
+                    cheese: food[2],
+                    meat: food[3],
                 });
             snapshot.warehouses = conn
                 .db
