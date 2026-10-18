@@ -51,6 +51,7 @@ fn main() {
             Update,
             (
                 sync_multiplayer,
+                buildings::load_building_models,
                 buildings::sync_buildings,
                 buildings::building_input,
                 select_unit,

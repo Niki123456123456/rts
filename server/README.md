@@ -256,3 +256,11 @@ Run `SPACETIMEDB_DATABASE=<local-database> npm --prefix game/web run test:walls`
 against a disposable local server to check raster lines, atomic rejection, capacity,
 all three tower access types, surface transfers, severed connections, ground
 navigation, ownership, demolition and replication.
+
+The supply catalog contains 37 civilian buildings, including food chains, raw
+materials, civilian workshops, storage, trade, water and sanitation. All use the
+existing `build` / `build_rotated` reducers with their catalog IDs and logical
+2 m plot dimensions; no new reducers or table migrations are needed. Importing
+these models does not implement resource production or consumption. The real-server
+building test checks placement, grid alignment, collision, navigation targets,
+combat approach and removal for every newly imported supply kind.

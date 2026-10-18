@@ -285,5 +285,460 @@
       1
     ],
     "procedural": "stone_wall"
+  },
+  {
+    "variant": "AppleFarm",
+    "id": "apple_farm",
+    "label": "Obstgarten",
+    "category": "supply",
+    "source": "farm_apple",
+    "collision": "farm_apple_collision",
+    "folder": "apple_farm",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "DairyFarm",
+    "id": "dairy_farm",
+    "label": "Käserei",
+    "category": "supply",
+    "source": "farm_dairy",
+    "collision": "farm_dairy_collision",
+    "folder": "dairy_farm",
+    "grid": [
+      3,
+      2
+    ]
+  },
+  {
+    "variant": "WheatFarm",
+    "id": "wheat_farm",
+    "label": "Getreidefarm",
+    "category": "supply",
+    "source": "farm_wheat",
+    "collision": "farm_wheat_collision",
+    "folder": "wheat_farm",
+    "grid": [
+      2,
+      1
+    ]
+  },
+  {
+    "variant": "HopsFarm",
+    "id": "hops_farm",
+    "label": "Hopfenfarm",
+    "category": "supply",
+    "source": "farm_hops",
+    "collision": "farm_hops_collision",
+    "folder": "hops_farm",
+    "grid": [
+      2,
+      3
+    ]
+  },
+  {
+    "variant": "Vineyard",
+    "id": "vineyard",
+    "label": "Weinberg",
+    "category": "supply",
+    "source": "farm_grapes",
+    "collision": "farm_grapes_collision",
+    "folder": "vineyard",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "PigFarm",
+    "id": "pig_farm",
+    "label": "Schweinezucht",
+    "category": "supply",
+    "source": "farm_pigs",
+    "collision": "farm_pigs_collision",
+    "folder": "pig_farm",
+    "grid": [
+      3,
+      5
+    ]
+  },
+  {
+    "variant": "SheepFarm",
+    "id": "sheep_farm",
+    "label": "Schafzucht",
+    "category": "supply",
+    "source": "farm_sheep",
+    "collision": "farm_sheep_collision",
+    "folder": "sheep_farm",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "HuntersPost",
+    "id": "hunters_post",
+    "label": "Jägerstand",
+    "category": "supply",
+    "source": "hunter_post",
+    "collision": "hunter_post_collision",
+    "folder": "hunters_post",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "Fishpond",
+    "id": "fishpond",
+    "label": "Fischteich",
+    "category": "supply",
+    "source": "fishpond",
+    "collision": null,
+    "folder": "fishpond",
+    "grid": [
+      7,
+      6
+    ]
+  },
+  {
+    "variant": "Dovecote",
+    "id": "dovecote",
+    "label": "Taubenschlag",
+    "category": "supply",
+    "source": "dovecote",
+    "collision": null,
+    "folder": "dovecote",
+    "grid": [
+      1,
+      1
+    ]
+  },
+  {
+    "variant": "GardenersHut",
+    "id": "gardeners_hut",
+    "label": "Gärtnerhütte",
+    "category": "supply",
+    "source": "gardeners_hut",
+    "collision": "gardeners_hut_collision",
+    "folder": "gardeners_hut",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "VegetableGarden",
+    "id": "vegetable_garden",
+    "label": "Gemüsebeet",
+    "category": "supply",
+    "source": "gardeners_garden",
+    "collision": null,
+    "folder": "vegetable_garden",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "Beehive",
+    "id": "beehive",
+    "label": "Bienenstock",
+    "category": "supply",
+    "source": "beehive",
+    "collision": "beehive_collision",
+    "folder": "beehive",
+    "grid": [
+      1,
+      1
+    ]
+  },
+  {
+    "variant": "Windmill",
+    "id": "windmill",
+    "label": "Mühle",
+    "category": "supply",
+    "source": "windmill_closed",
+    "collision": "windmill_collision",
+    "folder": "windmill",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "Bakery",
+    "id": "bakery",
+    "label": "Bäckerei",
+    "category": "supply",
+    "source": "workshop_bakery_closed",
+    "collision": "workshop_bakery_collision",
+    "folder": "bakery",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "Brewery",
+    "id": "brewery",
+    "label": "Brauerei",
+    "category": "supply",
+    "source": "brewery_closed",
+    "collision": "brewery_collision",
+    "folder": "brewery",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "VintnersWorkshop",
+    "id": "vintners_workshop",
+    "label": "Weingut",
+    "category": "supply",
+    "source": "vintners_workshop",
+    "collision": "vintners_workshop_collision",
+    "folder": "vintners_workshop",
+    "grid": [
+      2,
+      3
+    ]
+  },
+  {
+    "variant": "Kitchen",
+    "id": "kitchen",
+    "label": "Burgküche",
+    "category": "supply",
+    "source": "kitchen_closed",
+    "collision": "kitchen_collision",
+    "folder": "kitchen",
+    "grid": [
+      4,
+      4
+    ]
+  },
+  {
+    "variant": "ServantsPantry",
+    "id": "servants_pantry",
+    "label": "Vorratskammer der Diener",
+    "category": "supply",
+    "source": "servants_pantry",
+    "collision": "servants_pantry_collision",
+    "folder": "servants_pantry",
+    "grid": [
+      3,
+      4
+    ]
+  },
+  {
+    "variant": "Inn",
+    "id": "inn",
+    "label": "Schenke",
+    "category": "supply",
+    "source": "inn_closed",
+    "collision": "inn_collision",
+    "folder": "inn",
+    "grid": [
+      5,
+      4
+    ]
+  },
+  {
+    "variant": "Market",
+    "id": "market",
+    "label": "Markt",
+    "category": "supply",
+    "source": "market_closed",
+    "collision": "market_collision",
+    "folder": "market",
+    "grid": [
+      3,
+      3
+    ]
+  },
+  {
+    "variant": "SawPit",
+    "id": "saw_pit",
+    "label": "Sägegrube",
+    "category": "supply",
+    "source": "saw_pit",
+    "collision": "saw_pit_collision",
+    "folder": "saw_pit",
+    "grid": [
+      2,
+      3
+    ]
+  },
+  {
+    "variant": "Quarry",
+    "id": "quarry",
+    "label": "Steinbruch",
+    "category": "supply",
+    "source": "quarry",
+    "collision": "quarry_collision",
+    "folder": "quarry",
+    "grid": [
+      3,
+      3
+    ]
+  },
+  {
+    "variant": "IronMine",
+    "id": "iron_mine",
+    "label": "Eisenmine",
+    "category": "supply",
+    "source": "iron_mine",
+    "collision": "iron_mine_collision",
+    "folder": "iron_mine",
+    "grid": [
+      3,
+      3
+    ]
+  },
+  {
+    "variant": "PitchRig",
+    "id": "pitch_rig",
+    "label": "Pechgrube",
+    "category": "supply",
+    "source": "pitch_rig",
+    "collision": "pitch_rig_collision",
+    "folder": "pitch_rig",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "OxTether",
+    "id": "ox_tether",
+    "label": "Ochsenjoch",
+    "category": "supply",
+    "source": "ox_tether",
+    "collision": "ox_tether_collision",
+    "folder": "ox_tether",
+    "grid": [
+      1,
+      1
+    ]
+  },
+  {
+    "variant": "CartersPost",
+    "id": "carters_post",
+    "label": "Fuhrmannsposten",
+    "category": "supply",
+    "source": "cart_post",
+    "collision": "cart_post_collision",
+    "folder": "carters_post",
+    "grid": [
+      2,
+      4
+    ]
+  },
+  {
+    "variant": "WeaversWorkshop",
+    "id": "weavers_workshop",
+    "label": "Weberei",
+    "category": "supply",
+    "source": "workshop_weaver",
+    "collision": "workshop_weaver_collision",
+    "folder": "weavers_workshop",
+    "grid": [
+      2,
+      3
+    ]
+  },
+  {
+    "variant": "ChandlersWorkshop",
+    "id": "chandlers_workshop",
+    "label": "Kerzengießerei",
+    "category": "supply",
+    "source": "chandler_workshop",
+    "collision": "chandler_workshop_collision",
+    "folder": "chandlers_workshop",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "Well",
+    "id": "well",
+    "label": "Brunnen",
+    "category": "supply",
+    "source": "well",
+    "collision": "well_collision",
+    "folder": "well",
+    "grid": [
+      1,
+      1
+    ]
+  },
+  {
+    "variant": "WaterPot",
+    "id": "water_pot",
+    "label": "Wassertrog",
+    "category": "supply",
+    "source": "water_pot",
+    "collision": null,
+    "folder": "water_pot",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "GongPit",
+    "id": "gong_pit",
+    "label": "Jauchegrube",
+    "category": "supply",
+    "source": "gong_farm",
+    "collision": "gong_farm_collision",
+    "folder": "gong_pit",
+    "grid": [
+      2,
+      2
+    ]
+  },
+  {
+    "variant": "Apothecary",
+    "id": "apothecary",
+    "label": "Apotheke",
+    "category": "supply",
+    "source": "apothecary_closed",
+    "collision": "apothecary_collision",
+    "folder": "apothecary",
+    "grid": [
+      5,
+      4
+    ]
+  },
+  {
+    "variant": "FalconersPost",
+    "id": "falconers_post",
+    "label": "Falknerposten",
+    "category": "supply",
+    "source": "falcon_post",
+    "collision": "falcon_post_collision",
+    "folder": "falconers_post",
+    "grid": [
+      1,
+      1
+    ]
+  },
+  {
+    "variant": "Treasury",
+    "id": "treasury",
+    "label": "Schatzkammer",
+    "category": "supply",
+    "source": "treasury_closed",
+    "collision": "treasury_collision",
+    "folder": "treasury",
+    "grid": [
+      3,
+      4
+    ]
   }
 ]

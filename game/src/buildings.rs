@@ -29,7 +29,8 @@ struct BuildingModel {
 }
 #[derive(Resource)]
 pub(crate) struct BuildingAssets {
-    models: [BuildingModel; BuildingKind::ALL.len()],
+    models: [Option<BuildingModel>; BuildingKind::ALL.len()],
+    loading: Option<usize>,
     wall_previews: Vec<Entity>,
     invisible: Handle<StandardMaterial>,
     valid: Handle<StandardMaterial>,
@@ -41,7 +42,7 @@ impl BuildingAssets {
         for entity in &self.wall_previews {
             commands.entity(*entity).insert(Visibility::Hidden);
         }
-        for model in &self.models {
+        for model in self.models.iter().flatten() {
             commands.entity(model.preview).insert(Visibility::Hidden);
             commands
                 .entity(model.preview_footprint)
@@ -65,8 +66,6 @@ fn model_transform(kind: BuildingKind) -> Transform {
 }
 pub(crate) fn setup_buildings(
     mut commands: Commands,
-    server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mut material = |color| {
@@ -81,41 +80,76 @@ pub(crate) fn setup_buildings(
     let valid = material(Color::srgba(0.1, 0.9, 0.3, 0.45));
     let invalid = material(Color::srgba(1.0, 0.1, 0.1, 0.45));
     let selected = material(Color::srgba(1.0, 0.85, 0.15, 0.45));
-    let models = BuildingKind::ALL.map(|kind| {
-        let scene = server.load(kind.scene());
-        let collision = server.load(kind.collision());
-        let shape = kind.build_footprint(0.0, 0.0);
-        let footprint = meshes.add(Cuboid::new(shape.half_x * 2.0, 0.04, shape.half_z * 2.0));
-        let preview = commands
-            .spawn((Transform::default(), Visibility::Hidden))
-            .with_children(|parent| {
-                parent.spawn((WorldAssetRoot(scene.clone()), model_transform(kind)));
-            })
-            .id();
-        let preview_footprint = commands
-            .spawn((
-                Mesh3d(footprint.clone()),
-                MeshMaterial3d(valid.clone()),
-                Transform::default(),
-                Visibility::Hidden,
-            ))
-            .id();
-        BuildingModel {
-            scene,
-            collision,
-            footprint,
-            preview,
-            preview_footprint,
-        }
-    });
     commands.insert_resource(BuildingAssets {
-        models,
+        models: std::array::from_fn(|_| None),
+        loading: None,
         wall_previews: Vec::new(),
         invisible,
         valid,
         invalid,
         selected,
     });
+}
+/// Bevy's glTF texture scopes can re-enter other IO loads. Keep at most one
+/// building's visual/collision pair active so nested scopes cannot grow with the catalog.
+pub(crate) fn load_building_models(
+    mut commands: Commands,
+    server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut assets: ResMut<BuildingAssets>,
+    interaction: Res<BuildingInteraction>,
+) {
+    if let Some(index) = assets.loading {
+        let model = assets.models[index].as_ref().unwrap();
+        let loaded = server.is_loaded_with_dependencies(model.scene.id())
+            && server.is_loaded_with_dependencies(model.collision.id());
+        let failed = matches!(
+            server.get_load_state(model.scene.id()),
+            Some(bevy::asset::LoadState::Failed(_))
+        ) || matches!(
+            server.get_load_state(model.collision.id()),
+            Some(bevy::asset::LoadState::Failed(_))
+        );
+        if !loaded && !failed {
+            return;
+        }
+        assets.loading = None;
+    }
+    let index = interaction
+        .placing
+        .map(BuildingKind::index)
+        .filter(|index| assets.models[*index].is_none())
+        .or_else(|| assets.models.iter().position(Option::is_none));
+    let Some(index) = index else {
+        return;
+    };
+    let kind = BuildingKind::ALL[index];
+    let scene = server.load(kind.scene());
+    let collision = server.load(kind.collision());
+    let shape = kind.build_footprint(0.0, 0.0);
+    let footprint = meshes.add(Cuboid::new(shape.half_x * 2.0, 0.04, shape.half_z * 2.0));
+    let preview = commands
+        .spawn((Transform::default(), Visibility::Hidden))
+        .with_children(|parent| {
+            parent.spawn((WorldAssetRoot(scene.clone()), model_transform(kind)));
+        })
+        .id();
+    let preview_footprint = commands
+        .spawn((
+            Mesh3d(footprint.clone()),
+            MeshMaterial3d(assets.valid.clone()),
+            Transform::default(),
+            Visibility::Hidden,
+        ))
+        .id();
+    assets.models[index] = Some(BuildingModel {
+        scene,
+        collision,
+        footprint,
+        preview,
+        preview_footprint,
+    });
+    assets.loading = Some(index);
 }
 pub(crate) fn sync_buildings(
     mut commands: Commands,
@@ -158,7 +192,9 @@ pub(crate) fn sync_buildings(
     }
     for row in remaining.values() {
         let kind = BuildingKind::from_name(&row.kind).unwrap_or_default();
-        let model = &assets.models[kind.index()];
+        let Some(model) = assets.models[kind.index()].as_ref() else {
+            continue;
+        };
         commands
             .spawn((
                 Building((*row).clone()),
@@ -359,7 +395,10 @@ pub(crate) fn building_input(
             } else {
                 assets.invalid.clone()
             };
-            let collision = assets.models[kind.index()].collision.clone();
+            let Some(model) = assets.models[kind.index()].as_ref() else {
+                return;
+            };
+            let collision = model.collision.clone();
             for (index, &(x, z)) in line.iter().enumerate() {
                 if index >= assets.wall_previews.len() {
                     let entity = commands
@@ -398,7 +437,9 @@ pub(crate) fn building_input(
             }
             return;
         }
-        let model = &assets.models[kind.index()];
+        let Some(model) = assets.models[kind.index()].as_ref() else {
+            return;
+        };
         let (x, z) = kind.rotated_snap_position(hit.point.x, hit.point.z, state.rotation);
         let y = terrain_height(x, z);
         let valid = placement_valid(kind, x, z, y, state.rotation, &multiplayer);
@@ -821,15 +862,18 @@ mod tests {
     #[test]
     fn replicated_destruction_despawns_building_children_without_stale_commands() {
         let mut app = App::new();
-        let models = BuildingKind::ALL.map(|_| BuildingModel {
-            scene: default(),
-            collision: default(),
-            footprint: default(),
-            preview: app.world_mut().spawn_empty().id(),
-            preview_footprint: app.world_mut().spawn_empty().id(),
+        let models = BuildingKind::ALL.map(|_| {
+            Some(BuildingModel {
+                scene: default(),
+                collision: default(),
+                footprint: default(),
+                preview: app.world_mut().spawn_empty().id(),
+                preview_footprint: app.world_mut().spawn_empty().id(),
+            })
         });
         app.insert_resource(BuildingAssets {
             models,
+            loading: None,
             wall_previews: Vec::new(),
             invisible: default(),
             valid: default(),
@@ -886,6 +930,83 @@ mod tests {
                 .iter(app.world())
                 .count(),
             0
+        );
+    }
+
+    #[test]
+    fn startup_loads_full_catalog_with_only_one_building_pair_in_flight() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin {
+                file_path: format!("{}/assets", env!("CARGO_MANIFEST_DIR")),
+                ..default()
+            },
+            MeshPlugin,
+            ImagePlugin::default(),
+            GltfPlugin::default(),
+        ))
+        .init_asset::<WorldAsset>()
+        .init_asset::<StandardMaterial>()
+        .insert_resource(BuildingInteraction {
+            placing: Some(BuildingKind::Treasury),
+            ..default()
+        })
+        .add_systems(Startup, setup_buildings)
+        .add_systems(Update, load_building_models);
+        app.finish();
+        app.cleanup();
+        app.update();
+        {
+            let models = app.world().resource::<BuildingAssets>();
+            assert_eq!(
+                models.loading,
+                Some(BuildingKind::Treasury.index()),
+                "The selected building loads first"
+            );
+            assert_eq!(
+                models.models.iter().flatten().count(),
+                1,
+                "Startup must not enqueue every GLB at once"
+            );
+        }
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            app.update();
+            let models = app.world().resource::<BuildingAssets>();
+            let server = app.world().resource::<AssetServer>();
+            let pending = models
+                .models
+                .iter()
+                .flatten()
+                .filter(|model| {
+                    !server.is_loaded_with_dependencies(model.scene.id())
+                        || !server.is_loaded_with_dependencies(model.collision.id())
+                })
+                .count();
+            assert!(
+                pending <= 1,
+                "Only one building's visual/collision pair may be loading"
+            );
+            if models.loading.is_none() && models.models.iter().all(Option::is_some) {
+                assert_eq!(
+                    pending, 0,
+                    "Every model, collision and embedded texture loaded"
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Startup asset queue did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(
+            app.world_mut()
+                .query::<&WorldAssetRoot>()
+                .iter(app.world())
+                .count(),
+            BuildingKind::ALL.len()
         );
     }
 

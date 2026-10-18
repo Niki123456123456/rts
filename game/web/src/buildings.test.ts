@@ -124,7 +124,7 @@ try {
   assert.equal(await remove(a, stockpile.id), 'Failed', 'Enemy stockpile cannot be removed');
   assert.equal(await remove(b, stockpile.id), 'Committed');
 
-  // The generic build command validates names and all fortification kinds.
+  // The generic build command validates all fortifications and civilian supply buildings.
   await until(() => !buildings().some(row => row.id === stockpile.id), 'Stockpile removal replicated before checking unchanged building count');
   const beforeUnknown = buildings().length;
   assert.equal(await status(a, cb => a.reducers.onBuild(cb), () => a.reducers.build(80, 80, 'unknown')), 'Failed');
@@ -132,9 +132,12 @@ try {
   const catalog = JSON.parse(readFileSync(new URL('../../building-models.json', import.meta.url), 'utf8')) as {id: string; category: string; grid: [number, number]}[];
   const fortifications = catalog.filter(x => x.category === 'fortifications');
   assert.equal(fortifications.length, 19);
-  for (const [index, entry] of fortifications.entries()) {
+  const supply = catalog.filter(x => x.category === 'supply');
+  assert.equal(supply.length, 37);
+  const additions = supply.filter(x => x.id !== 'granary' && x.id !== 'stockpile');
+  for (const [index, entry] of [...fortifications, ...additions].entries()) {
     const x = -250 + index % 6 * 70;
-    const z = 140 + Math.floor(index / 6) * 60;
+    const z = 140 + Math.floor(index / 6) % 3 * 60;
     assert.equal(await status(b, cb => b.reducers.onBuild(cb), () => b.reducers.build(x, z, entry.id)), 'Committed', entry.id);
     await until(() => buildings().some(row => row.kind === entry.id), `Replicated ${entry.id}`);
     const row = buildings().find(row => row.kind === entry.id)!;

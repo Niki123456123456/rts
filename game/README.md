@@ -206,3 +206,33 @@ Pro Spiel sind zusätzlich zu den 128 Gebäuden bis zu 4096 Mauersegmente mögli
 und wird auch vom Modellimport aufgerufen. Eingebettet werden die vorhandenen
 Texturen `assets/images/Source/meshes/buildings/castle_wall.png` (Seiten) und
 `walltop.png` (Mauerkrone). Bestehende Turmmodelle werden dabei nicht verändert.
+
+### Zivile Versorgungsgebäude
+
+Die Kategorie **Versorgung** enthält 37 Einträge. Neben Kornspeicher und Vorratslager
+sind alle zivilen Versorgungsketten als platzierbare Modelle importiert:
+
+- Nahrung: Obstgarten, Käserei, Getreidefarm, Hopfenfarm, Weinberg, Schweinezucht,
+  Schafzucht, Jägerstand, Fischteich, Taubenschlag, Gärtnerhütte, Gemüsebeet und Bienenstock.
+- Verarbeitung und Vorräte: Mühle, Bäckerei, Brauerei, Weingut, Burgküche,
+  Vorratskammer der Diener, Schenke und Markt.
+- Rohstoffe und Transport: Sägegrube, Steinbruch, Eisenmine, Pechgrube,
+  Ochsenjoch und Fuhrmannsposten.
+- Weitere Versorgung: Weberei, Kerzengießerei, Brunnen, Wassertrog, Jauchegrube,
+  Apotheke, Falknerposten und Schatzkammer.
+
+Jedes Gebäude liegt in einem englisch benannten Unterordner von
+`game/assets/models/buildings/supply/` mit `mesh.glb` und `collision.glb`.
+Der Import verwendet die vollständigen Basismodelle, bevorzugt die geschlossene
+Variante, und vorhandene Kollisionsmodelle. Für Fischteich, Taubenschlag,
+Gemüsebeet und Wassertrog wird eine konservative Box erzeugt. Der gemeinsame
+Katalog liefert Rastergröße, Rotation, Bauvorschau, Auswahl und Bodennavigation.
+Die Modelle sind baubar; Produktionsabläufe und Ressourcenverbrauch sind noch
+nicht implementiert.
+
+Beim Start lädt eine begrenzte Warteschlange jeweils nur das Modell- und
+Kollisionspaar eines Gebäudes. Ein im Baumenü gewähltes, noch nicht angefordertes
+Gebäude wird als Nächstes geladen. Das verhindert, dass sich die glTF-Texturaufgaben
+bei vielen gleichzeitigen Importen auf dem IO-Worker verschachteln und dessen
+Stack im nativen Debug-Build überlaufen. Die vollständige Startwarteschlange wird
+im Test `startup_loads_full_catalog_with_only_one_building_pair_in_flight` geprüft.
