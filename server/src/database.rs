@@ -644,20 +644,23 @@ fn replan(ctx: &ReducerContext, game_id: u64) {
 
 #[spacetimedb::reducer]
 pub fn build_granary(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String> {
-    build(ctx, map::BuildingKind::Granary, x, z)
+    build(ctx, x, z, "granary".into())
 }
 
 #[spacetimedb::reducer]
 pub fn build_barracks(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String> {
-    build(ctx, map::BuildingKind::Barracks, x, z)
+    build(ctx, x, z, "barracks".into())
 }
 
 #[spacetimedb::reducer]
 pub fn build_stockpile(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), String> {
-    build(ctx, map::BuildingKind::Stockpile, x, z)
+    build(ctx, x, z, "stockpile".into())
 }
 
-fn build(ctx: &ReducerContext, kind: map::BuildingKind, x: f32, z: f32) -> Result<(), String> {
+// Legacy reducers above remain compatible with already published clients.
+#[spacetimedb::reducer]
+pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(), String> {
+    let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
     let player = participant(ctx)?;
     let shape = kind.obstacle(x, z);
     if !shape.in_map() {

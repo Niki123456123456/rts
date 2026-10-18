@@ -205,7 +205,13 @@ fn setup(
     });
     // Ground
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 80.0))),
+        Mesh3d(
+            meshes.add(
+                Plane3d::default()
+                    .mesh()
+                    .size(stronghold_map::MAP_SIZE, stronghold_map::MAP_SIZE),
+            ),
+        ),
         MeshMaterial3d(materials.add(Color::srgb(0.3, 0.5, 0.3))),
         // Add `Ground` component to any entity you want the camera to treat as ground.
         Ground,
@@ -257,6 +263,7 @@ fn setup(
             // height_min: 10.0,
             // Increase max height (decrease min zoom)
             height_max: 50.0,
+            bounds: Aabb2d::new(Vec2::ZERO, Vec2::splat(stronghold_map::MAP_LIMIT)),
             // Change the angle of the camera to 35 degrees
             min_angle: 35.0f32.to_radians(),
             // Decrease smoothing
@@ -824,13 +831,49 @@ fn selection_ui(
                     }
                 });
                 ui.separator();
-                for kind in stronghold_map::BuildingKind::ALL {
-                    let active = building_interaction.placing == Some(kind);
-                    if buildings::building_button(ui, kind, active) {
-                        building_interaction.placing = if active { None } else { Some(kind) };
-                        building_interaction.selected = None;
-                    }
-                }
+                ui.vertical(|ui| {
+                    let category = building_interaction.category.unwrap_or("supply");
+                    let category_label = |category| match category {
+                        "military" => "Militär",
+                        "fortifications" => "Befestigungen",
+                        _ => "Versorgung",
+                    };
+                    egui::ComboBox::from_id_salt("build_category")
+                        .selected_text(category_label(category))
+                        .show_ui(ui, |ui| {
+                            for category in ["supply", "military", "fortifications"] {
+                                if ui
+                                    .selectable_label(
+                                        building_interaction.category.unwrap_or("supply")
+                                            == category,
+                                        category_label(category),
+                                    )
+                                    .clicked()
+                                {
+                                    building_interaction.category = Some(category);
+                                }
+                            }
+                        });
+                    egui::ScrollArea::horizontal()
+                        .id_salt("building_palette")
+                        .max_width(380.0)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let category = building_interaction.category.unwrap_or("supply");
+                                for kind in stronghold_map::BuildingKind::ALL
+                                    .into_iter()
+                                    .filter(|kind| kind.category() == category)
+                                {
+                                    let active = building_interaction.placing == Some(kind);
+                                    if buildings::building_button(ui, kind, active) {
+                                        building_interaction.placing =
+                                            if active { None } else { Some(kind) };
+                                        building_interaction.selected = None;
+                                    }
+                                }
+                            });
+                        });
+                });
                 ui.separator();
                 if let Some(kind) = building_interaction.placing {
                     ui.label(format!(

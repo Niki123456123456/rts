@@ -4,6 +4,7 @@ use stronghold_map::{self as map, BuildingKind};
 #[derive(Resource, Default)]
 pub(crate) struct BuildingInteraction {
     pub placing: Option<BuildingKind>,
+    pub category: Option<&'static str>,
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
@@ -43,7 +44,7 @@ fn model_transform(kind: BuildingKind) -> Transform {
     let center = kind.center();
     Transform::from_xyz(
         -center.0 * map::MODEL_SCALE,
-        0.0,
+        kind.ground_offset(),
         -center.1 * map::MODEL_SCALE,
     )
     .with_scale(Vec3::splat(map::MODEL_SCALE))
@@ -307,10 +308,10 @@ pub(crate) fn building_input(
         ));
         if mouse.just_pressed(MouseButton::Left) {
             state.consumed = true;
-            let action = match kind {
-                BuildingKind::Granary => Action::BuildGranary { x, z },
-                BuildingKind::Barracks => Action::BuildBarracks { x, z },
-                BuildingKind::Stockpile => Action::BuildStockpile { x, z },
+            let action = Action::Build {
+                x,
+                z,
+                building: kind.name().into(),
             };
             if valid && multiplayer.send(action) {
                 state.placing = None;
@@ -423,7 +424,7 @@ pub(crate) fn attack_hover_ui(
     Ok(())
 }
 pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(88.0, 70.0), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(114.0, 70.0), egui::Sense::click());
     let painter = ui.painter();
     painter.rect_filled(
         rect,
@@ -441,13 +442,13 @@ pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: boo
             egui::pos2(c.x + 21.0, rect.top() + 49.0),
         ),
         2.0,
-        if kind == BuildingKind::Barracks {
+        if kind == BuildingKind::Barracks || kind.category() == "fortifications" {
             egui::Color32::GRAY
         } else {
             egui::Color32::from_rgb(178, 140, 79)
         },
     );
-    if kind == BuildingKind::Barracks {
+    if kind == BuildingKind::Barracks || kind.category() == "fortifications" {
         for i in -2..=2 {
             let x = c.x + i as f32 * 9.0;
             painter.rect_filled(
@@ -641,7 +642,7 @@ mod tests {
             assert!((max.x - shape.half_x).abs() < 0.0001);
             assert!((min.z + shape.half_z).abs() < 0.0001);
             assert!((max.z - shape.half_z).abs() < 0.0001);
-            assert!(min.y.abs() < 0.0001 && max.y > 6.0);
+            assert!(min.y.abs() < 0.0001 && max.y > 0.0);
         }
     }
 }

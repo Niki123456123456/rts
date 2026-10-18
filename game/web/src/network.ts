@@ -5,9 +5,7 @@ type Action =
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
-  | { action: 'build_stockpile'; x: number; z: number }
-  | { action: 'build_barracks'; x: number; z: number }
-  | { action: 'build_granary'; x: number; z: number }
+  | { action: 'build'; x: number; z: number; building: string }
   | { action: 'remove_building'; building_id: string }
   | { action: 'attack_building'; unit_ids: string[]; building_id: string }
   | { action: 'formation_targets'; unit_ids: string[]; start_x: number; start_z: number; end_x: number; end_z: number }
@@ -65,9 +63,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onLeaveGame(result);
   connection.reducers.onSetTargets(result);
   connection.reducers.onSetFormationTargets(result);
-  connection.reducers.onBuildGranary(result);
-  connection.reducers.onBuildBarracks(result);
-  connection.reducers.onBuildStockpile(result);
+  connection.reducers.onBuild(result);
   connection.reducers.onRemoveBuilding(result);
   connection.reducers.onAttackBuilding(result);
 }
@@ -90,9 +86,7 @@ export const strongholdNetwork = {
       case 'create': conn.reducers.createGame(action.title); break;
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
-      case 'build_stockpile': conn.reducers.buildStockpile(action.x, action.z); break;
-      case 'build_barracks': conn.reducers.buildBarracks(action.x, action.z); break;
-      case 'build_granary': conn.reducers.buildGranary(action.x, action.z); break;
+      case 'build': conn.reducers.build(action.x, action.z, action.building); break;
       case 'remove_building': conn.reducers.removeBuilding(BigInt(action.building_id)); break;
       case 'attack_building': conn.reducers.attackBuilding(action.unit_ids.map(BigInt), BigInt(action.building_id)); break;
       case 'formation_targets': conn.reducers.setFormationTargets(action.unit_ids.map(BigInt), action.start_x, action.start_z, action.end_x, action.end_z); break;

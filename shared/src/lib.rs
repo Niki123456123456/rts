@@ -4,92 +4,11 @@ pub const MODEL_SCALE: f32 = 0.01;
 pub const MODEL_CENTER: (f32, f32) = (308.07544, -313.6961);
 pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
-/// Buildable models and their collision bounds (source units, before 1:100 scale).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum BuildingKind {
-    #[default]
-    Granary,
-    Barracks,
-    Stockpile,
-}
-impl BuildingKind {
-    pub const ALL: [Self; 3] = [Self::Granary, Self::Barracks, Self::Stockpile];
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "granary" => Some(Self::Granary),
-            "barracks" => Some(Self::Barracks),
-            "stockpile" => Some(Self::Stockpile),
-            _ => None,
-        }
-    }
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Granary => "granary",
-            Self::Barracks => "barracks",
-            Self::Stockpile => "stockpile",
-        }
-    }
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Granary => "Kornspeicher",
-            Self::Barracks => "Steinkaserne",
-            Self::Stockpile => "Vorratslager",
-        }
-    }
-    pub fn index(self) -> usize {
-        match self {
-            Self::Granary => 0,
-            Self::Barracks => 1,
-            Self::Stockpile => 2,
-        }
-    }
-    pub fn scene(self) -> &'static str {
-        match self {
-            Self::Granary => "models/buildings/supply/granary/mesh.glb#Scene0",
-            Self::Barracks => "models/buildings/military/barrack_stone/mesh.glb#Scene0",
-            Self::Stockpile => "models/buildings/supply/stockpile/mesh.glb#Scene0",
-        }
-    }
-    pub fn collision(self) -> &'static str {
-        match self {
-            Self::Granary => "models/buildings/supply/granary/collision.glb#Mesh0/Primitive0",
-            Self::Stockpile => "models/buildings/supply/stockpile/collision.glb#Mesh0/Primitive0",
-            Self::Barracks => {
-                "models/buildings/military/barrack_stone/collision.glb#Mesh0/Primitive0"
-            }
-        }
-    }
-    pub fn center(self) -> Point {
-        match self {
-            Self::Granary => MODEL_CENTER,
-            Self::Stockpile => (
-                (-5.0412598 + 1438.4318) / 2.0,
-                (-1043.6819 + 27.415283) / 2.0,
-            ),
-            Self::Barracks => (1231.5162 / 2.0, (-1025.0 + 2.5813599) / 2.0),
-        }
-    }
-    pub fn obstacle(self, x: f32, z: f32) -> Obstacle {
-        let (half_x, half_z) = match self {
-            Self::Granary => (HALF_X, HALF_Z),
-            Self::Stockpile => (
-                (1438.4318 + 5.0412598) * MODEL_SCALE / 2.0,
-                (1043.6819 + 27.415283) * MODEL_SCALE / 2.0,
-            ),
-            Self::Barracks => (
-                1231.5162 * MODEL_SCALE / 2.0,
-                (1025.0 + 2.5813599) * MODEL_SCALE / 2.0,
-            ),
-        };
-        Obstacle {
-            x,
-            z,
-            half_x,
-            half_z,
-        }
-    }
-}
-pub const MAP_LIMIT: f32 = 39.0;
+mod building_catalog;
+pub use building_catalog::BuildingKind;
+
+pub const MAP_SIZE: f32 = 800.0;
+pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
 pub const CLEARANCE: f32 = 0.27;
 pub const UNIT_SPACING: f32 = 0.55;
 /// Room between formation slots allows units to settle without touching neighbours.
@@ -155,7 +74,7 @@ pub fn attack_positions(target: Obstacle) -> Vec<AttackPosition> {
             } else {
                 target.half_x
             } + extra;
-            let intervals = (half * 2.0 / 0.7).floor() as usize;
+            let intervals = ((half * 2.0 / 0.7).floor() as usize).max(1);
             for index in 0..=intervals {
                 let along = -half + half * 2.0 * index as f32 / intervals as f32;
                 let point = match side {
@@ -384,13 +303,47 @@ pub fn path_length(start: Point, path: &[Point]) -> f32 {
 mod tests {
     use super::*;
     #[test]
+    fn catalog_has_valid_geometry_and_attack_slots_for_every_building() {
+        assert_eq!(
+            BuildingKind::ALL
+                .iter()
+                .filter(|kind| kind.category() == "fortifications")
+                .count(),
+            18
+        );
+        for (index, kind) in BuildingKind::ALL.into_iter().enumerate() {
+            assert_eq!(kind.index(), index);
+            assert_eq!(BuildingKind::from_name(kind.name()), Some(kind));
+            let shape = kind.obstacle(100.0, 100.0);
+            assert!(shape.in_map(), "{}", kind.name());
+            assert!(shape.half_x > 0.0 && shape.half_z > 0.0);
+            for slot in attack_positions(shape)
+                .into_iter()
+                .filter(|slot| slot.ring == 0)
+            {
+                assert!(slot.point.0.is_finite() && slot.point.1.is_finite());
+                assert!(
+                    (distance(slot.point, shape.closest(slot.point)) - 0.6).abs() < 0.0001,
+                    "{}",
+                    kind.name()
+                );
+            }
+        }
+        assert_eq!(BuildingKind::from_name("unknown"), None);
+        assert!(free((390.0, 390.0), &[]));
+        assert!(!free((400.0, 0.0), &[]));
+    }
+
+    #[test]
     fn different_buildings_use_their_own_bounds_for_overlap_paths_and_attacks() {
         let granary = BuildingKind::Granary.obstacle(0.0, 0.0);
         let barracks = BuildingKind::Barracks.obstacle(8.0, 0.0);
         assert!(granary.overlaps(barracks));
         assert!(barracks.overlaps(granary));
         assert!(!granary.overlaps(BuildingKind::Granary.obstacle(8.0, 0.0)));
-        assert!(!BuildingKind::Barracks.obstacle(34.0, 0.0).in_map());
+        assert!(!BuildingKind::Barracks
+            .obstacle(MAP_LIMIT - 5.0, 0.0)
+            .in_map());
         let barracks = BuildingKind::Barracks.obstacle(0.0, 0.0);
         assert!(barracks.contains((5.0, 0.0), CLEARANCE));
         assert!(!granary.contains((5.0, 0.0), CLEARANCE));
@@ -472,9 +425,10 @@ mod tests {
     }
     #[test]
     fn wall_blocks_routes_and_attack_stops_outside_collision() {
-        let wall: Vec<_> = (-8..=8)
-            .map(|i| BuildingKind::Granary.obstacle(0.0, i as f32 * 5.1))
-            .collect();
+        let wall = [Obstacle {
+            half_z: MAP_LIMIT + 1.0,
+            ..BuildingKind::Granary.obstacle(0.0, 0.0)
+        }];
         assert!(shortest_path((-8.0, 0.0), (8.0, 0.0), &wall).is_none());
         let target = BuildingKind::Granary.obstacle(0.0, 0.0);
         let path = attack_path((-8.0, 0.0), target, &[target]).unwrap();
@@ -486,6 +440,8 @@ mod tests {
         let a = BuildingKind::Granary.obstacle(0.0, 0.0);
         assert!(a.overlaps(BuildingKind::Granary.obstacle(5.0, 0.0)));
         assert!(!a.overlaps(BuildingKind::Granary.obstacle(HALF_X * 2.0, 0.0)));
-        assert!(!BuildingKind::Granary.obstacle(38.0, 0.0).in_map());
+        assert!(!BuildingKind::Granary
+            .obstacle(MAP_LIMIT - 1.0, 0.0)
+            .in_map());
     }
 }

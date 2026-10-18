@@ -98,15 +98,20 @@ height. Clients subscribe to the lobby and only their active game's units and bu
 the received positions without simulating movement. Movement continues without clients.
 When all units finish moving and attacking, the schedule stops until the next order,
 so idle databases do not continuously consume cloud function calls.
-`build_granary`, `build_barracks` and `build_stockpile` validate membership, finite coordinates, full footprint within the
+`build(x, z, building)` validates the catalog building name, membership, finite coordinates, full footprint within the
 map, level terrain, no overlapping buildings and no units in the footprint. There
 is a 128-building limit per game. `remove_building` only accepts the owner's buildings.
 Buildings are removed with their owner's army on leave, disconnect or game switch.
 
 The supplied collision models are enclosed by axis-aligned XZ footprints.
 `shared/` stores each building type’s bounds and model center at scale 0.01, used
-by placement previews, overlap checks, navigation and attack positions. The barracks
-footprint encloses its irregular collision mesh conservatively.
+by placement previews, overlap checks, navigation and attack positions. Irregular collision meshes and models without supplied collision meshes use
+conservative rectangular footprints. `shared/src/building_catalog.rs` is generated
+from `game/building-models.json` by `game/import-buildings.py`.
+The client sends one `build` action for all building types. The three legacy server
+reducers remain as compatibility aliases for older published clients.
+The map is 800×800 world units; movement and full building footprints must fit
+inside ±399.
 A visibility graph with Dijkstra computes shortest polylines around footprints
 expanded by the unit radius plus clearance. Unreachable/blocked orders are rejected.
 Construction and demolition replan active orders; units stop if a destination becomes

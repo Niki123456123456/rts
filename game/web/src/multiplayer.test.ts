@@ -91,7 +91,7 @@ try {
   const ids = formation.map(u => u.id);
   assert.equal((await status(cb => b.reducers.onSetFormationTargets(cb), () => b.reducers.setFormationTargets(ids, -3, 6, 1, 6))).tag, 'Failed');
   assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, NaN, 5, 0, 5))).tag, 'Failed');
-  assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, 38, 39, 39, 39))).tag, 'Failed');
+  assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, 398, 399, 399, 399))).tag, 'Failed');
   assert.equal((await status(cb => a.reducers.onSetFormationTargets(cb), () => a.reducers.setFormationTargets(ids, -3, 6, 1, 6))).tag, 'Committed');
   const slots = formation.map(u => a.db.armyUnit.id.find(u.id)!);
   const close = (a: number, b: number) => Math.abs(a - b) < 0.0001;

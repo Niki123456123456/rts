@@ -36,9 +36,15 @@ vom Server abgelehnt. WASD verschiebt
 die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
 die Kamera per Ziehen.
 
+Die Spielfläche ist 800×800 Welteinheiten groß (vorher 80×80). Bewegung und
+Bauflächen liegen innerhalb ±399; die Kamera kann das gesamte Gebiet erreichen.
+Die ursprünglichen Zoom-Einstellungen bleiben erhalten.
+
 ## Gebäude
 
-Unter **Auswahl** starten **Kornspeicher**, **Steinkaserne** und **Vorratslager** den jeweiligen Baumodus.
+Unter **Auswahl** wählt die Kategorienliste zwischen **Versorgung**, **Militär** und
+**Befestigungen**. Die Gebäudeliste lässt sich horizontal scrollen. Ein Gebäudeknopf
+startet den jeweiligen Baumodus.
 Die Steinkaserne verwendet `military/barrack_stone/mesh.glb` mit `collision.glb` im selben Ordner; Einheitenrekrutierung ist noch nicht implementiert. Linksklick platziert
 auf grün markiertem, ebenem Boden. Rot bedeutet, dass die Fläche blockiert ist oder
 über den Kartenrand hinausgeht. Rechtsklick oder Escape bricht den Baumodus ab.
@@ -65,9 +71,16 @@ Die Gebäude-GLBs einschließlich eingebetteter Texturen liegen versioniert unte
 `game/assets/models/buildings/supply/granary/` (Kornspeicher),
 `supply/stockpile/` (Vorratslager) und `military/barrack_stone/` (Steinkaserne),
 jeweils mit `mesh.glb` und `collision.glb`.
+`fortifications/` enthält 18 Befestigungsmodelle: vier Torhäuser, Ausfallpforte,
+Wachposten, sieben Turmtypen, Turmflagge, Wehrgang und drei Brückenelemente.
 `housing/` ist für spätere Wohngebäude vorbereitet. Die Browser-Pipeline kopiert diese
-Struktur nach `public/assets/`. `python3 game/import-granary.py` übernimmt die
+Struktur nach `public/assets/`. `python3 game/import-buildings.py` übernimmt die
 Modelle und Kollisionsmodelle erneut aus dem ursprünglichen Asset-Archiv.
+`game/building-models.json` ist der Importkatalog; das Skript erzeugt auch
+`shared/src/building_catalog.rs` mit Modellpfaden und Kollisionsmaßen.
+Fehlt ein Kollisionsmodell, wird ein umschließender Quader erzeugt. Torhäuser und
+Brücken werden derzeit wie die anderen Gebäude als feste Hindernisse behandelt;
+Torsteuerung und begehbare Brückendecks sind noch nicht implementiert.
 Dabei werden die Materialeinstellungen der Gebäude auf deckend gestellt,
 da die importierten DDS-Alpha-Kanäle sonst Dach und Wände durchsichtig machen.
 Beim Verteilen einer nativen Binärdatei muss der Ordner `assets` neben ihr liegen

@@ -1,0 +1,191 @@
+[
+  {
+    "variant": "Granary",
+    "id": "granary",
+    "label": "Kornspeicher",
+    "category": "supply",
+    "source": "granary_closed",
+    "collision": "granary_collision",
+    "folder": "granary"
+  },
+  {
+    "variant": "Barracks",
+    "id": "barracks",
+    "label": "Steinkaserne",
+    "category": "military",
+    "source": "barrack_stone",
+    "collision": "barrack_stone_collision",
+    "folder": "barrack_stone"
+  },
+  {
+    "variant": "Stockpile",
+    "id": "stockpile",
+    "label": "Vorratslager",
+    "category": "supply",
+    "source": "stockpile_closed",
+    "collision": "stockpile_collision",
+    "folder": "stockpile"
+  },
+  {
+    "variant": "GatehouseWooden",
+    "id": "gatehouse_wooden",
+    "label": "Hölzernes Torhaus",
+    "category": "fortifications",
+    "source": "gatehouse_wooden",
+    "collision": "gatehouse_wooden_collision",
+    "folder": "gatehouse_wooden"
+  },
+  {
+    "variant": "GatehouseSmall",
+    "id": "gatehouse_small",
+    "label": "Kleines Torhaus",
+    "category": "fortifications",
+    "source": "gatehouse_small",
+    "collision": "gatehouse_small_collision",
+    "folder": "gatehouse_small"
+  },
+  {
+    "variant": "GatehouseMedium",
+    "id": "gatehouse_medium",
+    "label": "Mittleres Torhaus",
+    "category": "fortifications",
+    "source": "gatehouse_medium",
+    "collision": "gatehouse_medium_collision",
+    "folder": "gatehouse_medium"
+  },
+  {
+    "variant": "GatehouseLarge",
+    "id": "gatehouse_large",
+    "label": "Großes Torhaus",
+    "category": "fortifications",
+    "source": "gatehouse_large",
+    "collision": "gatehouse_large_collision",
+    "folder": "gatehouse_large"
+  },
+  {
+    "variant": "Sallyport",
+    "id": "sallyport",
+    "label": "Ausfallpforte",
+    "category": "fortifications",
+    "source": "sallyport_closed",
+    "collision": null,
+    "folder": "sallyport"
+  },
+  {
+    "variant": "Watchpost",
+    "id": "watchpost",
+    "label": "Wachposten",
+    "category": "fortifications",
+    "source": "watchpost",
+    "collision": "watchpost_collision",
+    "folder": "watchpost"
+  },
+  {
+    "variant": "TowerWooden",
+    "id": "tower_wooden",
+    "label": "Holzturm",
+    "category": "fortifications",
+    "source": "tower_wooden",
+    "collision": null,
+    "folder": "tower_wooden"
+  },
+  {
+    "variant": "TowerLookout",
+    "id": "tower_lookout",
+    "label": "Aussichtsturm",
+    "category": "fortifications",
+    "source": "tower_lookout_closed",
+    "collision": "tower_lookout_collision",
+    "folder": "tower_lookout"
+  },
+  {
+    "variant": "TowerStairwell",
+    "id": "tower_stairwell",
+    "label": "Treppenturm",
+    "category": "fortifications",
+    "source": "tower_stairwell_closed",
+    "collision": "tower_stairwell_collision",
+    "folder": "tower_stairwell"
+  },
+  {
+    "variant": "TowerSquare",
+    "id": "tower_square",
+    "label": "Viereckiger Turm",
+    "category": "fortifications",
+    "source": "tower_square_closed",
+    "collision": "tower_square_collision",
+    "folder": "tower_square"
+  },
+  {
+    "variant": "TowerRoundShort",
+    "id": "tower_round_short",
+    "label": "Niedriger Rundturm",
+    "category": "fortifications",
+    "source": "tower_round_short_closed",
+    "collision": "tower_round_short_collision",
+    "folder": "tower_round_short"
+  },
+  {
+    "variant": "TowerRoundTall",
+    "id": "tower_round_tall",
+    "label": "Hoher Rundturm",
+    "category": "fortifications",
+    "source": "tower_round_tall_closed",
+    "collision": "tower_round_tall_collision",
+    "folder": "tower_round_tall"
+  },
+  {
+    "variant": "TowerGreat",
+    "id": "tower_great",
+    "label": "Großer Wehrturm",
+    "category": "fortifications",
+    "source": "tower_great_closed",
+    "collision": "tower_great_collision",
+    "folder": "tower_great"
+  },
+  {
+    "variant": "FlagTower",
+    "id": "flag_tower",
+    "label": "Turmflagge",
+    "category": "fortifications",
+    "source": "Flag_Tower",
+    "collision": null,
+    "folder": "flag_tower"
+  },
+  {
+    "variant": "TowerWalk",
+    "id": "tower_walk",
+    "label": "Wehrgang",
+    "category": "fortifications",
+    "source": "tower_walk",
+    "collision": null,
+    "folder": "tower_walk"
+  },
+  {
+    "variant": "BridgeEnd",
+    "id": "bridge_end",
+    "label": "Steinbrücke: Ende",
+    "category": "fortifications",
+    "source": "bridge_end",
+    "collision": null,
+    "folder": "bridge_end"
+  },
+  {
+    "variant": "BridgeMiddle",
+    "id": "bridge_middle",
+    "label": "Steinbrücke: Mitte",
+    "category": "fortifications",
+    "source": "bridge_middle",
+    "collision": null,
+    "folder": "bridge_middle"
+  },
+  {
+    "variant": "BridgeWooden",
+    "id": "bridge_wooden",
+    "label": "Holzbrücke",
+    "category": "fortifications",
+    "source": "bridge_wooden",
+    "collision": null,
+    "folder": "bridge_wooden"
+  }
+]

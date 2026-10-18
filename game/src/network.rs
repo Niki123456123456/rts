@@ -83,17 +83,10 @@ pub enum Action {
         game_id: u64,
     },
     Leave,
-    BuildStockpile {
+    Build {
         x: f32,
         z: f32,
-    },
-    BuildBarracks {
-        x: f32,
-        z: f32,
-    },
-    BuildGranary {
-        x: f32,
-        z: f32,
+        building: String,
     },
     RemoveBuilding {
         #[serde(serialize_with = "serialize_id")]
@@ -297,13 +290,7 @@ mod backend {
                     });
                 let errors = self.status.clone();
                 conn.reducers
-                    .on_build_stockpile(move |ctx, _, _| record_status(&errors, ctx));
-                let errors = self.status.clone();
-                conn.reducers
-                    .on_build_barracks(move |ctx, _, _| record_status(&errors, ctx));
-                let errors = self.status.clone();
-                conn.reducers
-                    .on_build_granary(move |ctx, _, _| record_status(&errors, ctx));
+                    .on_build(move |ctx, _, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
                     .on_remove_building(move |ctx, _| record_status(&errors, ctx));
@@ -322,9 +309,7 @@ mod backend {
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
-                Action::BuildGranary { x, z } => conn.reducers.build_granary(x, z),
-                Action::BuildBarracks { x, z } => conn.reducers.build_barracks(x, z),
-                Action::BuildStockpile { x, z } => conn.reducers.build_stockpile(x, z),
+                Action::Build { x, z, building } => conn.reducers.build(x, z, building),
                 Action::RemoveBuilding { building_id } => {
                     conn.reducers.remove_building(building_id)
                 }
@@ -526,7 +511,11 @@ mod backend {
                     .iter()
                     .any(|u| u.id == id && u.x == 3.0 && u.z == 3.0)
             });
-            assert!(network.send(Action::BuildGranary { x: -27.0, z: 15.0 }));
+            assert!(network.send(Action::Build {
+                x: -27.0,
+                z: 15.0,
+                building: "granary".into()
+            }));
             until(&mut network, |s| s.buildings.len() == 1);
             let building = network.snapshot.buildings[0].clone();
             assert!(building.owned && building.health == 1.0);

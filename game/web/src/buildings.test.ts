@@ -1,5 +1,6 @@
 // Two real players exercise authoritative construction, navigation and combat.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
 import { strongholdNetwork } from './network';
 const uri = process.env.SPACETIMEDB_URI ?? 'http://127.0.0.1:3300';
@@ -52,7 +53,7 @@ try {
   };
   assertSpacing();
   a.db.armyUnit.onUpdate(assertSpacing);
-  const build = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuildGranary(cb), () => db.reducers.buildGranary(x, z));
+  const build = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuild(cb), () => db.reducers.build(x, z, 'granary'));
   const remove = (db: DbConnection, id: bigint) => status(db, cb => db.reducers.onRemoveBuilding(cb), () => db.reducers.removeBuilding(id));
   const attack = (db: DbConnection, ids: bigint[], id: bigint) => status(db, cb => db.reducers.onAttackBuilding(cb), () => db.reducers.attackBuilding(ids, id));
   assert.equal(await build(b, 0, 9), 'Committed');
@@ -61,7 +62,7 @@ try {
   assert.equal(granary.health, 1); assert.equal(granary.kind, 'granary');
   assert.equal(granary.owner.toHexString(), b.connectionId.toHexString());
   assert.equal(await build(a, 5, 9), 'Failed', 'Overlapping placement rejected');
-  assert.equal(await build(a, 38, 9), 'Failed', 'Out-of-map footprint rejected');
+  assert.equal(await build(a, 398, 9), 'Failed', 'Out-of-map footprint rejected');
   assert.equal(await build(a, NaN, 9), 'Failed');
   assert.equal(await build(a, 0, 0), 'Failed', 'Cannot build over units');
   assert.equal(await build(a, 0, -12), 'Failed', 'Uneven terrain rejected');
@@ -89,12 +90,12 @@ try {
   assert.equal(b.db.armyUnit.id.find(unit.id)?.z, 16);
 
   // Barracks have a much larger footprint than granaries and retain their kind.
-  const buildBarracks = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuildBarracks(cb), () => db.reducers.buildBarracks(x, z));
+  const buildBarracks = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuild(cb), () => db.reducers.build(x, z, 'barracks'));
   assert.equal(await buildBarracks(b, 20, 22), 'Committed');
   await until(() => buildings().some(x => x.kind === 'barracks'), 'Both clients receive barracks');
   const barracks = buildings().find(x => x.kind === 'barracks')!;
   assert.equal(await build(a, 28, 22), 'Failed', 'Granary cannot overlap the larger barracks footprint');
-  assert.equal(await buildBarracks(a, 34, 22), 'Failed', 'Full barracks footprint must fit within the map');
+  assert.equal(await buildBarracks(a, 394, 22), 'Failed', 'Full barracks footprint must fit within the map');
   assert.equal(await buildBarracks(a, 0, 0), 'Failed', 'Barracks cannot cover units');
   assert.equal(await buildBarracks(a, 0, -12), 'Failed', 'Barracks require level terrain');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 25, 22)), 'Failed', 'Movement targets inside barracks footprint are blocked');
@@ -106,13 +107,13 @@ try {
   assert.equal(await remove(b, barracks.id), 'Committed');
 
   // Stockpiles have their own wider footprint, including overlap and attack checks.
-  const buildStockpile = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuildStockpile(cb), () => db.reducers.buildStockpile(x, z));
+  const buildStockpile = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuild(cb), () => db.reducers.build(x, z, 'stockpile'));
   assert.equal(await buildStockpile(b, -25, 22), 'Committed');
   await until(() => buildings().some(x => x.kind === 'stockpile'), 'Both clients receive stockpile');
   const stockpile = buildings().find(x => x.kind === 'stockpile')!;
   assert.equal(stockpile.health, 1);
   assert.equal(await build(a, -16, 22), 'Failed', 'Granary cannot overlap the wider stockpile footprint');
-  assert.equal(await buildStockpile(a, 32, 22), 'Failed', 'Full stockpile footprint must fit within the map');
+  assert.equal(await buildStockpile(a, 392, 22), 'Failed', 'Full stockpile footprint must fit within the map');
   assert.equal(await buildStockpile(a, 0, 0), 'Failed', 'Stockpile cannot cover units');
   assert.equal(await buildStockpile(a, 0, -12), 'Failed', 'Stockpile requires level terrain');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], -18.1, 22)), 'Failed', 'Movement targets inside stockpile footprint are blocked');
@@ -122,6 +123,28 @@ try {
   assert.ok(Math.abs(stockpileEdgeDistance - 0.6) < 0.001, 'Attack slots follow stockpile walls');
   assert.equal(await remove(a, stockpile.id), 'Failed', 'Enemy stockpile cannot be removed');
   assert.equal(await remove(b, stockpile.id), 'Committed');
+
+  // The generic build command validates names and all fortification kinds.
+  await until(() => !buildings().some(row => row.id === stockpile.id), 'Stockpile removal replicated before checking unchanged building count');
+  const beforeUnknown = buildings().length;
+  assert.equal(await status(a, cb => a.reducers.onBuild(cb), () => a.reducers.build(80, 80, 'unknown')), 'Failed');
+  assert.equal(buildings().length, beforeUnknown, 'Unknown types do not create buildings');
+  const catalog = JSON.parse(readFileSync(new URL('../../building-models.json', import.meta.url), 'utf8')) as {id: string; category: string}[];
+  const fortifications = catalog.filter(x => x.category === 'fortifications');
+  assert.equal(fortifications.length, 18);
+  for (const [index, entry] of fortifications.entries()) {
+    const x = -250 + index % 6 * 70;
+    const z = 140 + Math.floor(index / 6) * 60;
+    assert.equal(await status(b, cb => b.reducers.onBuild(cb), () => b.reducers.build(x, z, entry.id)), 'Committed', entry.id);
+    await until(() => buildings().some(row => row.kind === entry.id), `Replicated ${entry.id}`);
+    const row = buildings().find(row => row.kind === entry.id)!;
+    assert.equal(await build(a, x, z), 'Failed', `${entry.id} blocks overlapping buildings`);
+    assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], x, z)), 'Failed', `${entry.id} blocks movement targets`);
+    assert.equal(await attack(a, [unit.id], row.id), 'Committed', `Reachable attack positions for ${entry.id}`);
+    assert.equal(await remove(b, row.id), 'Committed');
+  }
+  assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 120, 120)), 'Committed', 'Movement orders beyond the old map limits are accepted');
+  assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], unit.x, unit.z)), 'Committed');
 
   // Another game may use the same coordinates, but cannot attack this game.
   assert.equal(await status(c, cb => c.reducers.onCreateGame(cb), () => c.reducers.createGame(`${title} isolated`)), 'Committed');
@@ -168,20 +191,20 @@ try {
   const snapshot = () => JSON.parse(strongholdNetwork.snapshot());
   send({ action: 'connect', uri, database }); await until(() => snapshot().ready, 'Bridge ready');
   send({ action: 'join', game_id: game.toString() }); await until(() => snapshot().units.length === 60, 'Bridge army joined');
-  send({ action: 'build_barracks', x: -27, z: 15 });
+  send({ action: 'build', building: 'barracks', x: -27, z: 15 });
   await until(() => snapshot().buildings.some((b: {owned: boolean}) => b.owned), 'Bridge receives its building');
   const bridgeBuilding = snapshot().buildings.find((b: {owned: boolean}) => b.owned);
   assert.equal(bridgeBuilding.health, 1);
   assert.equal(bridgeBuilding.kind, 'barracks');
   send({ action: 'remove_building', building_id: bridgeBuilding.id });
   await until(() => snapshot().buildings.length === 0, 'Bridge removes building');
-  send({ action: 'build_stockpile', x: -27, z: 15 });
+  send({ action: 'build', building: 'stockpile', x: -27, z: 15 });
   await until(() => snapshot().buildings.some((b: {kind: string}) => b.kind === 'stockpile'), 'Bridge receives stockpile with its building kind');
   const bridgeStockpile = snapshot().buildings.find((b: {kind: string}) => b.kind === 'stockpile');
   assert.equal(bridgeStockpile.health, 1);
   send({ action: 'remove_building', building_id: bridgeStockpile.id });
   await until(() => snapshot().buildings.length === 0, 'Bridge removes stockpile');
-  send({ action: 'build_granary', x: -27, z: 15 }); await until(() => snapshot().buildings.length === 1, 'Bridge rebuilds');
+  send({ action: 'build', building: 'granary', x: -27, z: 15 }); await until(() => snapshot().buildings.length === 1, 'Bridge rebuilds');
   send({ action: 'leave' }); await until(() => snapshot().game_id === null && snapshot().buildings.length === 0, 'Leave clears building subscription');
   await until(() => buildings().length === 0, 'Leave removes owned buildings');
   assert.equal(await build(b, 0, 25), 'Committed');
