@@ -36,8 +36,9 @@ vom Server abgelehnt. WASD verschiebt
 die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
 die Kamera per Ziehen.
 
-Die Spielfläche ist 800×800 Welteinheiten groß (vorher 80×80). Bewegung und
-Bauflächen liegen innerhalb ±399; die Kamera kann das gesamte Gebiet erreichen.
+Die Spielfläche ist 800×800 Welteinheiten groß (vorher 80×80). Einheiten bewegen sich innerhalb
+±399; Bauflächen dürfen bis an die Kartengrenzen bei ±400 reichen. Die Kamera
+kann das gesamte Gebiet erreichen.
 Die ursprünglichen Zoom-Einstellungen bleiben erhalten.
 
 ## Gebäude
@@ -48,8 +49,13 @@ startet den jeweiligen Baumodus.
 Die Steinkaserne verwendet `military/barrack_stone/mesh.glb` mit `collision.glb` im selben Ordner; Einheitenrekrutierung ist noch nicht implementiert. Linksklick platziert
 auf grün markiertem, ebenem Boden. Rot bedeutet, dass die Fläche blockiert ist oder
 über den Kartenrand hinausgeht. Rechtsklick oder Escape bricht den Baumodus ab.
-Gebäude dürfen weder andere Gebäude noch Einheiten überdecken. Die Vorschau
-verwendet dieselbe Kollisionsfläche wie die serverseitige Wegfindung.
+Das unsichtbare Bauraster besteht aus 2×2-m-Feldern. Die Vorschau rastet so ein,
+dass alle Kanten der logischen Baufläche auf Feldgrenzen liegen. Gebäude dürfen
+belegte Rasterfelder nicht überdecken; gemeinsame Außenkanten sind erlaubt.
+Die Bauprüfung und die angezeigte Fläche verwenden die Rastergrößen aus dem
+Gebäudekatalog. Kollisionsmodelle bestimmen weiterhin Auswahl, Wegfindung und
+Angriffspositionen. Einheiten blockieren den Bau in der Baufläche und im Bereich
+der tatsächlichen Gebäudegeometrie, damit sie nicht eingeschlossen werden.
 
 Linksklick auf ein Gebäude wählt es aus. Eigene Gebäude lassen sich mit
 **Remove building** unter **Auswahl** entfernen. Rechtsklick auf ein feindliches
@@ -85,6 +91,39 @@ Dabei werden die Materialeinstellungen der Gebäude auf deckend gestellt,
 da die importierten DDS-Alpha-Kanäle sonst Dach und Wände durchsichtig machen.
 Beim Verteilen einer nativen Binärdatei muss der Ordner `assets` neben ihr liegen
 (alternativ `BEVY_ASSET_ROOT` auf das Verzeichnis mit dem Asset-Ordner setzen).
+
+### Logische Bauflächen
+
+Die Rastergröße steht pro Gebäude als `grid: [Breite, Tiefe]` in
+`game/building-models.json`. Ein Treppenturm belegt 2×2 Felder (4×4 m);
+zwei direkt benachbarte Treppentürme belegen gemeinsam 4×2 Felder (8×4 m).
+Die Modelle behalten ihre ursprüngliche Größe; kleine Überstände dürfen sich
+bei benachbarten Bauflächen berühren oder überlappen. Bereits gebaute Gebäude
+werden bei einem Serverupdate nicht verschoben.
+
+| Gebäude | Felder | Meter |
+|---|---|---|
+| Kornspeicher | 3×3 | 6×6 |
+| Steinkaserne | 6×5 | 12×10 |
+| Vorratslager | 7×5 | 14×10 |
+| Hölzernes Torhaus | 2×1 | 4×2 |
+| Kleines Torhaus | 3×3 | 6×6 |
+| Mittleres Torhaus | 7×6 | 14×12 |
+| Großes Torhaus | 9×8 | 18×16 |
+| Ausfallpforte | 3×3 | 6×6 |
+| Wachposten | 1×1 | 2×2 |
+| Holzturm | 1×1 | 2×2 |
+| Aussichtsturm | 2×2 | 4×4 |
+| Treppenturm | 2×2 | 4×4 |
+| Viereckiger Turm | 3×3 | 6×6 |
+| Niedriger Rundturm | 5×5 | 10×10 |
+| Hoher Rundturm | 5×5 | 10×10 |
+| Großer Wehrturm | 7×7 | 14×14 |
+| Turmflagge | 1×1 | 2×2 |
+| Wehrgang | 1×1 | 2×2 |
+| Steinbrücke: Ende | 2×2 | 4×4 |
+| Steinbrücke: Mitte | 2×2 | 4×4 |
+| Holzbrücke | 2×23 | 4×46 |
 
 ## Browser-Version
 

@@ -70,7 +70,7 @@ pub(crate) fn setup_buildings(
     let models = BuildingKind::ALL.map(|kind| {
         let scene = server.load(kind.scene());
         let collision = server.load(kind.collision());
-        let shape = kind.obstacle(0.0, 0.0);
+        let shape = kind.build_footprint(0.0, 0.0);
         let footprint = meshes.add(Cuboid::new(shape.half_x * 2.0, 0.04, shape.half_z * 2.0));
         let preview = commands
             .spawn((Transform::default(), Visibility::Hidden))
@@ -190,25 +190,23 @@ pub(crate) fn sync_buildings(
     }
 }
 fn placement_valid(kind: BuildingKind, x: f32, z: f32, y: f32, multiplayer: &Multiplayer) -> bool {
-    let shape = kind.obstacle(x, z);
-    shape.in_map()
+    let shape = kind.build_footprint(x, z);
+    shape.in_build_area()
         && !multiplayer.snapshot.buildings.iter().any(|b| {
             shape.overlaps(
                 BuildingKind::from_name(&b.kind)
                     .unwrap_or_default()
-                    .obstacle(b.x, b.z),
+                    .build_footprint(b.x, b.z),
             )
         })
         && !multiplayer
             .snapshot
             .units
             .iter()
-            .any(|u| shape.contains((u.x, u.z), map::CLEARANCE))
-        && [-shape.half_x, 0.0, shape.half_x].into_iter().all(|dx| {
-            [-shape.half_z, 0.0, shape.half_z]
-                .into_iter()
-                .all(|dz| (terrain_height(x + dx, z + dz) - y).abs() <= 0.05)
-        })
+            .any(|u| kind.blocks_construction_unit(x, z, (u.x, u.z)))
+        && kind
+            .build_samples(x, z)
+            .all(|(px, pz)| (terrain_height(px, pz) - y).abs() <= 0.05)
 }
 
 // Keep this identical to the server's terrain surface for the placement preview.
@@ -291,7 +289,7 @@ pub(crate) fn building_input(
     };
     if let Some(kind) = state.placing {
         let model = &assets.models[kind.index()];
-        let (x, z) = (hit.point.x, hit.point.z);
+        let (x, z) = kind.snap_position(hit.point.x, hit.point.z);
         let y = terrain_height(x, z);
         let valid = placement_valid(kind, x, z, y, &multiplayer);
         commands
@@ -504,10 +502,15 @@ pub(crate) fn building_button(ui: &mut egui::Ui, kind: BuildingKind, active: boo
         egui::FontId::proportional(12.0),
         ui.visuals().text_color(),
     );
+    let (width, depth) = kind.grid_size();
     response
         .on_hover_text(format!(
-            "{} bauen. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
-            kind.label()
+            "{}: {}×{} Felder ({}×{} m). Linksklick platziert; Rechtsklick oder Esc bricht ab.",
+            kind.label(),
+            width,
+            depth,
+            width * 2,
+            depth * 2
         ))
         .clicked()
 }

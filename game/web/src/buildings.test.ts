@@ -56,7 +56,7 @@ try {
   const build = (db: DbConnection, x: number, z: number) => status(db, cb => db.reducers.onBuild(cb), () => db.reducers.build(x, z, 'granary'));
   const remove = (db: DbConnection, id: bigint) => status(db, cb => db.reducers.onRemoveBuilding(cb), () => db.reducers.removeBuilding(id));
   const attack = (db: DbConnection, ids: bigint[], id: bigint) => status(db, cb => db.reducers.onAttackBuilding(cb), () => db.reducers.attackBuilding(ids, id));
-  assert.equal(await build(b, 0, 9), 'Committed');
+  assert.equal(await build(b, 1, 9), 'Committed');
   await until(() => buildings().length === 1, 'Both clients receive the building');
   const granary = buildings()[0];
   assert.equal(granary.health, 1); assert.equal(granary.kind, 'granary');
@@ -81,8 +81,8 @@ try {
   let tracking = true;
   a.db.armyUnit.onUpdate((_ctx, _old, u) => {
     if (!tracking || u.id !== unit.id) return;
-    assert.ok(!(Math.abs(u.x) < 2.73896 + 0.269 && Math.abs(u.z - 9) < 2.53584 + 0.269), 'Unit never crosses inflated collision footprint');
-    if (u.z > 6.2 && u.z < 11.8 && Math.abs(u.x) > 3) walkedAround = true;
+    assert.ok(!(Math.abs(u.x - granary.x) < 2.73896 + 0.269 && Math.abs(u.z - granary.z) < 2.53584 + 0.269), 'Unit never crosses inflated collision footprint');
+    if (Math.abs(u.z - granary.z) < 2.8 && Math.abs(u.x - granary.x) > 3) walkedAround = true;
   });
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 0, 16)), 'Committed');
   await until(() => a.db.armyUnit.id.find(unit.id)?.z === 16, 'Unit follows route around granary');
@@ -94,14 +94,14 @@ try {
   assert.equal(await buildBarracks(b, 20, 22), 'Committed');
   await until(() => buildings().some(x => x.kind === 'barracks'), 'Both clients receive barracks');
   const barracks = buildings().find(x => x.kind === 'barracks')!;
-  assert.equal(await build(a, 28, 22), 'Failed', 'Granary cannot overlap the larger barracks footprint');
-  assert.equal(await buildBarracks(a, 394, 22), 'Failed', 'Full barracks footprint must fit within the map');
+  assert.equal(await build(a, 26, 22), 'Failed', 'Granary cannot overlap the larger barracks footprint');
+  assert.equal(await buildBarracks(a, 396, 22), 'Failed', 'Full barracks footprint must fit within the map');
   assert.equal(await buildBarracks(a, 0, 0), 'Failed', 'Barracks cannot cover units');
   assert.equal(await buildBarracks(a, 0, -12), 'Failed', 'Barracks require level terrain');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 25, 22)), 'Failed', 'Movement targets inside barracks footprint are blocked');
   assert.equal(await attack(a, [unit.id], barracks.id), 'Committed');
   const attacker = a.db.armyUnit.id.find(unit.id)!;
-  const edgeDistance = Math.hypot(Math.max(0, Math.abs(attacker.targetX - 20) - 6.157582), Math.max(0, Math.abs(attacker.targetZ - 22) - 5.137907));
+  const edgeDistance = Math.hypot(Math.max(0, Math.abs(attacker.targetX - barracks.x) - 6.157582), Math.max(0, Math.abs(attacker.targetZ - barracks.z) - 5.137907));
   assert.ok(Math.abs(edgeDistance - 0.6) < 0.001, 'Attack slots follow the barracks walls');
   assert.equal(await remove(a, barracks.id), 'Failed', 'Enemy barracks cannot be removed');
   assert.equal(await remove(b, barracks.id), 'Committed');
@@ -113,13 +113,13 @@ try {
   const stockpile = buildings().find(x => x.kind === 'stockpile')!;
   assert.equal(stockpile.health, 1);
   assert.equal(await build(a, -16, 22), 'Failed', 'Granary cannot overlap the wider stockpile footprint');
-  assert.equal(await buildStockpile(a, 392, 22), 'Failed', 'Full stockpile footprint must fit within the map');
+  assert.equal(await buildStockpile(a, 396, 22), 'Failed', 'Full stockpile footprint must fit within the map');
   assert.equal(await buildStockpile(a, 0, 0), 'Failed', 'Stockpile cannot cover units');
   assert.equal(await buildStockpile(a, 0, -12), 'Failed', 'Stockpile requires level terrain');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], -18.1, 22)), 'Failed', 'Movement targets inside stockpile footprint are blocked');
   assert.equal(await attack(a, [unit.id], stockpile.id), 'Committed');
   const stockpileAttacker = a.db.armyUnit.id.find(unit.id)!;
-  const stockpileEdgeDistance = Math.hypot(Math.max(0, Math.abs(stockpileAttacker.targetX + 25) - 7.217365), Math.max(0, Math.abs(stockpileAttacker.targetZ - 22) - 5.355486));
+  const stockpileEdgeDistance = Math.hypot(Math.max(0, Math.abs(stockpileAttacker.targetX - stockpile.x) - 7.217365), Math.max(0, Math.abs(stockpileAttacker.targetZ - stockpile.z) - 5.355486));
   assert.ok(Math.abs(stockpileEdgeDistance - 0.6) < 0.001, 'Attack slots follow stockpile walls');
   assert.equal(await remove(a, stockpile.id), 'Failed', 'Enemy stockpile cannot be removed');
   assert.equal(await remove(b, stockpile.id), 'Committed');
@@ -129,7 +129,7 @@ try {
   const beforeUnknown = buildings().length;
   assert.equal(await status(a, cb => a.reducers.onBuild(cb), () => a.reducers.build(80, 80, 'unknown')), 'Failed');
   assert.equal(buildings().length, beforeUnknown, 'Unknown types do not create buildings');
-  const catalog = JSON.parse(readFileSync(new URL('../../building-models.json', import.meta.url), 'utf8')) as {id: string; category: string}[];
+  const catalog = JSON.parse(readFileSync(new URL('../../building-models.json', import.meta.url), 'utf8')) as {id: string; category: string; grid: [number, number]}[];
   const fortifications = catalog.filter(x => x.category === 'fortifications');
   assert.equal(fortifications.length, 18);
   for (const [index, entry] of fortifications.entries()) {
@@ -138,17 +138,36 @@ try {
     assert.equal(await status(b, cb => b.reducers.onBuild(cb), () => b.reducers.build(x, z, entry.id)), 'Committed', entry.id);
     await until(() => buildings().some(row => row.kind === entry.id), `Replicated ${entry.id}`);
     const row = buildings().find(row => row.kind === entry.id)!;
+    assert.ok(Number.isInteger((row.x - entry.grid[0]) / 2), `${entry.id}: X edges follow grid lines`);
+    assert.ok(Number.isInteger((row.z - entry.grid[1]) / 2), `${entry.id}: Z edges follow grid lines`);
     assert.equal(await build(a, x, z), 'Failed', `${entry.id} blocks overlapping buildings`);
-    assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], x, z)), 'Failed', `${entry.id} blocks movement targets`);
+    assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], row.x, row.z)), 'Failed', `${entry.id} blocks movement targets`);
     assert.equal(await attack(a, [unit.id], row.id), 'Committed', `Reachable attack positions for ${entry.id}`);
     assert.equal(await remove(b, row.id), 'Committed');
   }
+  // Two stair towers touch at one grid edge despite overlapping collision meshes.
+  const stair = (x: number, z: number) => status(b, cb => b.reducers.onBuild(cb), () => b.reducers.build(x, z, 'tower_stairwell'));
+  assert.equal(await stair(100.8, 100.7), 'Committed');
+  assert.equal(await stair(104.3, 100.4), 'Committed', 'Adjacent tower must be allowed despite mesh overlap');
+  await until(() => buildings().filter(row => row.kind === 'tower_stairwell').length === 2, 'Adjacent towers replicated');
+  const towers = buildings().filter(row => row.kind === 'tower_stairwell').sort((a, b) => a.x - b.x);
+  assert.deepEqual(towers.map(row => [row.x, row.z]), [[100, 100], [104, 100]]);
+  assert.equal(towers[1].x + 2 - (towers[0].x - 2), 8, 'Two stair towers occupy 8 by 4 metres');
+  assert.equal(await stair(102.1, 100.3), 'Failed', 'Shared occupied grid cells are rejected');
+  assert.equal(await stair(100.1, 99.8), 'Failed', 'Coordinates snapping to an occupied plot are rejected');
+  assert.equal(await remove(b, towers[0].id), 'Committed');
+  assert.equal(await stair(102.1, 100.3), 'Failed', 'The remaining tower still reserves its cells');
+  assert.equal(await remove(b, towers[1].id), 'Committed');
+  assert.equal(await stair(102.1, 100.3), 'Committed', 'Removing towers frees their grid cells');
+  await until(() => buildings().some(row => row.kind === 'tower_stairwell' && row.x === 102), 'Replacement tower replicated');
+  assert.equal(await remove(b, buildings().find(row => row.kind === 'tower_stairwell' && row.x === 102)!.id), 'Committed');
+
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], 120, 120)), 'Committed', 'Movement orders beyond the old map limits are accepted');
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([unit.id], unit.x, unit.z)), 'Committed');
 
   // Another game may use the same coordinates, but cannot attack this game.
   assert.equal(await status(c, cb => c.reducers.onCreateGame(cb), () => c.reducers.createGame(`${title} isolated`)), 'Committed');
-  assert.equal(await build(c, 0, 9), 'Committed');
+  assert.equal(await build(c, 1, 9), 'Committed');
   const cUnits = Array.from(c.db.armyUnit.iter()).filter(u => u.owner.toHexString() === c.connectionId.toHexString());
   assert.equal(await attack(c, cUnits.map(u => u.id), granary.id), 'Failed');
 
@@ -161,7 +180,7 @@ try {
   for (let i = 0; i < targets.length; i++) for (let j = i + 1; j < targets.length; j++) {
     assert.ok(Math.hypot(targets[i][0] - targets[j][0], targets[i][1] - targets[j][1]) >= 0.55, 'Attack destinations are distinct');
   }
-  assert.ok(targets.some(([x]) => x < -3) && targets.some(([x]) => x > 3)
+  assert.ok(targets.some(([x]) => x < granary.x - 3) && targets.some(([x]) => x > granary.x + 3)
     && targets.some(([, z]) => z < 6) && targets.some(([, z]) => z > 12), 'Attackers assigned around all four walls');
   await until(() => !a.db.building.id.find(granary.id), 'Attack reduces health to zero and removes building');
   assert.ok(damaged, 'Damage was replicated');
@@ -176,15 +195,17 @@ try {
   const runner = own()[0];
   assert.equal(await status(a, cb => a.reducers.onSetTargets(cb), () => a.reducers.setTargets([runner.id], 20, 16)), 'Committed');
   assert.equal(await build(b, 12, 16), 'Committed');
+  await until(() => buildings().some(row => row.x === 13 && row.z === 17), 'Snapped building replicated before tracking rerouting');
+  const routeBuilding = buildings().find(row => row.x === 13 && row.z === 17)!;
   let rerouted = false;
   a.db.armyUnit.onUpdate((_ctx, _old, u) => {
     if (u.id !== runner.id || u.targetX !== 20) return;
-    assert.ok(!(Math.abs(u.x - 12) < 3.007 && Math.abs(u.z - 16) < 2.804), 'Construction replans live movement');
-    if (u.x > 9 && u.x < 15 && Math.abs(u.z - 16) > 2.8) rerouted = true;
+    assert.ok(!(Math.abs(u.x - routeBuilding.x) < 3.007 && Math.abs(u.z - routeBuilding.z) < 2.804), 'Construction replans live movement');
+    if (Math.abs(u.x - routeBuilding.x) < 3 && Math.abs(u.z - routeBuilding.z) > 2.8) rerouted = true;
   });
   await until(() => a.db.armyUnit.id.find(runner.id)?.x === 20, 'Rerouted unit reaches goal');
   assert.ok(rerouted);
-  assert.equal(await remove(b, buildings().find(x => x.x === 12)!.id), 'Committed');
+  assert.equal(await remove(b, routeBuilding.id), 'Committed');
 
   // Exercise the browser bridge's building actions and scoped subscription.
   const send = (action: object) => strongholdNetwork.send(JSON.stringify(action));

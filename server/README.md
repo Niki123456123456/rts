@@ -98,20 +98,27 @@ height. Clients subscribe to the lobby and only their active game's units and bu
 the received positions without simulating movement. Movement continues without clients.
 When all units finish moving and attacking, the schedule stops until the next order,
 so idle databases do not continuously consume cloud function calls.
-`build(x, z, building)` validates the catalog building name, membership, finite coordinates, full footprint within the
-map, level terrain, no overlapping buildings and no units in the footprint. There
+`build(x, z, building)` validates the catalog building name and membership, then
+snaps finite coordinates to the global 2-m construction grid. Odd cell counts use
+odd-metre centres and even cell counts use even-metre centres. Construction overlap
+uses the explicit logical `grid` size from `game/building-models.json`; touching
+plot edges are allowed, including two 4×4-m stair towers occupying 8×4 m together.
+Every occupied cell is sampled for level ground. Units in either the plot or the
+physical footprint block construction so model overhangs cannot trap units. There
 is a 128-building limit per game. `remove_building` only accepts the owner's buildings.
 Buildings are removed with their owner's army on leave, disconnect or game switch.
 
 The supplied collision models are enclosed by axis-aligned XZ footprints.
 `shared/` stores each building type’s bounds and model center at scale 0.01, used
-by placement previews, overlap checks, navigation and attack positions. Irregular collision meshes and models without supplied collision meshes use
+by selection, navigation and attack positions. Logical construction footprints
+are independent of those mesh bounds. Irregular collision meshes and models without supplied collision meshes use
 conservative rectangular footprints. `shared/src/building_catalog.rs` is generated
 from `game/building-models.json` by `game/import-buildings.py`.
 The client sends one `build` action for all building types. The three legacy server
 reducers remain as compatibility aliases for older published clients.
-The map is 800×800 world units; movement and full building footprints must fit
-inside ±399.
+The map is 800×800 world units. Movement stays inside ±399; complete grid plots
+may extend to the world edges at ±400. Existing buildings keep their stored
+positions when updating the module.
 A visibility graph with Dijkstra computes shortest polylines around footprints
 expanded by the unit radius plus clearance. Unreachable/blocked orders are rejected.
 Construction and demolition replan active orders; units stop if a destination becomes

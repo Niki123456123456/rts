@@ -662,17 +662,21 @@ pub fn build_stockpile(ctx: &ReducerContext, x: f32, z: f32) -> Result<(), Strin
 pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(), String> {
     let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
     let player = participant(ctx)?;
-    let shape = kind.obstacle(x, z);
-    if !shape.in_map() {
+    let (x, z) = kind.snap_position(x, z);
+    let shape = kind.build_footprint(x, z);
+    if !shape.in_build_area() {
         return Err("Place the building inside the map.".into());
     }
     if ctx.db.building().game_id().filter(player.game_id).count() >= 128 {
         return Err("This game has reached the 128-building limit.".into());
     }
-    if obstacles(ctx, player.game_id)
-        .iter()
-        .any(|b| shape.overlaps(*b))
-    {
+    if ctx.db.building().game_id().filter(player.game_id).any(|b| {
+        shape.overlaps(
+            map::BuildingKind::from_name(&b.kind)
+                .unwrap_or_default()
+                .build_footprint(b.x, b.z),
+        )
+    }) {
         return Err("Buildings cannot overlap.".into());
     }
     if ctx
@@ -680,16 +684,15 @@ pub fn build(ctx: &ReducerContext, x: f32, z: f32, building: String) -> Result<(
         .army_unit()
         .game_id()
         .filter(player.game_id)
-        .any(|u| shape.contains((u.x, u.z), map::CLEARANCE))
+        .any(|u| kind.blocks_construction_unit(x, z, (u.x, u.z)))
     {
         return Err("Units are standing in the construction area.".into());
     }
     let y = terrain_height(x, z);
-    if [-shape.half_x, 0.0, shape.half_x].into_iter().any(|dx| {
-        [-shape.half_z, 0.0, shape.half_z]
-            .into_iter()
-            .any(|dz| (terrain_height(x + dx, z + dz) - y).abs() > 0.05)
-    }) {
+    if kind
+        .build_samples(x, z)
+        .any(|(px, pz)| (terrain_height(px, pz) - y).abs() > 0.05)
+    {
         return Err("Place the building on level ground.".into());
     }
     ctx.db.building().insert(Building {

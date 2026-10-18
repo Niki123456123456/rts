@@ -6,7 +6,11 @@
     "category": "supply",
     "source": "granary_closed",
     "collision": "granary_collision",
-    "folder": "granary"
+    "folder": "granary",
+    "grid": [
+      3,
+      3
+    ]
   },
   {
     "variant": "Barracks",
@@ -15,7 +19,11 @@
     "category": "military",
     "source": "barrack_stone",
     "collision": "barrack_stone_collision",
-    "folder": "barrack_stone"
+    "folder": "barrack_stone",
+    "grid": [
+      6,
+      5
+    ]
   },
   {
     "variant": "Stockpile",
@@ -24,7 +32,11 @@
     "category": "supply",
     "source": "stockpile_closed",
     "collision": "stockpile_collision",
-    "folder": "stockpile"
+    "folder": "stockpile",
+    "grid": [
+      7,
+      5
+    ]
   },
   {
     "variant": "GatehouseWooden",
@@ -33,7 +45,11 @@
     "category": "fortifications",
     "source": "gatehouse_wooden",
     "collision": "gatehouse_wooden_collision",
-    "folder": "gatehouse_wooden"
+    "folder": "gatehouse_wooden",
+    "grid": [
+      2,
+      1
+    ]
   },
   {
     "variant": "GatehouseSmall",
@@ -42,7 +58,11 @@
     "category": "fortifications",
     "source": "gatehouse_small",
     "collision": "gatehouse_small_collision",
-    "folder": "gatehouse_small"
+    "folder": "gatehouse_small",
+    "grid": [
+      3,
+      3
+    ]
   },
   {
     "variant": "GatehouseMedium",
@@ -51,7 +71,11 @@
     "category": "fortifications",
     "source": "gatehouse_medium",
     "collision": "gatehouse_medium_collision",
-    "folder": "gatehouse_medium"
+    "folder": "gatehouse_medium",
+    "grid": [
+      7,
+      6
+    ]
   },
   {
     "variant": "GatehouseLarge",
@@ -60,7 +84,11 @@
     "category": "fortifications",
     "source": "gatehouse_large",
     "collision": "gatehouse_large_collision",
-    "folder": "gatehouse_large"
+    "folder": "gatehouse_large",
+    "grid": [
+      9,
+      8
+    ]
   },
   {
     "variant": "Sallyport",
@@ -69,7 +97,11 @@
     "category": "fortifications",
     "source": "sallyport_closed",
     "collision": null,
-    "folder": "sallyport"
+    "folder": "sallyport",
+    "grid": [
+      3,
+      3
+    ]
   },
   {
     "variant": "Watchpost",
@@ -78,7 +110,11 @@
     "category": "fortifications",
     "source": "watchpost",
     "collision": "watchpost_collision",
-    "folder": "watchpost"
+    "folder": "watchpost",
+    "grid": [
+      1,
+      1
+    ]
   },
   {
     "variant": "TowerWooden",
@@ -87,7 +123,11 @@
     "category": "fortifications",
     "source": "tower_wooden",
     "collision": null,
-    "folder": "tower_wooden"
+    "folder": "tower_wooden",
+    "grid": [
+      1,
+      1
+    ]
   },
   {
     "variant": "TowerLookout",
@@ -96,7 +136,11 @@
     "category": "fortifications",
     "source": "tower_lookout_closed",
     "collision": "tower_lookout_collision",
-    "folder": "tower_lookout"
+    "folder": "tower_lookout",
+    "grid": [
+      2,
+      2
+    ]
   },
   {
     "variant": "TowerStairwell",
@@ -105,7 +149,11 @@
     "category": "fortifications",
     "source": "tower_stairwell_closed",
     "collision": "tower_stairwell_collision",
-    "folder": "tower_stairwell"
+    "folder": "tower_stairwell",
+    "grid": [
+      2,
+      2
+    ]
   },
   {
     "variant": "TowerSquare",
@@ -114,7 +162,11 @@
     "category": "fortifications",
     "source": "tower_square_closed",
     "collision": "tower_square_collision",
-    "folder": "tower_square"
+    "folder": "tower_square",
+    "grid": [
+      3,
+      3
+    ]
   },
   {
     "variant": "TowerRoundShort",
@@ -123,7 +175,11 @@
     "category": "fortifications",
     "source": "tower_round_short_closed",
     "collision": "tower_round_short_collision",
-    "folder": "tower_round_short"
+    "folder": "tower_round_short",
+    "grid": [
+      5,
+      5
+    ]
   },
   {
     "variant": "TowerRoundTall",
@@ -132,7 +188,11 @@
     "category": "fortifications",
     "source": "tower_round_tall_closed",
     "collision": "tower_round_tall_collision",
-    "folder": "tower_round_tall"
+    "folder": "tower_round_tall",
+    "grid": [
+      5,
+      5
+    ]
   },
   {
     "variant": "TowerGreat",
@@ -141,7 +201,11 @@
     "category": "fortifications",
     "source": "tower_great_closed",
     "collision": "tower_great_collision",
-    "folder": "tower_great"
+    "folder": "tower_great",
+    "grid": [
+      7,
+      7
+    ]
   },
   {
     "variant": "FlagTower",
@@ -150,7 +214,11 @@
     "category": "fortifications",
     "source": "Flag_Tower",
     "collision": null,
-    "folder": "flag_tower"
+    "folder": "flag_tower",
+    "grid": [
+      1,
+      1
+    ]
   },
   {
     "variant": "TowerWalk",
@@ -159,7 +227,11 @@
     "category": "fortifications",
     "source": "tower_walk",
     "collision": null,
-    "folder": "tower_walk"
+    "folder": "tower_walk",
+    "grid": [
+      1,
+      1
+    ]
   },
   {
     "variant": "BridgeEnd",
@@ -168,7 +240,11 @@
     "category": "fortifications",
     "source": "bridge_end",
     "collision": null,
-    "folder": "bridge_end"
+    "folder": "bridge_end",
+    "grid": [
+      2,
+      2
+    ]
   },
   {
     "variant": "BridgeMiddle",
@@ -177,7 +253,11 @@
     "category": "fortifications",
     "source": "bridge_middle",
     "collision": null,
-    "folder": "bridge_middle"
+    "folder": "bridge_middle",
+    "grid": [
+      2,
+      2
+    ]
   },
   {
     "variant": "BridgeWooden",
@@ -186,6 +266,10 @@
     "category": "fortifications",
     "source": "bridge_wooden",
     "collision": null,
-    "folder": "bridge_wooden"
+    "folder": "bridge_wooden",
+    "grid": [
+      2,
+      23
+    ]
   }
 ]

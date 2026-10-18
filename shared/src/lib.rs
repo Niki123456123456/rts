@@ -9,6 +9,52 @@ pub use building_catalog::BuildingKind;
 
 pub const MAP_SIZE: f32 = 800.0;
 pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
+/// Grid lines lie at multiples of two metres on both world axes.
+pub const BUILD_GRID_SIZE: f32 = 2.0;
+
+impl BuildingKind {
+    /// Odd cell counts have odd-metre centres; even counts have even-metre centres.
+    pub fn snap_position(self, x: f32, z: f32) -> Point {
+        let (width, depth) = self.grid_size();
+        let snap = |value: f32, cells: u16| {
+            let offset = (cells % 2) as f32 * BUILD_GRID_SIZE * 0.5;
+            ((value - offset) / BUILD_GRID_SIZE).round() * BUILD_GRID_SIZE + offset
+        };
+        (snap(x, width), snap(z, depth))
+    }
+
+    /// Logical construction area. Physical geometry is used separately for navigation.
+    pub fn build_footprint(self, x: f32, z: f32) -> Obstacle {
+        let (width, depth) = self.grid_size();
+        Obstacle {
+            x,
+            z,
+            half_x: width as f32 * BUILD_GRID_SIZE * 0.5,
+            half_z: depth as f32 * BUILD_GRID_SIZE * 0.5,
+        }
+    }
+
+    /// Sample every occupied cell's corners and centre when checking level ground.
+    pub fn build_samples(self, x: f32, z: f32) -> impl Iterator<Item = Point> {
+        let (width, depth) = self.grid_size();
+        let shape = self.build_footprint(x, z);
+        (0..=width * 2).flat_map(move |column| {
+            (0..=depth * 2).map(move |row| {
+                (
+                    x - shape.half_x + column as f32 * BUILD_GRID_SIZE * 0.5,
+                    z - shape.half_z + row as f32 * BUILD_GRID_SIZE * 0.5,
+                )
+            })
+        })
+    }
+
+    /// Reserve the plot and ensure units will not be trapped inside model overhangs.
+    pub fn blocks_construction_unit(self, x: f32, z: f32, point: Point) -> bool {
+        self.build_footprint(x, z).contains(point, CLEARANCE)
+            || self.obstacle(x, z).contains(point, CLEARANCE)
+    }
+}
+
 pub const CLEARANCE: f32 = 0.27;
 pub const UNIT_SPACING: f32 = 0.55;
 /// Room between formation slots allows units to settle without touching neighbours.
@@ -105,11 +151,17 @@ impl Obstacle {
         (self.x - other.x).abs() < self.half_x + other.half_x
             && (self.z - other.z).abs() < self.half_z + other.half_z
     }
-    pub fn in_map(self) -> bool {
+    fn within(self, limit: f32) -> bool {
         self.x.is_finite()
             && self.z.is_finite()
-            && self.x.abs() + self.half_x <= MAP_LIMIT
-            && self.z.abs() + self.half_z <= MAP_LIMIT
+            && self.x.abs() + self.half_x <= limit
+            && self.z.abs() + self.half_z <= limit
+    }
+    pub fn in_map(self) -> bool {
+        self.within(MAP_LIMIT)
+    }
+    pub fn in_build_area(self) -> bool {
+        self.within(MAP_SIZE * 0.5)
     }
     pub fn closest(self, p: Point) -> Point {
         (
@@ -302,6 +354,61 @@ pub fn path_length(start: Point, path: &[Point]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn adjacent_stair_towers_reserve_exactly_eight_by_four_metres() {
+        let kind = BuildingKind::TowerStairwell;
+        assert_eq!(kind.grid_size(), (2, 2));
+        let first = kind.snap_position(100.8, 100.7);
+        let second = kind.snap_position(104.3, 100.4);
+        assert_eq!(first, (100.0, 100.0));
+        assert_eq!(second, (104.0, 100.0));
+        let a = kind.build_footprint(first.0, first.1);
+        let b = kind.build_footprint(second.0, second.1);
+        assert!(!a.overlaps(b));
+        assert!(kind
+            .obstacle(first.0, first.1)
+            .overlaps(kind.obstacle(second.0, second.1)));
+        assert_eq!((b.x + b.half_x) - (a.x - a.half_x), 8.0);
+        assert_eq!(a.half_z * 2.0, 4.0);
+        assert!(a.overlaps(kind.build_footprint(102.0, 100.0)));
+        assert!(b.overlaps(kind.build_footprint(102.0, 100.0)));
+    }
+
+    #[test]
+    fn all_building_plots_snap_their_edges_to_the_same_two_metre_grid() {
+        for kind in BuildingKind::ALL {
+            let (width, depth) = kind.grid_size();
+            assert!(width > 0 && depth > 0);
+            for requested in [(0.0, 0.0), (-3.8, -21.5), (7.3, 19.1), (105.9, -104.7)] {
+                let (x, z) = kind.snap_position(requested.0, requested.1);
+                assert_eq!(kind.snap_position(x, z), (x, z));
+                let shape = kind.build_footprint(x, z);
+                for edge in [
+                    x - shape.half_x,
+                    x + shape.half_x,
+                    z - shape.half_z,
+                    z + shape.half_z,
+                ] {
+                    assert_eq!(edge % BUILD_GRID_SIZE, 0.0, "{}", kind.name());
+                }
+                assert!((x - requested.0).abs() <= 1.0 && (z - requested.1).abs() <= 1.0);
+                assert!(
+                    !shape.overlaps(kind.build_footprint(x + width as f32 * BUILD_GRID_SIZE, z))
+                );
+                assert!(
+                    !shape.overlaps(kind.build_footprint(x, z + depth as f32 * BUILD_GRID_SIZE))
+                );
+            }
+        }
+        let tower = BuildingKind::TowerStairwell;
+        assert!(tower.build_footprint(398.0, 398.0).in_build_area());
+        assert!(!tower.build_footprint(400.0, 398.0).in_build_area());
+        let invalid = tower.snap_position(f32::NAN, 0.0);
+        assert!(!tower.build_footprint(invalid.0, invalid.1).in_build_area());
+        let invalid = tower.snap_position(f32::INFINITY, 0.0);
+        assert!(!tower.build_footprint(invalid.0, invalid.1).in_build_area());
+    }
+
     #[test]
     fn catalog_has_valid_geometry_and_attack_slots_for_every_building() {
         assert_eq!(

@@ -35,6 +35,7 @@ struct Definition {
     collision: &'static str,
     min: [f32; 3],
     max: [f32; 3],
+    grid: [u16; 2],
 }
 const DEFINITIONS: [Definition; 21] = [
     Definition {
@@ -45,6 +46,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/supply/granary/collision.glb#Mesh0/Primitive0",
         min: [34.1793212890625, 0.0, -567.2803344726562],
         max: [581.9715576171875, 617.3983154296875, -60.11186218261719],
+        grid: [3, 3],
     },
     Definition {
         name: "barracks",
@@ -54,6 +56,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/military/barrack_stone/collision.glb#Mesh0/Primitive0",
         min: [0.0, 0.0, -1025.0],
         max: [1231.5162353515625, 1004.5, 2.58135986328125],
+        grid: [6, 5],
     },
     Definition {
         name: "stockpile",
@@ -63,6 +66,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/supply/stockpile/collision.glb#Mesh0/Primitive0",
         min: [-5.041259765625, 0.0, -1043.681884765625],
         max: [1438.4317626953125, 799.0364990234375, 27.415283203125],
+        grid: [7, 5],
     },
     Definition {
         name: "gatehouse_wooden",
@@ -73,6 +77,7 @@ const DEFINITIONS: [Definition; 21] = [
             "models/buildings/fortifications/gatehouse_wooden/collision.glb#Mesh0/Primitive0",
         min: [-5.1248779296875, -2.915945742643089e-07, -211.7327880859375],
         max: [406.4670104980469, 664.8521728515625, -0.4996795654296875],
+        grid: [2, 1],
     },
     Definition {
         name: "gatehouse_small",
@@ -82,6 +87,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/gatehouse_small/collision.glb#Mesh0/Primitive0",
         min: [0.0, 6.223561285878532e-06, -615.0000610351562],
         max: [615.9373779296875, 684.8965454101562, 0.0],
+        grid: [3, 3],
     },
     Definition {
         name: "gatehouse_medium",
@@ -92,6 +98,7 @@ const DEFINITIONS: [Definition; 21] = [
             "models/buildings/fortifications/gatehouse_medium/collision.glb#Mesh0/Primitive0",
         min: [5.63275146484375, -0.008202850818634033, -1233.8260498046875],
         max: [1431.42578125, 1231.012451171875, 4.7803955078125],
+        grid: [7, 6],
     },
     Definition {
         name: "gatehouse_large",
@@ -101,6 +108,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/gatehouse_large/collision.glb#Mesh0/Primitive0",
         min: [-11.721435546875, -4.799957275390625, -1639.8709716796875],
         max: [1863.5888671875, 1430.430419921875, 50.2874755859375],
+        grid: [9, 8],
     },
     Definition {
         name: "sallyport",
@@ -110,6 +118,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/sallyport/collision.glb#Mesh0/Primitive0",
         min: [0.4980548620223999, -0.00575855141505599, -614.9857788085938],
         max: [615.04443359375, 666.127197265625, 0.2855031490325928],
+        grid: [3, 3],
     },
     Definition {
         name: "watchpost",
@@ -119,6 +128,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/watchpost/collision.glb#Mesh0/Primitive0",
         min: [0.1960296630859375, 0.0, -218.85935974121094],
         max: [205.79734802246094, 408.94921875, -1.7876739501953125],
+        grid: [1, 1],
     },
     Definition {
         name: "tower_wooden",
@@ -132,6 +142,7 @@ const DEFINITIONS: [Definition; 21] = [
             -205.00001525878906,
         ],
         max: [205.00001525878906, 431.82012939453125, 11.78028678894043],
+        grid: [1, 1],
     },
     Definition {
         name: "tower_lookout",
@@ -145,6 +156,7 @@ const DEFINITIONS: [Definition; 21] = [
             -433.9989929199219,
         ],
         max: [440.34893798828125, 1549.306884765625, 23.300079345703125],
+        grid: [2, 2],
     },
     Definition {
         name: "tower_stairwell",
@@ -154,6 +166,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/tower_stairwell/collision.glb#Mesh0/Primitive0",
         min: [-0.40960693359375, 0.0, -412.6746826171875],
         max: [415.4098815917969, 664.5040893554688, -2.657135009765625],
+        grid: [2, 2],
     },
     Definition {
         name: "tower_square",
@@ -163,6 +176,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/tower_square/collision.glb#Mesh0/Primitive0",
         min: [-46.7183837890625, 0.0, -660.31787109375],
         max: [661.6531372070312, 1439.0, 46.64166259765625],
+        grid: [3, 3],
     },
     Definition {
         name: "tower_round_short",
@@ -173,6 +187,7 @@ const DEFINITIONS: [Definition; 21] = [
             "models/buildings/fortifications/tower_round_short/collision.glb#Mesh0/Primitive0",
         min: [-11.904510498046875, 0.0, -1065.056396484375],
         max: [1072.4320068359375, 1069.766845703125, 47.165802001953125],
+        grid: [5, 5],
     },
     Definition {
         name: "tower_round_tall",
@@ -183,6 +198,7 @@ const DEFINITIONS: [Definition; 21] = [
             "models/buildings/fortifications/tower_round_tall/collision.glb#Mesh0/Primitive0",
         min: [-15.7332763671875, 0.0, -1107.893798828125],
         max: [1127.0001220703125, 1622.2144775390625, 64.22698974609375],
+        grid: [5, 5],
     },
     Definition {
         name: "tower_great",
@@ -192,6 +208,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/tower_great/collision.glb#Mesh0/Primitive0",
         min: [-26.5233154296875, 0.0, -1520.219482421875],
         max: [1535.180908203125, 1765.75390625, 81.64697265625],
+        grid: [7, 7],
     },
     Definition {
         name: "flag_tower",
@@ -201,6 +218,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/flag_tower/collision.glb#Mesh0/Primitive0",
         min: [-723.0404663085938, 1664.5504150390625, 809.7139892578125],
         max: [-573.4080810546875, 2048.234375, 820.8037719726562],
+        grid: [1, 1],
     },
     Definition {
         name: "tower_walk",
@@ -210,6 +228,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/tower_walk/collision.glb#Mesh0/Primitive0",
         min: [283.05682373046875, 12.327432632446289, -230.59445190429688],
         max: [370.1929016113281, 200.55545043945312, -134.59144592285156],
+        grid: [1, 1],
     },
     Definition {
         name: "bridge_end",
@@ -219,6 +238,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/bridge_end/collision.glb#Mesh0/Primitive0",
         min: [-19.955961227416992, -5.669158935546875, -413.7069396972656],
         max: [427.2026672363281, 273.23968505859375, 47.477325439453125],
+        grid: [2, 2],
     },
     Definition {
         name: "bridge_middle",
@@ -228,6 +248,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/bridge_middle/collision.glb#Mesh0/Primitive0",
         min: [-19.57096290588379, -427.4195556640625, -819.9561767578125],
         max: [426.55474853515625, 273.2211608886719, -409.7923278808594],
+        grid: [2, 2],
     },
     Definition {
         name: "bridge_wooden",
@@ -237,6 +258,7 @@ const DEFINITIONS: [Definition; 21] = [
         collision: "models/buildings/fortifications/bridge_wooden/collision.glb#Mesh0/Primitive0",
         min: [-35.00608825683594, -459.3461608886719, -4590.2919921875],
         max: [446.7037048339844, 377.5419921875, 24.455078125],
+        grid: [2, 23],
     },
 ];
 impl BuildingKind {
@@ -283,6 +305,10 @@ impl BuildingKind {
     }
     pub fn collision(self) -> &'static str {
         DEFINITIONS[self.index()].collision
+    }
+    pub fn grid_size(self) -> (u16, u16) {
+        let [width, depth] = DEFINITIONS[self.index()].grid;
+        (width, depth)
     }
     pub fn center(self) -> Point {
         let d = &DEFINITIONS[self.index()];
