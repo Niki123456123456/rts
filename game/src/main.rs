@@ -2,6 +2,7 @@
 
 mod buildings;
 mod combat_units;
+mod dairy;
 mod logistics;
 mod menu_ui;
 #[cfg(not(target_arch = "wasm32"))]
@@ -24,6 +25,7 @@ use bevy_rts_camera::{Ground, RtsCamera, RtsCameraControls, RtsCameraPlugin};
 fn main() {
     let mut app = App::new();
     app.init_resource::<combat_units::CombatAssets>();
+    app.init_resource::<dairy::DairyAssets>();
     #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -74,6 +76,13 @@ fn main() {
                 combat_units::animate_combat_units,
                 (projectiles::sync_arrows, projectiles::range_preview).chain(),
                 logistics::sync_storage_visuals,
+                (
+                    dairy::load_assets,
+                    dairy::sync_farms,
+                    dairy::wander,
+                    dairy::animate,
+                )
+                    .chain(),
                 buildings::building_input,
                 select_unit,
                 movement_input,
@@ -968,6 +977,7 @@ fn selection_ui(
                             let resource = match producer.resource {
                                 0 => "Holz",
                                 1 => "Stein",
+                                5 => "Käse",
                                 _ => "Eisen",
                             };
                             let cargo: u32 = multiplayer

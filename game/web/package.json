@@ -11,6 +11,7 @@
     "test:roof": "tsx src/roof.test.ts",
     "test:roof-types": "tsx src/roof-types.test.ts",
     "test:walls": "tsx src/walls.test.ts",
+    "test:dairy": "tsx src/dairy.test.ts",
     "test:food": "tsx src/food.test.ts",
     "test:housing": "tsx src/housing.test.ts",
     "test:resources": "tsx src/resources.test.ts",

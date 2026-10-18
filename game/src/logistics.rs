@@ -215,6 +215,7 @@ pub(crate) fn sync_storage_visuals(
             let model = match worker.resource {
                 0 => 0,
                 1 => 2,
+                5 => 24,
                 _ => 11,
             };
             let Some(scene) = &assets.scenes[model] else {

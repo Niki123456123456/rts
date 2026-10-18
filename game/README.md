@@ -227,8 +227,9 @@ Der Import verwendet die vollständigen Basismodelle, bevorzugt die geschlossene
 Variante, und vorhandene Kollisionsmodelle. Für Fischteich, Taubenschlag,
 Gemüsebeet und Wassertrog wird eine konservative Box erzeugt. Der gemeinsame
 Katalog liefert Rastergröße, Rotation, Bauvorschau, Auswahl und Bodennavigation.
-Die Modelle sind baubar. Steinbruch, Eisenmine und Holzfällerhütte produzieren bereits
-Rohstoffe; weitere Produktionsketten sind noch nicht implementiert.
+Die Modelle sind baubar. Steinbruch, Eisenmine und Holzfällerhütte produzieren
+Rohstoffe, die Käserei produziert Käse; weitere Produktionsketten sind noch nicht
+implementiert.
 
 Beim Start lädt eine begrenzte Warteschlange jeweils nur das Modell- und
 Kollisionspaar eines Gebäudes. Ein im Baumenü gewähltes, noch nicht angefordertes
@@ -246,8 +247,8 @@ liegt unter `assets/models/buildings/supply/housing/` und belegt 3×3 Rasterfeld
 Die im alten Mesh fehlenden Materialien werden beim Import eingebettet:
 `stone_mossy.png` für die Wände (Ersatz für die nicht enthaltene
 `hovel_small.bmp`) und `hovel_small_roof_2.alphatest.png` für das Strohdach.
-Nur Gebäude mit tatsächlicher Produktion (Steinbruch, Eisenmine und
-Holzfällerhütte) belegen je einen Bauern. Befestigungen, Vorratslager,
+Nur Gebäude mit tatsächlicher Produktion (Steinbruch, Eisenmine,
+Holzfällerhütte und Käserei) belegen je einen Bauern. Befestigungen, Vorratslager,
 Kornspeicher und Kaserne benötigen keine Bauern. Oben rechts steht beim
 Bauernsymbol **belegt/Kapazität**, etwa **4/8**. Man beginnt bei **0/0**; eine Unterkunft ist erst für Produktionsgebäude nötig.
 Abriss oder Zerstörung gibt den belegten Bauern frei; bei Unterkünften sinkt die
@@ -280,6 +281,25 @@ Bestände gelten pro Spieler und Spielteilnahme. Ein wiederholter Beitritt zum b
 aktiven Spiel setzt sie nicht zurück; beim Verlassen werden sie mit der Teilnahme
 entfernt. Ein neuer Beitritt beginnt wieder ohne Lager und Bestand; die Gabe gibt es erst
 beim Bau des ersten Lagers dieser neuen Teilnahme.
+
+### Käserei mit Kuhweide
+
+Die **Käserei** (`farm_dairy.glb`, Symbol Zeile 3/Spalte 11) steht im
+Versorgungsmenü. Ihr 8×8-Felder-Grundstück (16×16 m) umfasst Stall und
+umzäunte Weide; der gesamte Bereich ist für andere Gebäude und Bodennavigation
+reserviert. Das originale Stallmesh bleibt unverändert. Drei texturierte Kühe
+(`meshes/units/animals/cow.glb`) laufen innerhalb der Weide zu zufälligen Zielen,
+halten zwischendurch an und verwenden Idle-/Gehanimationen auf dem vorhandenen
+Skelett. Sie sind dekorativ und nicht auswählbar. Rotation dreht Stall, Zaun
+und Kühe gemeinsam; Abriss entfernt auch die Tiere. Da kein eigenständiges
+Zaunmodell vorlag, verwendet der erzeugte Holzzaun die vorhandene
+`beams_mossy.png`-Textur. Import: `python3 game/import-dairy.py`.
+
+Die Käserei benötigt **einen Bauern** und erzeugt **1 Käse je 3 Sekunden**.
+Ein Transportbauer bringt ihn über die normalen Wege zum eigenen Kornspeicher;
+Vorratslager nehmen keinen Käse an. Je Kornspeicher passen bis zu 24 Käseeinheiten.
+Ohne erreichbaren Platz wartet der Transport; Abriss und Neubau eines Kornspeichers
+lösen eine erneute Wegsuche aus. Test: `npm --prefix game/web run test:dairy`.
 
 ### Physisches Lager und Produktion
 

@@ -1,7 +1,8 @@
 use crate::*;
 use stronghold_map::BuildingKind;
 
-pub(crate) const BUILD_MENU: [BuildingKind; 11] = [
+pub(crate) const BUILD_MENU: [BuildingKind; 12] = [
+    BuildingKind::DairyFarm,
     BuildingKind::Housing,
     BuildingKind::Barracks,
     BuildingKind::Stockpile,

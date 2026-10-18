@@ -323,9 +323,9 @@ const DEFINITIONS: [Definition; 58] = [
         category: "supply",
         scene: "models/buildings/supply/dairy_farm/mesh.glb#Scene0",
         collision: "models/buildings/supply/dairy_farm/collision.glb#Mesh0/Primitive0",
-        min: [17.0714111328125, 0.0, -445.1261291503906],
-        max: [589.9729614257812, 385.4123840332031, 0.489715576171875],
-        grid: [3, 2],
+        min: [-496.4778137207031, 0.0, -722.3182067871094],
+        max: [1103.5221862792969, 500.0, 877.6817932128906],
+        grid: [8, 8],
     },
     Definition {
         name: "wheat_farm",

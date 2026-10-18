@@ -268,7 +268,7 @@ combat approach and removal for every newly imported supply kind.
 ### Peasant capacity
 
 `housing` imports `hovel_small.glb` on a 3×3-cell plot and adds four peasant
-places. Only actual resource producers (quarry, iron mine and saw pit) occupy one
+places. Only actual resource producers (quarry, iron mine, saw pit and dairy farm) occupy one
 place each. Fortifications, storage, granaries and barracks employ no peasants.
 Participants start at 0/0; housing itself needs no worker or resources.
 Shared `population::Population` derives used/capacity from surviving owned
@@ -308,8 +308,7 @@ gets 5 apples, bread, cheese and meat. Further granaries/rebuilds are empty;
 demolition deletes their food, and leaving clears the gift marker. Existing table
 schemas and construction balances are unchanged. Native and browser snapshots
 sum only owned granary food in the active game into the seven-resource display;
-all players can see replicated physical food stacks. Food production/consumption
-is not enabled by this change. `npm --prefix game/web run test:food` checks gifts,
+all players can see replicated physical food stacks. The dairy farm produces cheese; other food production and consumption are not yet enabled. `npm --prefix game/web run test:food` checks gifts,
 ownership, observer replication, demolition, repeated joins and browser snapshots.
 
 Additive `warehouse_stock`, `producer`, `worker` and private `logistics_player` tables
@@ -406,3 +405,15 @@ can still hit after their shooter dies, and are removed when their owner leaves.
 `npm --prefix game/web run test:ranged` covers recruitment, range stops, stationary
 defense, elevated firing, isolated wall targets, obstruction, building attacks,
 point-blank projectile damage, cancellation, browser snapshots and cleanup.
+
+### Dairy farm
+
+`dairy_farm` is a one-peasant producer of cheese (commodity ID 5), one item per
+3 seconds. Its 16×16 m logical plot and collision reserve the original barn plus
+the cow paddock. The common worker pathing delivers cheese only to owned
+`granary_stock` rows, capped at 24 cheese per granary; partial final pickups fill
+remaining space exactly. Construction materials retain their existing warehouse
+routing and balances. Storage removal clears worker destinations for both storage
+kinds, allowing rerouting to replacements. No table schema changes are required.
+`npm --prefix game/web run test:dairy` checks workforce, plot occupancy, production,
+physical delivery, capacity, observer/browser replication and demolition.

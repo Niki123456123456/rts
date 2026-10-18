@@ -7,6 +7,7 @@ pub const CARRY_CAPACITY: u32 = 5;
 pub const PRODUCTION_SECONDS: u32 = 3;
 pub const PRODUCTION_BUFFER: u32 = 20;
 pub const STARTING_FOOD_AMOUNT: u32 = 5;
+pub const FOOD_CAPACITY_PER_KIND: u32 = 24;
 
 #[derive(Clone, Copy, Debug)]
 pub struct FoodVisual {
@@ -44,6 +45,7 @@ pub enum Commodity {
     Wood = 0,
     Stone = 1,
     Iron = 2,
+    Cheese = 5,
 }
 impl Commodity {
     pub fn from_u8(value: u8) -> Option<Self> {
@@ -51,6 +53,7 @@ impl Commodity {
             0 => Some(Self::Wood),
             1 => Some(Self::Stone),
             2 => Some(Self::Iron),
+            5 => Some(Self::Cheese),
             _ => None,
         }
     }
@@ -59,6 +62,7 @@ impl Commodity {
             Self::Wood => 20,
             Self::Stone => 54,
             Self::Iron => 96,
+            Self::Cheese => FOOD_CAPACITY_PER_KIND,
         }
     }
 }
@@ -68,6 +72,7 @@ impl BuildingKind {
             Self::SawPit => Some(Commodity::Wood),
             Self::Quarry => Some(Commodity::Stone),
             Self::IronMine => Some(Commodity::Iron),
+            Self::DairyFarm => Some(Commodity::Cheese),
             _ => None,
         }
     }
@@ -80,6 +85,9 @@ pub fn storage_cells(stock: [u32; 3]) -> u64 {
         .sum()
 }
 pub fn can_store(mut stock: [u32; 3], resource: Commodity, amount: u32) -> bool {
+    if resource == Commodity::Cheese {
+        return false;
+    }
     let Some(sum) = stock[resource as usize].checked_add(amount) else {
         return false;
     };
@@ -157,6 +165,7 @@ pub fn stock_visuals(stock: [u32; 3]) -> Vec<StockVisual> {
                         });
                     }
                 }
+                Commodity::Cheese => unreachable!("Food is stored in granaries"),
             }
             amount -= count;
             cell += 1;
@@ -203,5 +212,6 @@ mod tests {
         assert_eq!(storage_cells([20; 3]), 3);
         assert!(!can_store([480, 0, 0], Commodity::Stone, 1));
         assert!(!can_store([u32::MAX, 0, 0], Commodity::Wood, 1));
+        assert!(!can_store([0; 3], Commodity::Cheese, 1));
     }
 }

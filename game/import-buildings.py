@@ -123,6 +123,9 @@ def main():
             else:
                 minimum, maximum = bounds(visual)
                 collision = box_collision(minimum, maximum)
+            if 'collision_bounds' in item:
+                minimum, maximum = item['collision_bounds']
+                collision = box_collision(minimum, maximum)
             (folder / 'mesh.glb').write_bytes(pack(visual, tail))
             (folder / 'collision.glb').write_bytes(collision)
         definitions.append('    Definition { name: %s, label: %s, category: %s, scene: %s, collision: %s, min: %s, max: %s, grid: %s },' % (

@@ -44,7 +44,10 @@ mod tests {
         for kind in BuildingKind::ALL {
             let expected = u32::from(matches!(
                 kind,
-                BuildingKind::Quarry | BuildingKind::IronMine | BuildingKind::SawPit
+                BuildingKind::Quarry
+                    | BuildingKind::IronMine
+                    | BuildingKind::SawPit
+                    | BuildingKind::DairyFarm
             ));
             assert_eq!(kind.peasant_cost(), expected, "{}", kind.name());
             assert_eq!(

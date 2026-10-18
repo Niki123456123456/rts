@@ -37,6 +37,7 @@ impl WarehouseStock {
             Commodity::Wood => self.wood += n,
             Commodity::Stone => self.stone += n,
             Commodity::Iron => self.iron += n,
+            Commodity::Cheese => unreachable!("Food belongs in granaries"),
         }
     }
 }
@@ -132,6 +133,90 @@ fn debit_stone_stock(
         }
     }
     Ok(())
+}
+fn storage_targets(
+    ctx: &ReducerContext,
+    u: &ArmyUnit,
+    resource: Commodity,
+    amount: u32,
+) -> Vec<Building> {
+    let ids: Vec<_> = if resource == Commodity::Cheese {
+        ctx.db
+            .granary_stock()
+            .game_id()
+            .filter(u.game_id)
+            .filter(|s| {
+                s.owner == u.owner
+                    && s.cheese
+                        .checked_add(amount)
+                        .is_some_and(|n| n <= economy::FOOD_CAPACITY_PER_KIND)
+            })
+            .map(|s| s.building_id)
+            .collect()
+    } else {
+        own_warehouses(ctx, u.game_id, u.owner)
+            .into_iter()
+            .filter(|s| economy::can_store(s.amounts(), resource, amount))
+            .map(|s| s.building_id)
+            .collect()
+    };
+    let mut buildings = ids
+        .into_iter()
+        .filter_map(|id| ctx.db.building().id().find(id))
+        .collect::<Vec<_>>();
+    buildings.sort_by(|a, b| {
+        map::distance((u.x, u.z), (a.x, a.z))
+            .total_cmp(&map::distance((u.x, u.z), (b.x, b.z)))
+            .then(a.id.cmp(&b.id))
+    });
+    buildings
+}
+fn deliver_resource(
+    ctx: &ReducerContext,
+    u: &ArmyUnit,
+    id: u64,
+    resource: Commodity,
+    amount: u32,
+) -> bool {
+    if resource == Commodity::Cheese {
+        let Some(mut stock) = ctx.db.granary_stock().building_id().find(id).filter(|s| {
+            s.owner == u.owner
+                && s.game_id == u.game_id
+                && s.cheese
+                    .checked_add(amount)
+                    .is_some_and(|n| n <= economy::FOOD_CAPACITY_PER_KIND)
+        }) else {
+            return false;
+        };
+        stock.cheese += amount;
+        ctx.db.granary_stock().building_id().update(stock);
+    } else {
+        let Some(mut stock) = ctx
+            .db
+            .warehouse_stock()
+            .building_id()
+            .find(id)
+            .filter(|s| economy::can_store(s.amounts(), resource, amount))
+        else {
+            return false;
+        };
+        stock.add(resource, amount);
+        ctx.db.warehouse_stock().building_id().update(stock);
+        let mut balance = ctx
+            .db
+            .player_resources()
+            .connection_id()
+            .find(u.owner)
+            .unwrap();
+        match resource {
+            Commodity::Wood => balance.wood += amount,
+            Commodity::Stone => balance.stone += amount,
+            Commodity::Iron => balance.iron += amount,
+            Commodity::Cheese => unreachable!(),
+        }
+        ctx.db.player_resources().connection_id().update(balance);
+    }
+    true
 }
 fn access_route(
     ctx: &ReducerContext,
@@ -303,7 +388,8 @@ fn register_logistics_building(ctx: &ReducerContext, b: &Building) -> Result<(),
     Ok(())
 }
 fn remove_logistics_building(ctx: &ReducerContext, id: u64) {
-    ctx.db.granary_stock().building_id().delete(id);
+    let removed_food_storage = ctx.db.granary_stock().building_id().delete(id);
+    let removed_material_storage = ctx.db.warehouse_stock().building_id().find(id).is_some();
     if let Some(stock) = ctx.db.warehouse_stock().building_id().find(id) {
         if let Some(b) = ctx.db.building().id().find(id) {
             if let Some(mut r) = ctx.db.player_resources().connection_id().find(b.owner) {
@@ -314,6 +400,8 @@ fn remove_logistics_building(ctx: &ReducerContext, id: u64) {
             }
         }
         ctx.db.warehouse_stock().building_id().delete(id);
+    }
+    if removed_food_storage || removed_material_storage {
         for mut worker in ctx
             .db
             .worker()
@@ -391,45 +479,14 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
                     map::distance((u.x, u.z), building_shape(ctx, b).closest((u.x, u.z))) <= 1.2
                 });
             if let Some(b) = delivered {
-                if let Some(mut stock) = ctx
-                    .db
-                    .warehouse_stock()
-                    .building_id()
-                    .find(b.id)
-                    .filter(|s| economy::can_store(s.amounts(), resource, w.cargo))
-                {
-                    stock.add(resource, w.cargo);
-                    ctx.db.warehouse_stock().building_id().update(stock);
-                    let mut balance = ctx
-                        .db
-                        .player_resources()
-                        .connection_id()
-                        .find(u.owner)
-                        .unwrap();
-                    match resource {
-                        Commodity::Wood => balance.wood += w.cargo,
-                        Commodity::Stone => balance.stone += w.cargo,
-                        Commodity::Iron => balance.iron += w.cargo,
-                    };
-                    ctx.db.player_resources().connection_id().update(balance);
+                if deliver_resource(ctx, &u, b.id, resource, w.cargo) {
                     w.cargo = 0;
                     w.warehouse = None;
                     w.phase = 1;
                 }
             }
             if w.cargo > 0 {
-                let mut warehouses = own_warehouses(ctx, u.game_id, u.owner);
-                warehouses.sort_by(|a, b| {
-                    let a = ctx.db.building().id().find(a.building_id).unwrap();
-                    let b = ctx.db.building().id().find(b.building_id).unwrap();
-                    map::distance((u.x, u.z), (a.x, a.z))
-                        .total_cmp(&map::distance((u.x, u.z), (b.x, b.z)))
-                });
-                for stock in warehouses
-                    .into_iter()
-                    .filter(|s| economy::can_store(s.amounts(), resource, w.cargo))
-                {
-                    let b = ctx.db.building().id().find(stock.building_id).unwrap();
+                for b in storage_targets(ctx, &u, resource, w.cargo) {
                     if route_worker(ctx, &mut u, &b) {
                         w.warehouse = Some(b.id);
                         w.phase = 2;
@@ -455,11 +512,23 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
             .filter(|p| p.buffer > 0)
         {
             let amount = p.buffer.min(economy::CARRY_CAPACITY);
-            for stock in own_warehouses(ctx, u.game_id, u.owner)
-                .into_iter()
-                .filter(|s| economy::can_store(s.amounts(), resource, amount))
-            {
-                let target = ctx.db.building().id().find(stock.building_id).unwrap();
+            let minimum = if resource == Commodity::Cheese {
+                1
+            } else {
+                amount
+            };
+            for target in storage_targets(ctx, &u, resource, minimum) {
+                let amount = if resource == Commodity::Cheese {
+                    let stock = ctx
+                        .db
+                        .granary_stock()
+                        .building_id()
+                        .find(target.id)
+                        .unwrap();
+                    amount.min(economy::FOOD_CAPACITY_PER_KIND.saturating_sub(stock.cheese))
+                } else {
+                    amount
+                };
                 if route_worker(ctx, &mut u, &target) {
                     p.buffer -= amount;
                     ctx.db.producer().building_id().update(p);
