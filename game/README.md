@@ -330,5 +330,11 @@ zurück. Ist die Stelle inzwischen belegt, wählen sie einen freien Platz danebe
 Ein neuer Bewegungs-, Dach- oder Angriffsbefehl ersetzt den bisherigen Auftrag.
 Manuell befohlene Gruppenangriffe enden nach dem letzten erreichbaren Gegner;
 die überlebenden Angreifer bleiben am Kampfplatz. Transportbauern nehmen nicht
-an diesen Kämpfen teil. Nahkämpfer können keine Gegner auf unerreichbaren Dächern
-angreifen; vom eigenen Dach können sie über Luke und Tür zum Bodengegner laufen.
+an diesen Kämpfen teil. Gegen Besatzungen auf Mauern und Türmen laufen Angreifer
+zu einer erreichbaren Turmtür und gelangen über die Luke auf das verbundene Dach-
+und Mauernetz – auch bei feindlichen Befestigungen. Freie Angriffsplätze werden
+auf dem gesamten verbundenen Netz reserviert, sodass ein volles Mauerstück über
+Nachbarstücke angegriffen werden kann. Nahkampf funktioniert auch über die Grenze
+zweier Mauerstücke. Verteidiger greifen zurück an und kehren danach auf ihren
+ursprünglichen Dachplatz zurück. Fehlender Zugang oder voller Platz wird in der
+Vorschau rot angezeigt; es gibt keine Treffer vom Boden durch die Mauer hindurch.

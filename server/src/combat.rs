@@ -72,13 +72,14 @@ fn melee_contact(ctx: &ReducerContext, u: &ArmyUnit, v: &ArmyUnit) -> bool {
     if on_ground(ctx, u) && on_ground(ctx, v) {
         map::segment_clear((u.x, u.z), (v.x, v.z), &obstacles(ctx, u.game_id))
     } else {
-        // Melee never crosses storeys or passes through tower walls.
-        ctx.db
-            .tower_occupant()
-            .unit_id()
-            .find(u.id)
-            .zip(ctx.db.tower_occupant().unit_id().find(v.id))
-            .is_some_and(|(a, b)| a.building_id == b.building_id)
+        let pieces = combat_roof_pieces(ctx, u.game_id);
+        let (Some(a), Some(b)) = (combat_surface(ctx, u), combat_surface(ctx, v)) else {
+            return false;
+        };
+        map::walls::surface_component(a.id, &pieces)
+            .iter()
+            .any(|p| p.id == b.id)
+            && map::walls::surface_contact((u.x, u.y, u.z), (v.x, v.y, v.z), &pieces)
     }
 }
 fn unit_combat_facing(ctx: &ReducerContext, u: &ArmyUnit) -> Option<(f32, f32)> {
@@ -107,6 +108,16 @@ fn combat_pose(ctx: &ReducerContext, u: &ArmyUnit) {
     }
 }
 fn begin_engagement(ctx: &ReducerContext, u: &ArmyUnit, target: &ArmyUnit, automatic: bool) {
+    ctx.db.combat_surface_home().unit_id().delete(u.id);
+    if automatic && !on_ground(ctx, u) {
+        if let Some(o) = ctx.db.tower_occupant().unit_id().find(u.id) {
+            ctx.db.combat_surface_home().insert(CombatSurfaceHome {
+                unit_id: u.id,
+                building_id: o.building_id,
+                slot: o.slot,
+            });
+        }
+    }
     ctx.db.unit_order().unit_id().delete(u.id);
     ctx.db.unit_engagement().unit_id().delete(u.id);
     ctx.db.unit_engagement().insert(UnitEngagement {
@@ -122,7 +133,7 @@ fn begin_engagement(ctx: &ReducerContext, u: &ArmyUnit, target: &ArmyUnit, autom
 }
 fn approach_enemy(ctx: &ReducerContext, u: &mut ArmyUnit, target: &ArmyUnit) -> bool {
     if !on_ground(ctx, target) {
-        return false;
+        return approach_surface_enemy(ctx, u, target);
     }
     let Ok(start) = depart_tower(ctx, u) else {
         return false;
@@ -165,6 +176,44 @@ fn approach_enemy(ctx: &ReducerContext, u: &mut ArmyUnit, target: &ArmyUnit) -> 
     false
 }
 fn return_from_combat(ctx: &ReducerContext, u: &mut ArmyUnit, e: &UnitEngagement) {
+    if let Some(home) = ctx.db.combat_surface_home().unit_id().find(u.id) {
+        if let Some(piece) = combat_roof_pieces(ctx, u.game_id)
+            .into_iter()
+            .find(|p| p.id == home.building_id)
+        {
+            let slot = if !slot_reserved(ctx, piece.id, home.slot, u.id) {
+                home.slot as usize
+            } else {
+                let Some(slot) = piece
+                    .roof()
+                    .sorted_slots((e.home_x, e.home_z))
+                    .into_iter()
+                    .find(|slot| !slot_reserved(ctx, piece.id, *slot as u8, u.id))
+                else {
+                    return;
+                };
+                slot
+            };
+            let goal = piece.roof().slot(slot);
+            if (u.y - piece.roof().roof_y() - roof::UNIT_CENTER_HEIGHT).abs() < 0.1
+                && map::distance((u.x, u.z), goal) < 0.1
+            {
+                ctx.db.unit_engagement().unit_id().delete(u.id);
+                ctx.db.combat_surface_home().unit_id().delete(u.id);
+                combat_pose(ctx, u);
+                return;
+            }
+            combat_surface_move(ctx, u, piece, slot);
+            return;
+        }
+        ctx.db.combat_surface_home().unit_id().delete(u.id);
+    }
+    if ctx.db.tower_travel().unit_id().find(u.id).is_some() {
+        return;
+    }
+    let Ok(start) = depart_tower(ctx, u) else {
+        return;
+    };
     let obs = obstacles(ctx, u.game_id);
     let peers = ctx
         .db
@@ -186,7 +235,7 @@ fn return_from_combat(ctx: &ReducerContext, u: &mut ArmyUnit, e: &UnitEngagement
     if ctx.db.unit_order().unit_id().find(u.id).is_none()
         || map::distance((u.target_x, u.target_z), home) > 0.2
     {
-        if let Some(path) = map::shortest_path((u.x, u.z), home, &obs) {
+        if let Some(path) = map::shortest_path(start, home, &obs) {
             u.target_x = home.0;
             u.target_z = home.1;
             save_order(ctx, u, None, path);
@@ -199,6 +248,7 @@ fn kill_combat_unit(ctx: &ReducerContext, id: u64) {
     clear_tower(ctx, id);
     ctx.db.unit_order().unit_id().delete(id);
     ctx.db.unit_engagement().unit_id().delete(id);
+    ctx.db.combat_surface_home().unit_id().delete(id);
     ctx.db.unit_profile().unit_id().delete(id);
     ctx.db.army_unit().id().delete(id);
 }
@@ -212,16 +262,12 @@ pub fn attack_units(
     let units = owned_units(ctx, &player, unit_ids)?;
     let target = valid_enemy(ctx, &units[0], target_unit_id)
         .ok_or("Choose an enemy combat unit in your game.")?;
-    if !on_ground(ctx, &target) && !units.iter().any(|u| melee_contact(ctx, u, &target)) {
-        return Err("The enemy is on an unreachable roof.".into());
-    }
     let mut accepted = 0;
     let group = combat_group(ctx, &target);
     for mut u in units {
         let Some(enemy) = group
             .iter()
             .filter_map(|id| valid_enemy(ctx, &u, *id))
-            .filter(|v| on_ground(ctx, v) || melee_contact(ctx, &u, v))
             .min_by(|a, b| {
                 let score = |v: &ArmyUnit| {
                     map::distance((u.x, u.z), (v.x, v.z))
@@ -270,7 +316,6 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
                 .find(u.id)
                 .is_some_and(|o| o.attack_building.is_none() || !o.waypoints.is_empty())
             || ctx.db.tower_travel().unit_id().find(u.id).is_some()
-            || !on_ground(ctx, u)
         {
             continue;
         }
@@ -279,8 +324,8 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             .filter(|v| {
                 v.game_id == u.game_id
                     && v.owner != u.owner
-                    && on_ground(ctx, v)
-                    && map::distance((u.x, u.z), (v.x, v.z)) <= melee::SENSE_RADIUS
+                    && (on_ground(ctx, u) || (!on_ground(ctx, v) && (v.y - u.y).abs() < 0.6))
+                    && map::distance((u.x, u.z), (v.x, v.z)).hypot(u.y - v.y) <= melee::SENSE_RADIUS
             })
             .collect::<Vec<_>>();
         near.sort_by(|a, b| {
@@ -288,14 +333,16 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
         });
         for enemy in near {
             let mut copy = u.clone();
+            let previous_order = ctx.db.unit_order().unit_id().find(u.id);
+            begin_engagement(ctx, u, enemy, true);
             if melee_contact(ctx, u, enemy) || approach_enemy(ctx, &mut copy, enemy) {
-                // Preserve the route just computed, while remembering the original home.
-                let order = ctx.db.unit_order().unit_id().find(u.id);
-                begin_engagement(ctx, u, enemy, true);
-                if let Some(order) = order {
-                    ctx.db.unit_order().insert(order);
-                }
                 break;
+            }
+            ctx.db.unit_engagement().unit_id().delete(u.id);
+            ctx.db.combat_surface_home().unit_id().delete(u.id);
+            if let Some(order) = previous_order {
+                ctx.db.unit_order().unit_id().delete(u.id);
+                ctx.db.unit_order().insert(order);
             }
         }
     }
@@ -310,13 +357,20 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             continue;
         }
         let eligible = |v: &ArmyUnit| {
-            (on_ground(ctx, v) || melee_contact(ctx, &u, v))
-                && (!e.automatic
-                    || (map::distance((e.home_x, e.home_z), (v.x, v.z)) <= melee::PURSUIT_RADIUS
-                        && map::distance((e.home_x, e.home_z), (u.x, u.z))
-                            <= melee::PURSUIT_RADIUS))
+            !e.automatic
+                || (map::distance((e.home_x, e.home_z), (v.x, v.z)) <= melee::PURSUIT_RADIUS
+                    && map::distance((e.home_x, e.home_z), (u.x, u.z)) <= melee::PURSUIT_RADIUS)
         };
-        let current = valid_enemy(ctx, &u, e.target).filter(|v| eligible(v));
+        let current = e
+            .enemies
+            .iter()
+            .filter_map(|id| valid_enemy(ctx, &u, *id))
+            .filter(|v| eligible(v) && melee_contact(ctx, &u, v))
+            .min_by(|a, b| {
+                map::distance((u.x, u.z), (a.x, a.z))
+                    .total_cmp(&map::distance((u.x, u.z), (b.x, b.z)))
+            })
+            .or_else(|| valid_enemy(ctx, &u, e.target).filter(|v| eligible(v)));
         let target = if current.is_some() {
             current
         } else {
@@ -343,6 +397,13 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
                 })
         };
         let Some(enemy) = target else {
+            if on_ground(ctx, &u)
+                && (u.y - terrain_height(u.x, u.z) - roof::UNIT_CENTER_HEIGHT).abs() < 0.1
+            {
+                clear_tower(ctx, u.id);
+            } else if combat_surface(ctx, &u).is_some() {
+                ctx.db.tower_travel().unit_id().delete(u.id);
+            }
             stop_unit(ctx, u.clone());
             combat_pose(ctx, &u);
             if e.automatic {
@@ -362,6 +423,7 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
             ctx.db.unit_order().unit_id().delete(u.id);
         }
         if melee_contact(ctx, &u, &enemy) {
+            ctx.db.tower_travel().unit_id().delete(u.id);
             if ctx.db.unit_order().unit_id().find(u.id).is_some() {
                 stop_unit(ctx, u.clone());
             }
@@ -373,8 +435,9 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
                 .map(|p| if p.kind == "lord" { 0.22 } else { 0.14 })
                 .unwrap_or(0.);
             *damage.entry(enemy.id).or_default() += dps * melee::SCAN_SECONDS;
-        } else if ctx.db.unit_order().unit_id().find(u.id).is_none()
-            || map::distance((u.target_x, u.target_z), (enemy.x, enemy.z)) > melee::MELEE_RANGE
+        } else if ctx.db.tower_travel().unit_id().find(u.id).is_none()
+            && (ctx.db.unit_order().unit_id().find(u.id).is_none()
+                || map::distance((u.target_x, u.target_z), (enemy.x, enemy.z)) > melee::MELEE_RANGE)
         {
             approach_enemy(ctx, &mut u, &enemy);
         }

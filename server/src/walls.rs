@@ -48,6 +48,14 @@ fn wall_entry_plan(
     b: &Building,
 ) -> Option<(u64, u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
     let pieces = roof_pieces(ctx, b.game_id, b.owner);
+    wall_entry_plan_using(ctx, u, b, &pieces)
+}
+fn wall_entry_plan_using(
+    ctx: &ReducerContext,
+    u: &ArmyUnit,
+    b: &Building,
+    pieces: &[map::walls::RoofPiece],
+) -> Option<(u64, u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
     let obstacles = obstacles(ctx, b.game_id);
     let mut best = None;
     for (id, route) in map::walls::tower_routes(b.id, &pieces) {
@@ -90,7 +98,7 @@ fn depart_wall(
     b: &Building,
     mut o: TowerOccupant,
 ) -> Result<map::Point, String> {
-    let pieces = roof_pieces(ctx, b.game_id, b.owner);
+    let pieces = combat_roof_pieces(ctx, b.game_id);
     let current = pieces
         .iter()
         .find(|p| p.kind == map::BuildingKind::StoneWall && p.roof().roof_contains((u.x, u.z)));
@@ -116,8 +124,17 @@ fn depart_wall(
         let mut modes = vec![4; points.len()];
         let hatch = tower.hatch();
         if (wall_level(b) - tower.roof_y() - roof::UNIT_CENTER_HEIGHT).abs() > 0.01 {
-            points.push((hatch.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1));
-            modes.push(5);
+            let roof_y = tower.roof_y() + roof::UNIT_CENTER_HEIGHT;
+            let last = points.len() - 1;
+            if last > 0 {
+                let portal = points[last - 1];
+                points[last].1 = roof_y;
+                points.insert(last, (portal.0, roof_y, portal.2));
+                modes.insert(last, 5);
+            } else {
+                points.push((hatch.0, roof_y, hatch.1));
+                modes.push(5);
+            }
         }
         let landing = tower.door(door);
         points.push((landing.0, access.y + roof::UNIT_CENTER_HEIGHT, landing.1));

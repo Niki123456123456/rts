@@ -82,9 +82,10 @@ try {
  const tower=Array.from(b.db.building.iter()).find(v=>v.owner.toHexString()===b.connectionId.toHexString()&&v.kind==='tower_stairwell')!;
  assert.equal(await call(b,'moveToRoof',[[roofLord.id],tower.id,20,20]),'Committed');
  await until(()=>unit(roofLord.id)!.y>3&&activity(roofLord.id)===0,'Defender reaches roof');
- assert.equal(await call(a,'attackUnits',[[groundLord.id],roofLord.id]),'Failed','Ground melee cannot strike an unreachable roof');
- assert.equal(unit(roofLord.id)!.health,1);
- console.log('PASS: roof height and unreachable-target validation.');
+ assert.equal(await call(a,'attackUnits',[[groundLord.id],roofLord.id]),'Committed','Enemy roof reached through its doorway');
+ await until(()=>activity(groundLord.id)===2&&activity(roofLord.id)===2,'Roof combat after ascent');
+ assert(unit(groundLord.id)!.y>3,'No melee damage from below');
+ console.log('PASS: roof combat uses the tower entry.');
  assert.equal(await call(a,'leaveGame'),'Committed');assert.equal(await call(b,'leaveGame'),'Committed');
  strongholdNetwork.send(JSON.stringify({action:'connect',uri,database}));const snapshot=()=>JSON.parse(strongholdNetwork.snapshot());await until(()=>snapshot().ready,'Browser ready');
  strongholdNetwork.send(JSON.stringify({action:'create',title:`Melee bridge ${Date.now()}`}));await until(()=>snapshot().units.length===1,'Browser lord');

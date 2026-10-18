@@ -209,3 +209,99 @@ mod tests {
         );
     }
 }
+
+/// Physical roof network; combat routes can cross ownership boundaries.
+pub fn surface_component(start: u64, pieces: &[RoofPiece]) -> Vec<RoofPiece> {
+    let mut ids = std::collections::HashSet::from([start]);
+    let mut queue = vec![start];
+    let mut index = 0;
+    while index < queue.len() {
+        if let Some(a) = pieces.iter().find(|p| p.id == queue[index]) {
+            for b in pieces {
+                if !ids.contains(&b.id)
+                    && (a.kind == BuildingKind::StoneWall || b.kind == BuildingKind::StoneWall)
+                    && portal(*a, *b).is_some()
+                {
+                    ids.insert(b.id);
+                    queue.push(b.id);
+                }
+            }
+        }
+        index += 1;
+    }
+    pieces
+        .iter()
+        .filter(|p| ids.contains(&p.id))
+        .copied()
+        .collect()
+}
+/// A short melee segment must have floor beneath it throughout, never cross a gap.
+pub fn surface_supports(p: (f32, f32, f32), pieces: &[RoofPiece]) -> bool {
+    pieces.iter().any(|piece| {
+        let roof = piece.roof();
+        let (x, z) = roof.local((p.0, p.2));
+        (p.1 - roof.roof_y() - crate::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
+            && x.abs() <= roof.profile.half_x + crate::CLEARANCE
+            && z.abs() <= roof.profile.half_z + crate::CLEARANCE
+    })
+}
+pub fn surface_contact(a: (f32, f32, f32), b: (f32, f32, f32), pieces: &[RoofPiece]) -> bool {
+    (0..=12).all(|i| {
+        let f = i as f32 / 12.;
+        surface_supports(
+            (
+                a.0 + (b.0 - a.0) * f,
+                a.1 + (b.1 - a.1) * f,
+                a.2 + (b.2 - a.2) * f,
+            ),
+            pieces,
+        )
+    })
+}
+
+#[cfg(test)]
+mod combat_surface_tests {
+    use super::*;
+    #[test]
+    fn melee_crosses_joined_wall_pieces_but_never_a_gap_or_another_floor() {
+        let pieces = [
+            RoofPiece {
+                id: 1,
+                kind: BuildingKind::TowerStairwell,
+                x: 0.,
+                y: 0.,
+                z: 0.,
+                rotation: 0,
+            },
+            RoofPiece {
+                id: 2,
+                kind: BuildingKind::StoneWall,
+                x: 3.,
+                y: 0.,
+                z: 1.,
+                rotation: 0,
+            },
+            RoofPiece {
+                id: 3,
+                kind: BuildingKind::StoneWall,
+                x: 5.,
+                y: 0.,
+                z: 1.,
+                rotation: 0,
+            },
+        ];
+        assert_eq!(surface_component(3, &pieces).len(), 3);
+        let y = WALL_HEIGHT + crate::building_roof::UNIT_CENTER_HEIGHT;
+        assert!(surface_contact((3.7, y, 1.), (4.3, y, 1.), &pieces));
+        assert!(!surface_contact((3.7, 0.75, 1.), (4.3, y, 1.), &pieces));
+        assert!(!surface_contact(
+            (1.7, y, 1.),
+            (4.3, y, 1.),
+            &pieces[..1]
+                .iter()
+                .chain(pieces[2..].iter())
+                .copied()
+                .collect::<Vec<_>>()
+        ));
+    }
+}

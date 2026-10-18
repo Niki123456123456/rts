@@ -337,7 +337,7 @@ the client's hover preview. Groups use 3 m spatial links and never cross ownersh
 Idle units acquire reachable enemies within 8 m; automatic pursuit has a 16 m leash.
 Approach slots use standard ground navigation, collision avoidance and reservations;
 rear rows wait for melee space. Contact needs range <=1.05 m, height difference
-<=0.6 m and unobstructed ground line of sight (or the same roof). Damage is resolved
+<=0.6 m and unobstructed ground line of sight (or a continuously supported segment on connected roofs). Damage is resolved
 simultaneously each scan: lord 0.22/s, armed peasant 0.14/s. A unit at zero health
 releases its movement, profile, engagement and roof reservations. Workers do not
 participate. Returning units find a free location near their original position.
@@ -347,3 +347,13 @@ The scan scheduler stops when no opposing armies or return orders remain.
 combat/animation states, damage, deaths, ownership, automatic acquisition and return,
 moving targets, pursuit limits, explicit-command override, wall navigation and
 browser attack actions against a disposable local database.
+
+Wall/tower garrisons are reachable for unit combat through enemy tower doors and
+hatches. `combat_surfaces.rs` reserves free slots on the physical roof component,
+plans surface movement and remembers roof homes in the additive private
+`combat_surface_home` table. Movement stops at melee contact, respects peers and
+does not bypass missing floor. Roof normalization leaves active combat positions
+alone. Client hover validates network access/capacity and shows an error for
+isolated or inaccessible walls. Normal roof-movement ownership checks stay intact.
+`test:wall-combat` covers ascent, counterattack, returning to the original wall
+slot, full garrisons and disconnected fortifications.

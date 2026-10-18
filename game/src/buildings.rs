@@ -11,6 +11,7 @@ pub(crate) struct BuildingInteraction {
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
+    attack_error: Option<(Vec2, &'static str)>,
     enemy_group_preview: Vec<Vec3>,
     roof_hover: Option<(Vec2, usize, usize)>,
     roof_preview: Vec<Vec3>,
@@ -316,6 +317,7 @@ pub(crate) fn building_input(
 ) {
     state.consumed = false;
     state.attack_hover = None;
+    state.attack_error = None;
     state.enemy_group_preview.clear();
     state.roof_hover = None;
     state.roof_error = None;
@@ -487,6 +489,22 @@ pub(crate) fn building_input(
     // Combat units take precedence over the roof or ground underneath them.
     if let Ok((_, target)) = units.get(*entity) {
         if !target.owned && !target.worker && !selected.0.is_empty() {
+            let attack_ids = units
+                .iter()
+                .filter(|(e, u)| u.owned && selected.0.contains(e))
+                .map(|(_, u)| u.id)
+                .collect::<Vec<_>>();
+            if !enemy_surface_accessible(&multiplayer.snapshot, &attack_ids, target.id) {
+                state.attack_error = Some((
+                    cursor,
+                    "Kein freier oder erreichbarer Turmzugang zur Besatzung",
+                ));
+                if mouse.just_pressed(MouseButton::Right) {
+                    state.consumed = true;
+                    *drag = default();
+                }
+                return;
+            }
             let members = multiplayer
                 .snapshot
                 .units
@@ -713,6 +731,22 @@ pub(crate) fn attack_hover_ui(
     interaction: Res<BuildingInteraction>,
     selected: Res<SelectedUnits>,
 ) -> Result {
+    if let Some((cursor, error)) = interaction.attack_error {
+        let ctx = contexts.ctx_mut()?;
+        let scale = window.scale_factor() / ctx.pixels_per_point();
+        ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("unit_attack_error"),
+        ))
+        .text(
+            egui::pos2(cursor.x * scale + 20., cursor.y * scale - 25.),
+            egui::Align2::LEFT_BOTTOM,
+            error,
+            egui::FontId::proportional(16.),
+            egui::Color32::LIGHT_RED,
+        );
+        return Ok(());
+    }
     if let Some((cursor, count, capacity)) = interaction.roof_hover {
         let ctx = contexts.ctx_mut()?;
         let cursor = cursor * (window.scale_factor() / ctx.pixels_per_point());
@@ -1193,5 +1227,133 @@ mod tests {
                 assert!(min.y.abs() < 0.0001 && max.y > 0.0);
             }
         }
+    }
+}
+
+// Physical connectivity and capacity are shared with the server. Dynamic movement
+// can still change a free doorway between preview and execution.
+fn enemy_surface_accessible(snapshot: &network::Snapshot, selected: &[u64], target: u64) -> bool {
+    let Some(enemy) = snapshot.units.iter().find(|u| u.id == target) else {
+        return false;
+    };
+    let pieces = snapshot
+        .buildings
+        .iter()
+        .filter_map(|b| {
+            Some(map::walls::RoofPiece {
+                id: b.id,
+                kind: BuildingKind::from_name(&b.kind).filter(|k| k.roof_profile().is_some())?,
+                x: b.x,
+                y: b.y,
+                z: b.z,
+                rotation: b.rotation,
+            })
+        })
+        .collect::<Vec<_>>();
+    let surface = pieces.iter().find(|p| {
+        p.roof().roof_contains((enemy.x, enemy.z))
+            && (enemy.y - p.roof().roof_y() - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.2
+    });
+    let Some(surface) = surface else { return true };
+    let component = map::walls::surface_component(surface.id, &pieces);
+    let has_space = component.iter().any(|p| {
+        (0..p.roof().capacity()).any(|slot| {
+            !snapshot.roof_occupants.iter().any(|o| {
+                !selected.contains(&o.unit_id)
+                    && ((o.building_id == p.id && o.slot as usize == slot)
+                        || (o.next_building == Some(p.id) && o.next_slot as usize == slot))
+            })
+        })
+    });
+    if !has_space {
+        return false;
+    }
+    let actors = snapshot
+        .units
+        .iter()
+        .filter(|u| selected.contains(&u.id))
+        .collect::<Vec<_>>();
+    if actors.iter().any(|u| {
+        component.iter().any(|p| {
+            p.roof().roof_contains((u.x, u.z))
+                && (u.y - p.roof().roof_y() - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.2
+        })
+    }) {
+        return true;
+    }
+    let obstacles = snapshot
+        .buildings
+        .iter()
+        .filter_map(|b| {
+            Some(BuildingKind::from_name(&b.kind)?.rotated_obstacle(b.x, b.z, b.rotation))
+        })
+        .collect::<Vec<_>>();
+    component
+        .iter()
+        .filter(|p| p.kind != BuildingKind::StoneWall)
+        .any(|p| {
+            let roof = p.roof();
+            (0..roof.door_count()).any(|door| {
+                let entrance = roof.door(door);
+                map::free(entrance, &obstacles)
+                    && actors.iter().any(|u| {
+                        let from = pieces.iter().find(|p| {
+                            p.roof().roof_contains((u.x, u.z))
+                                && (u.y
+                                    - p.roof().roof_y()
+                                    - map::building_roof::UNIT_CENTER_HEIGHT)
+                                    .abs()
+                                    < 0.2
+                        });
+                        if let Some(from) = from {
+                            map::walls::surface_component(from.id, &pieces)
+                                .iter()
+                                .filter(|p| p.kind != BuildingKind::StoneWall)
+                                .any(|p| {
+                                    let roof = p.roof();
+                                    (0..roof.door_count()).any(|door| {
+                                        map::free(roof.door(door), &obstacles)
+                                            && map::shortest_path(
+                                                roof.door(door),
+                                                entrance,
+                                                &obstacles,
+                                            )
+                                            .is_some()
+                                    })
+                                })
+                        } else {
+                            map::shortest_path((u.x, u.z), entrance, &obstacles).is_some()
+                        }
+                    })
+            })
+        })
+}
+
+#[cfg(test)]
+mod combat_preview_tests {
+    use super::*;
+    #[test]
+    fn wall_attack_preview_requires_an_entry_or_an_attacker_already_on_the_network() {
+        let mut snapshot:network::Snapshot=serde_json::from_value(serde_json::json!({
+            "connected":true,"ready":true,"games":[],
+            "units":[
+                {"id":"101","number":1,"color":0,"health":1.,"owned":true,"x":0.,"y":0.75,"z":0.},
+                {"id":"202","number":1,"color":1,"health":1.,"owned":false,"x":17.,"y":7.413,"z":19.}],
+            "buildings":[
+                {"id":"1","kind":"tower_stairwell","color":1,"health":1.,"owned":false,"x":10.,"y":0.,"z":18.},
+                {"id":"2","kind":"stone_wall","color":1,"health":1.,"owned":false,"x":13.,"y":0.,"z":19.},
+                {"id":"3","kind":"stone_wall","color":1,"health":1.,"owned":false,"x":15.,"y":0.,"z":19.},
+                {"id":"4","kind":"stone_wall","color":1,"health":1.,"owned":false,"x":17.,"y":0.,"z":19.}],
+            "roof_occupants":[{"unit_id":"202","building_id":"4","slot":4,"next_building":null,"next_slot":0}]
+        })).unwrap();
+        assert!(enemy_surface_accessible(&snapshot, &[101], 202));
+        snapshot.buildings.retain(|b| b.id != 1);
+        assert!(!enemy_surface_accessible(&snapshot, &[101], 202));
+        snapshot.units[0].x = 13.;
+        snapshot.units[0].z = 19.;
+        snapshot.units[0].y = 7.413;
+        assert!(enemy_surface_accessible(&snapshot, &[101], 202));
+        snapshot.buildings.retain(|b| b.id != 3);
+        assert!(!enemy_surface_accessible(&snapshot, &[101], 202));
     }
 }

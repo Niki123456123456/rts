@@ -316,6 +316,7 @@ pub fn leave_game(ctx: &ReducerContext) {
                 ctx.db.worker().unit_id().delete(unit.id);
                 ctx.db.unit_profile().unit_id().delete(unit.id);
                 ctx.db.unit_engagement().unit_id().delete(unit.id);
+                ctx.db.combat_surface_home().unit_id().delete(unit.id);
                 clear_tower(ctx, unit.id);
                 ctx.db.unit_order().unit_id().delete(unit.id);
                 ctx.db.army_unit().id().delete(unit.id);
@@ -662,6 +663,7 @@ fn owned_units(
                 return Err("Transportbauern sind nicht steuerbar.".into());
             }
             ctx.db.unit_engagement().unit_id().delete(u.id);
+            ctx.db.combat_surface_home().unit_id().delete(u.id);
             Ok(u)
         })
         .collect()
@@ -1078,3 +1080,5 @@ include!("logistics.rs");
 include!("units.rs");
 
 include!("combat.rs");
+
+include!("combat_surfaces.rs");

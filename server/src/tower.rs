@@ -110,12 +110,21 @@ fn entry_plan(
 }
 fn start_roof_entry(
     ctx: &ReducerContext,
-    mut u: ArmyUnit,
+    u: ArmyUnit,
     b: &Building,
     slot: u8,
 ) -> Result<(), String> {
-    let (access, door, approach, mut points, mut modes) =
-        entry_plan(ctx, &u, b, slot).ok_or("No tower door is reachable.")?;
+    let plan = entry_plan(ctx, &u, b, slot).ok_or("No tower door is reachable.")?;
+    start_roof_entry_using(ctx, u, b, slot, plan)
+}
+fn start_roof_entry_using(
+    ctx: &ReducerContext,
+    mut u: ArmyUnit,
+    b: &Building,
+    slot: u8,
+    plan: (u64, u8, Vec<map::Point>, Vec<Position>, Vec<u8>),
+) -> Result<(), String> {
+    let (access, door, approach, mut points, mut modes) = plan;
     let tower = tower_geometry(ctx, b);
     if is_wall(b) {
         let goal = tower.slot(slot as usize);
@@ -395,6 +404,9 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
         let points = travel_points(&t);
         let mut budget = UNIT_SPEED * TICK_SECONDS;
         while (t.next as usize) < points.len() && budget > 0.00001 {
+            if unit_combat_facing(ctx, &u).is_some() {
+                break;
+            }
             let i = t.next as usize;
             let goal = points[i];
             let start = (u.x, u.y, u.z);
@@ -441,12 +453,32 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
                 } else {
                     (budget / length).min(1.)
                 };
-                u.x += (goal.0 - u.x) * fraction;
-                u.z += (goal.2 - u.z) * fraction;
-                u.y += (goal.1 - u.y) * fraction;
+                if ctx.db.unit_engagement().unit_id().find(u.id).is_some() {
+                    let peers = combat_roof_peers(ctx, &u);
+                    let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &peers, &[]);
+                    let y = u.y + (goal.1 - u.y) * fraction;
+                    if !map::walls::surface_supports(
+                        (p.0, y, p.1),
+                        &combat_roof_pieces(ctx, u.game_id),
+                    ) {
+                        break;
+                    }
+                    u.x = p.0;
+                    u.z = p.1;
+                    u.y = y;
+                } else {
+                    u.x += (goal.0 - u.x) * fraction;
+                    u.z += (goal.2 - u.z) * fraction;
+                    u.y += (goal.1 - u.y) * fraction;
+                }
             } else {
                 let obstacles = tower.roof_obstacles();
-                let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &[], &obstacles);
+                let peers = if ctx.db.unit_engagement().unit_id().find(u.id).is_some() {
+                    combat_roof_peers(ctx, &u)
+                } else {
+                    Vec::new()
+                };
+                let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &peers, &obstacles);
                 u.x = p.0;
                 u.z = p.1;
                 u.y = tower.roof_y() + roof::UNIT_CENTER_HEIGHT;
@@ -479,7 +511,12 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
                 if let Some((id, slot)) = pending {
                     ctx.db.army_unit().id().update(u.clone());
                     if let Some(next) = ctx.db.building().id().find(id) {
-                        if start_roof_entry(ctx, u.clone(), &next, slot).is_ok() {
+                        let entered = if ctx.db.unit_engagement().unit_id().find(u.id).is_some() {
+                            combat_entry(ctx, u.clone(), &next, slot)
+                        } else {
+                            start_roof_entry(ctx, u.clone(), &next, slot).is_ok()
+                        };
+                        if entered {
                             continue;
                         }
                     }
@@ -540,6 +577,9 @@ fn evacuate_tower(ctx: &ReducerContext, building_id: u64) {
 // Refit saved occupants and destinations when a roof layout changes on deployment.
 fn normalize_roof_slots(ctx: &ReducerContext) {
     for o in ctx.db.tower_occupant().iter().collect::<Vec<_>>() {
+        if ctx.db.unit_engagement().unit_id().find(o.unit_id).is_some() {
+            continue;
+        }
         let Some(b) = ctx.db.building().id().find(o.building_id) else {
             continue;
         };
