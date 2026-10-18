@@ -9,7 +9,7 @@ pub(crate) struct BuildingInteraction {
     pub selected: Option<u64>,
     pub consumed: bool,
     attack_hover: Option<Vec2>,
-    roof_hover: Option<(Vec2, usize)>,
+    roof_hover: Option<(Vec2, usize, usize)>,
     roof_preview: Vec<Vec3>,
 }
 #[derive(Component)]
@@ -369,7 +369,7 @@ pub(crate) fn building_input(
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((building, _, point)) = target {
             let id = building.id;
-            let tower = stair_geometry(building);
+            let tower = roof_geometry(building).unwrap();
             let free = tower
                 .sorted_slots((point.x, point.z))
                 .into_iter()
@@ -382,7 +382,7 @@ pub(crate) fn building_input(
                 })
                 .take(roof_units.len())
                 .collect::<Vec<_>>();
-            state.roof_hover = Some((cursor, free.len()));
+            state.roof_hover = Some((cursor, free.len(), tower.capacity()));
             state.roof_preview = free
                 .iter()
                 .map(|slot| {
@@ -449,19 +449,20 @@ pub(crate) fn building_input(
     }
 }
 
-fn stair_geometry(building: &network::Building) -> map::stair_tower::StairTower {
-    map::stair_tower::StairTower {
-        x: building.x,
-        y: building.y,
-        z: building.z,
-        rotation: building.rotation,
-    }
+fn roof_geometry(building: &network::Building) -> Option<map::building_roof::BuildingRoof> {
+    map::building_roof::BuildingRoof::new(
+        BuildingKind::from_name(&building.kind)?,
+        building.x,
+        building.y,
+        building.z,
+        building.rotation,
+    )
 }
 fn roof_ray_hit(ray: Ray3d, building: &network::Building) -> Option<(f32, Vec3)> {
-    if !map::stair_tower::is_stair_tower(&building.kind) || ray.direction.y.abs() < 0.00001 {
+    if ray.direction.y.abs() < 0.00001 {
         return None;
     }
-    let tower = stair_geometry(building);
+    let tower = roof_geometry(building)?;
     let distance = (tower.roof_y() - ray.origin.y) / ray.direction.y;
     if distance < 0.0 {
         return None;
@@ -487,7 +488,7 @@ pub(crate) fn attack_hover_ui(
     interaction: Res<BuildingInteraction>,
     selected: Res<SelectedUnits>,
 ) -> Result {
-    if let Some((cursor, count)) = interaction.roof_hover {
+    if let Some((cursor, count, capacity)) = interaction.roof_hover {
         let ctx = contexts.ctx_mut()?;
         let cursor = cursor * (window.scale_factor() / ctx.pixels_per_point());
         let painter = ctx.layer_painter(egui::LayerId::new(
@@ -500,10 +501,7 @@ pub(crate) fn attack_hover_ui(
             if count == 0 {
                 "Dach voll".into()
             } else {
-                format!(
-                    "Rechtsklick: {count} aufs Dach (max. {})",
-                    map::stair_tower::ROOF_CAPACITY
-                )
+                format!("Rechtsklick: {count} aufs Dach (max. {capacity})")
             },
             egui::FontId::proportional(16.),
             egui::Color32::LIGHT_GREEN,
@@ -664,25 +662,33 @@ mod tests {
 
     #[test]
     fn roof_click_uses_elevated_plane_for_every_tower_rotation() {
-        for rotation in 0..4 {
-            let row = network::Building {
-                id: 1,
-                kind: "tower_stairwell".into(),
-                rotation,
-                color: 0,
-                health: 1.,
-                owned: true,
-                x: 10.,
-                y: 3.,
-                z: 20.,
-            };
-            let ray = Ray3d::new(Vec3::new(10., 20., 20.), Dir3::NEG_Y);
-            let (_, point) = roof_ray_hit(ray, &row).unwrap();
-            assert!((point.y - 9.663).abs() < 0.001);
-            assert!(
-                roof_ray_hit(Ray3d::new(Vec3::new(15., 20., 20.), Dir3::NEG_Y), &row).is_none()
-            );
-            assert!(roof_ray_hit(Ray3d::new(Vec3::new(10., 20., 20.), Dir3::X), &row).is_none());
+        for (kind, height) in [
+            ("tower_stairwell", 6.663),
+            ("tower_lookout", 15.513),
+            ("tower_square", 14.399),
+        ] {
+            for rotation in 0..4 {
+                let row = network::Building {
+                    id: 1,
+                    kind: kind.into(),
+                    rotation,
+                    color: 0,
+                    health: 1.,
+                    owned: true,
+                    x: 10.,
+                    y: 3.,
+                    z: 20.,
+                };
+                let ray = Ray3d::new(Vec3::new(10., 20., 20.), Dir3::NEG_Y);
+                let (_, point) = roof_ray_hit(ray, &row).unwrap();
+                assert!((point.y - (height + 3.)).abs() < 0.001);
+                assert!(
+                    roof_ray_hit(Ray3d::new(Vec3::new(15., 20., 20.), Dir3::NEG_Y), &row).is_none()
+                );
+                assert!(
+                    roof_ray_hit(Ray3d::new(Vec3::new(10., 20., 20.), Dir3::X), &row).is_none()
+                );
+            }
         }
     }
 
@@ -776,12 +782,26 @@ mod tests {
             let assets = app.world().resource::<AssetServer>();
             let visual: Handle<WorldAsset> = assets.load(kind.scene());
             let collision: Handle<Mesh> = assets.load(kind.collision());
+            let roof_mesh: Option<Handle<Mesh>> = kind.roof_profile().map(|_| {
+                let primitive = if kind == BuildingKind::TowerSquare {
+                    1
+                } else {
+                    0
+                };
+                assets.load(format!(
+                    "{}#Mesh0/Primitive{primitive}",
+                    kind.scene().split('#').next().unwrap()
+                ))
+            });
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
                 app.update();
                 let assets = app.world().resource::<AssetServer>();
                 if assets.is_loaded_with_dependencies(visual.id())
                     && assets.is_loaded_with_dependencies(collision.id())
+                    && roof_mesh
+                        .as_ref()
+                        .is_none_or(|mesh| assets.is_loaded_with_dependencies(mesh.id()))
                 {
                     break;
                 }
@@ -801,6 +821,29 @@ mod tests {
                 "Building walls must not use the DDS data alpha as transparency"
             );
             let meshes = app.world().resource::<Assets<Mesh>>();
+            if let Some(handle) = roof_mesh {
+                let profile = kind.roof_profile().unwrap();
+                let floor = meshes
+                    .get(&handle)
+                    .unwrap()
+                    .attribute(Mesh::ATTRIBUTE_POSITION)
+                    .unwrap()
+                    .as_float3()
+                    .unwrap();
+                let mut floor_min = Vec3::splat(f32::INFINITY);
+                let mut floor_max = Vec3::splat(f32::NEG_INFINITY);
+                for p in floor {
+                    let p = model_transform(kind).transform_point(Vec3::from(*p));
+                    assert!(
+                        (p.y - profile.height).abs() < 0.006,
+                        "{kind:?}: roof height must match the visual mesh"
+                    );
+                    floor_min = floor_min.min(p);
+                    floor_max = floor_max.max(p);
+                }
+                assert!(profile.half_x <= (-floor_min.x).min(floor_max.x));
+                assert!(profile.half_z <= (-floor_min.z).min(floor_max.z));
+            }
             let positions = meshes
                 .get(&collision)
                 .unwrap()

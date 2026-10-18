@@ -8,7 +8,8 @@
     "check": "tsc --noEmit",
     "test:multiplayer": "tsx src/multiplayer.test.ts",
     "test:buildings": "tsx src/buildings.test.ts",
-    "test:roof": "tsx src/roof.test.ts"
+    "test:roof": "tsx src/roof.test.ts",
+    "test:roof-types": "tsx src/roof-types.test.ts"
   },
   "dependencies": {
     "@clockworklabs/spacetimedb-sdk": "1.1.0"

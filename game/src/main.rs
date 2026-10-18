@@ -913,7 +913,10 @@ fn selection_ui(
                                 .text(format!("Health {:.0}%", building.health * 100.0))
                                 .desired_width(160.0),
                         );
-                        if stronghold_map::stair_tower::is_stair_tower(&building.kind) {
+                        if let Some(profile) =
+                            stronghold_map::BuildingKind::from_name(&building.kind)
+                                .and_then(stronghold_map::BuildingKind::roof_profile)
+                        {
                             let count = multiplayer
                                 .snapshot
                                 .roof_occupants
@@ -923,9 +926,10 @@ fn selection_ui(
                                         || o.next_building == Some(building.id)
                                 })
                                 .count();
+                            let (columns, rows) = profile.dimensions();
                             ui.label(format!(
-                                "Dach: {count}/{} Plätze (5×5)",
-                                stronghold_map::stair_tower::ROOF_CAPACITY
+                                "Dach: {count}/{} Plätze ({columns}×{rows})",
+                                profile.capacity()
                             ))
                             .on_hover_text(
                                 "Einheiten auswählen und mit rechts auf das Dach klicken.",

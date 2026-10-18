@@ -150,23 +150,36 @@ that would overlap another unit or an existing destination.
 Clients cannot set damage, health or movement paths. The simulation timer stops when there are no active orders.
 
 `move_to_roof(unit_ids, building_id, x, z)` accepts owned units and a point on an
-owned stair tower's roof. The server reserves 25 distinct slots in a 5×5 grid;
+owned stair tower, lookout tower or square tower's roof. The server reserves
+slots at a fixed 0.7 m pitch, with 0.27 m clearance to roof edges: 5×5 (25) for
+stair/lookout towers and 8×8 (64) for square towers;
 excess units keep their orders. Incoming units and transfers reserve slots before
-moving. Existing slot IDs retain their positions on upgrades. Door and hatch
-coordinates in `shared/src/stair_tower.rs` follow building rotation. Units walk to
+moving. The original 5×5 slot IDs retain their positions on smaller roofs. On connection
+and simulation ticks, saved roof occupants and in-flight targets are refitted to
+the current layout. Door and hatch
+coordinates in `shared/src/building_roof.rs` follow building rotation. Units walk to
 an accessible door and teleport instantly to the hatch, then walk to their slots.
 Every traveler advances independently; there is no tower-wide queue or transfer
 limit. Roof arrivals may pass through one another while moving from the shared
-hatch; distinct reserved slots prevent stacking at rest. The roof uses the original
-closed mesh. Ground/attack orders walk to the hatch and teleport back to free ground
+hatch; distinct reserved slots prevent stacking at rest. Profiles in
+`BuildingKind::roof_profile()` define each model's roof height, bounds,
+hatch and door list; grid dimensions are derived from the bounds using a shared
+unit spacing. The roof uses the original mesh. Ground/attack
+orders walk to the hatch and teleport back to free ground
 at the door before executing their normal routes. Multiple arrivals/departures can
 teleport in the same server tick. Old in-flight stair routes are upgraded to teleports.
-A blocked door causes units to choose the other door. Removing a tower evacuates its occupants onto free ground. Leaving a game
+A blocked door causes units to choose another door when available; a blocked
+single entrance rejects the order. Removing a tower evacuates its occupants onto
+free ground. Leaving a game
 removes reservations and travel orders. The scheduler sleeps when both ground
 orders and tower travel orders are empty.
 
 Run `SPACETIMEDB_DATABASE=<test database> npm --prefix game/web run test:roof` against
 a disposable local server to verify capacity, door/hatch teleportation, concurrent transfers, 5×5 slot geometry, departure, rotated towers, multiplayer replication, transfers and cleanup.
+
+Run `npm --prefix game/web run test:roof-types` with the same database environment
+to verify model heights, all three tower types in four orientations, inter-tower
+transfers, blocked entrances and both additional models through the browser bridge.
 
 ## Development and checks
 

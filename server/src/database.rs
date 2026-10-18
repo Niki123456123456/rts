@@ -279,6 +279,14 @@ pub fn leave_game(ctx: &ReducerContext) {
     }
 }
 
+#[spacetimedb::reducer(client_connected)]
+pub fn connected(ctx: &ReducerContext) {
+    normalize_roof_slots(ctx);
+    if ctx.db.tower_travel().iter().next().is_some() {
+        start_tick(ctx);
+    }
+}
+
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnected(ctx: &ReducerContext) {
     leave_game(ctx);
@@ -404,6 +412,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
     if ctx.sender != ctx.identity() {
         return Err("Movement may only be run by the server scheduler.".into());
     }
+    normalize_roof_slots(ctx);
     // Upgrade any in-flight orders from the earlier movement implementation.
     for unit in ctx.db.army_unit().iter() {
         if (unit.x != unit.target_x || unit.z != unit.target_z)

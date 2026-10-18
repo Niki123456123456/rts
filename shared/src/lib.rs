@@ -5,7 +5,7 @@ pub const MODEL_CENTER: (f32, f32) = (308.07544, -313.6961);
 pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
-pub mod stair_tower;
+pub mod building_roof;
 pub use building_catalog::BuildingKind;
 
 pub const MAP_SIZE: f32 = 800.0;

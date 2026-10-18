@@ -1,12 +1,14 @@
-use map::stair_tower::{self as stair, Position, StairTower};
+use map::building_roof::{self as roof, BuildingRoof, Position};
 
-fn tower_geometry(ctx: &ReducerContext, b: &Building) -> StairTower {
-    StairTower {
-        x: b.x,
-        y: b.y,
-        z: b.z,
-        rotation: rotation(ctx, b.id),
-    }
+fn tower_geometry(ctx: &ReducerContext, b: &Building) -> BuildingRoof {
+    BuildingRoof::new(
+        map::BuildingKind::from_name(&b.kind).unwrap(),
+        b.x,
+        b.y,
+        b.z,
+        rotation(ctx, b.id),
+    )
+    .expect("Roof reservations only reference buildings with a roof profile")
 }
 fn clear_tower(ctx: &ReducerContext, id: u64) {
     ctx.db.tower_travel().unit_id().delete(id);
@@ -86,16 +88,16 @@ fn entry_plan(
 ) -> Option<(u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
     let tower = tower_geometry(ctx, b);
     let obstacles = obstacles(ctx, u.game_id);
-    (0..2)
+    (0..tower.door_count())
         .filter_map(|door| {
             let path = map::shortest_path((u.x, u.z), tower.door(door), &obstacles)?;
-            let hatch = tower.world(stair::HATCH_LANDING);
+            let hatch = tower.hatch();
             let cost = map::path_length((u.x, u.z), &path);
             Some((
                 cost,
                 door,
                 path,
-                vec![(hatch.0, tower.roof_y() + stair::UNIT_CENTER_HEIGHT, hatch.1)],
+                vec![(hatch.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1)],
                 vec![3],
             ))
         })
@@ -109,10 +111,10 @@ fn start_roof_entry(
     slot: u8,
 ) -> Result<(), String> {
     let (door, approach, mut points, mut modes) =
-        entry_plan(ctx, &u, b, slot).ok_or("Neither tower door is reachable.")?;
+        entry_plan(ctx, &u, b, slot).ok_or("No tower door is reachable.")?;
     let tower = tower_geometry(ctx, b);
     let roof = tower
-        .roof_path(tower.world(stair::HATCH_LANDING), tower.slot(slot as usize))
+        .roof_path(tower.hatch(), tower.slot(slot as usize))
         .ok_or("Roof destination is unreachable.")?;
     points.extend(roof);
     modes.resize(points.len(), 0);
@@ -134,7 +136,7 @@ fn start_roof_entry(
     Ok(())
 }
 
-/// A right click on an owned stair-tower roof reserves only the available slots.
+/// A right click on an owned walkable roof reserves only the available slots.
 #[spacetimedb::reducer]
 pub fn move_to_roof(
     ctx: &ReducerContext,
@@ -153,14 +155,15 @@ pub fn move_to_roof(
         .ok_or("Unknown tower.")?;
     if b.game_id != player.game_id
         || b.owner != player.connection_id
-        || !stair::is_stair_tower(&b.kind)
+        || !roof::supports_roof(&b.kind)
     {
-        return Err("Choose the roof of your own stair tower.".into());
+        return Err("Choose the roof of your own walkable tower.".into());
     }
     let tower = tower_geometry(ctx, &b);
     if !x.is_finite() || !z.is_finite() || !tower.roof_contains((x, z)) {
         return Err("Choose a point on the roof.".into());
     }
+    normalize_roof_slots(ctx);
     // Existing occupants retain their reservations; extra ground units keep their orders.
     units.sort_by_key(|u| (ctx.db.tower_occupant().unit_id().find(u.id).is_none(), u.id));
     let mut accepted = 0;
@@ -182,11 +185,7 @@ pub fn move_to_roof(
                         let end = t.modes.iter().rposition(|m| *m != 0).unwrap() + 1;
                         let mut points = points[..end].to_vec();
                         let mut modes = t.modes[..end].to_vec();
-                        points.extend(
-                            tower
-                                .roof_path(tower.world(stair::HATCH_LANDING), tower.slot(slot))
-                                .unwrap(),
-                        );
+                        points.extend(tower.roof_path(tower.hatch(), tower.slot(slot)).unwrap());
                         modes.resize(points.len(), 0);
                         let mut updated = t;
                         updated.path = points.into_iter().flat_map(|p| [p.0, p.1, p.2]).collect();
@@ -247,10 +246,7 @@ pub fn move_to_roof(
         accepted += 1;
     }
     if accepted == 0 {
-        return Err(format!(
-            "The roof is full ({} units).",
-            stair::ROOF_CAPACITY
-        ));
+        return Err(format!("The roof is full ({} units).", tower.capacity()));
     }
     start_tick(ctx);
     Ok(())
@@ -284,17 +280,16 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
         .ok_or("Tower no longer exists.")?;
     let tower = tower_geometry(ctx, &b);
     if !door_clear(ctx, &b, o.door) {
-        if !door_clear(ctx, &b, 1 - o.door) {
-            return Err("Both tower doors are blocked. Clear a doorway first.".into());
-        }
-        o.door = 1 - o.door;
+        o.door = (0..tower.door_count())
+            .find(|door| door_clear(ctx, &b, *door))
+            .ok_or("All tower doors are blocked. Clear a doorway first.")?;
     }
     let door = tower.door(o.door);
     let mut points = tower
-        .roof_path((u.x, u.z), tower.world(stair::HATCH_LANDING))
+        .roof_path((u.x, u.z), tower.hatch())
         .ok_or("Cannot reach the hatch.")?;
     let mut modes = vec![0; points.len()];
-    points.push((door.0, b.y + stair::UNIT_CENTER_HEIGHT, door.1));
+    points.push((door.0, b.y + roof::UNIT_CENTER_HEIGHT, door.1));
     modes.push(3);
     ctx.db.tower_occupant().unit_id().update(o);
     store_travel(ctx, u, b.id, points, modes, true, false);
@@ -347,12 +342,12 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
             let target = if t.leaving {
                 tower.door(o.door)
             } else {
-                tower.world(stair::HATCH_LANDING)
+                tower.hatch()
             };
             let y = if t.leaving {
-                b.y + stair::UNIT_CENTER_HEIGHT
+                b.y + roof::UNIT_CENTER_HEIGHT
             } else {
-                tower.roof_y() + stair::UNIT_CENTER_HEIGHT
+                tower.roof_y() + roof::UNIT_CENTER_HEIGHT
             };
             let mut points = vec![(target.0, y, target.1)];
             let mut modes = vec![3];
@@ -395,7 +390,7 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
                     };
                     u.x = landing.0;
                     u.z = landing.1;
-                    u.y = terrain_height(u.x, u.z) + stair::UNIT_CENTER_HEIGHT;
+                    u.y = terrain_height(u.x, u.z) + roof::UNIT_CENTER_HEIGHT;
                     if let Some(order) = ctx.db.unit_order().unit_id().find(u.id) {
                         if let Some(path) =
                             map::shortest_path(landing, (u.target_x, u.target_z), &obstacles)
@@ -419,7 +414,7 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
             let p = move_separated((u.x, u.z), (goal.0, goal.2), budget, &[], &obstacles);
             u.x = p.0;
             u.z = p.1;
-            u.y = tower.roof_y() + stair::UNIT_CENTER_HEIGHT;
+            u.y = tower.roof_y() + roof::UNIT_CENTER_HEIGHT;
             let travelled =
                 ((u.x - start.0).powi(2) + (u.y - start.1).powi(2) + (u.z - start.2).powi(2))
                     .sqrt();
@@ -499,8 +494,46 @@ fn evacuate_tower(ctx: &ReducerContext, building_id: u64) {
                 u.x = p.0;
                 u.z = p.1;
             }
-            u.y = terrain_height(u.x, u.z) + stair::UNIT_CENTER_HEIGHT;
+            u.y = terrain_height(u.x, u.z) + roof::UNIT_CENTER_HEIGHT;
             stop_unit(ctx, u);
+        }
+    }
+}
+
+// Refit saved occupants and destinations when a roof layout changes on deployment.
+fn normalize_roof_slots(ctx: &ReducerContext) {
+    for o in ctx.db.tower_occupant().iter().collect::<Vec<_>>() {
+        let Some(b) = ctx.db.building().id().find(o.building_id) else {
+            continue;
+        };
+        let Some(u) = ctx.db.army_unit().id().find(o.unit_id) else {
+            continue;
+        };
+        let tower = tower_geometry(ctx, &b);
+        let slot = if o.next_building == Some(b.id) {
+            o.next_slot
+        } else {
+            o.slot
+        };
+        let goal = tower.slot(slot as usize);
+        if let Some(mut t) = ctx.db.tower_travel().unit_id().find(u.id) {
+            if t.leaving {
+                continue;
+            }
+            let n = t.path.len();
+            if n >= 3 && map::distance((t.path[n - 3], t.path[n - 1]), goal) > 0.001 {
+                t.path[n - 3] = goal.0;
+                t.path[n - 2] = tower.roof_y() + roof::UNIT_CENTER_HEIGHT;
+                t.path[n - 1] = goal.1;
+                ctx.db.tower_travel().unit_id().update(t);
+            }
+        } else if ctx.db.unit_order().unit_id().find(u.id).is_none()
+            && map::distance((u.x, u.z), goal) > 0.001
+        {
+            if let Some(path) = tower.roof_path((u.x, u.z), goal) {
+                let modes = vec![0; path.len()];
+                store_travel(ctx, &u, b.id, path, modes, false, false);
+            }
         }
     }
 }
