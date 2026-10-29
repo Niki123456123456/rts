@@ -63,6 +63,7 @@ pub enum BuildingKind {
     FalconersPost,
     Treasury,
     Housing,
+    Keep,
 }
 struct Definition {
     name: &'static str,
@@ -74,7 +75,7 @@ struct Definition {
     max: [f32; 3],
     grid: [u16; 2],
 }
-const DEFINITIONS: [Definition; 58] = [
+const DEFINITIONS: [Definition; 59] = [
     Definition {
         name: "granary",
         label: "Kornspeicher",
@@ -683,9 +684,19 @@ const DEFINITIONS: [Definition; 58] = [
         max: [418.60150146484375, 378.88885498046875, -55.13133239746094],
         grid: [3, 3],
     },
+    Definition {
+        name: "keep",
+        label: "Bergfried",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/keep/mesh.glb#Scene0",
+        collision: "models/buildings/fortifications/keep/collision.glb#Mesh0/Primitive0",
+        min: [-800.0, 0.0, -800.0],
+        max: [800.0, 1300.0, 800.0],
+        grid: [10, 14],
+    },
 ];
 impl BuildingKind {
-    pub const ALL: [Self; 58] = [
+    pub const ALL: [Self; 59] = [
         Self::Granary,
         Self::Barracks,
         Self::Stockpile,
@@ -744,6 +755,7 @@ impl BuildingKind {
         Self::FalconersPost,
         Self::Treasury,
         Self::Housing,
+        Self::Keep,
     ];
     pub fn index(self) -> usize {
         self as usize
@@ -758,7 +770,14 @@ impl BuildingKind {
         DEFINITIONS[self.index()].label
     }
     pub fn category(self) -> &'static str {
-        DEFINITIONS[self.index()].category
+        if matches!(
+            self,
+            Self::Well | Self::Inn | Self::Apothecary | Self::GardenersHut
+        ) {
+            "services"
+        } else {
+            DEFINITIONS[self.index()].category
+        }
     }
     pub fn scene(self) -> &'static str {
         DEFINITIONS[self.index()].scene

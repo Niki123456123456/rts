@@ -13,6 +13,12 @@ pub struct Snapshot {
     #[serde(default)]
     pub buildings: Vec<Building>,
     #[serde(default)]
+    pub clearings: Vec<TerrainClearing>,
+    #[serde(default)]
+    pub keep_population: Vec<KeepPopulation>,
+    #[serde(default)]
+    pub settlement_needs: Vec<SettlementNeeds>,
+    #[serde(default)]
     pub roof_occupants: Vec<RoofOccupant>,
     #[serde(default)]
     pub resources: Option<Resources>,
@@ -141,6 +147,40 @@ pub struct Building {
 }
 
 #[derive(Clone, Deserialize)]
+pub struct SettlementNeeds {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub happiness: u32,
+    pub food: i32,
+    pub variety: i32,
+    pub housing: i32,
+    pub water: i32,
+    pub health: i32,
+    pub leisure: i32,
+    pub goods: i32,
+    pub employment: i32,
+    pub immigration_seconds: u32,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct KeepPopulation {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub arrived: u32,
+    pub seconds: u32,
+}
+
+#[derive(Clone, Deserialize, PartialEq)]
+pub struct TerrainClearing {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub x: f32,
+    pub z: f32,
+    pub half_x: f32,
+    pub half_z: f32,
+}
+
+#[derive(Clone, Deserialize)]
 pub struct RoofOccupant {
     #[serde(deserialize_with = "id")]
     pub unit_id: u64,
@@ -188,6 +228,14 @@ pub enum Action {
         game_id: u64,
     },
     Leave,
+    AssignPeasant {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+    },
+    UnassignPeasant {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+    },
     RecruitUnit {
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
@@ -443,6 +491,12 @@ mod backend {
                 let errors = self.status.clone();
                 conn.reducers
                     .on_attack_units(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_assign_peasant(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_unassign_peasant(move |ctx, _| record_status(&errors, ctx));
                 self.connection = Some(conn);
                 return Ok(());
             }
@@ -455,6 +509,10 @@ mod backend {
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
+                Action::AssignPeasant { building_id } => conn.reducers.assign_peasant(building_id),
+                Action::UnassignPeasant { building_id } => {
+                    conn.reducers.unassign_peasant(building_id)
+                }
                 Action::RecruitUnit { building_id, kind } => {
                     conn.reducers.recruit_unit(building_id, kind)
                 }
@@ -554,6 +612,9 @@ mod backend {
                             .subscribe([
                                 format!("SELECT * FROM army_unit WHERE game_id = {id}"),
                                 format!("SELECT * FROM building WHERE game_id = {id}"),
+                                format!("SELECT * FROM terrain_clearing WHERE game_id = {id}"),
+                                format!("SELECT * FROM keep_population WHERE game_id = {id}"),
+                                format!("SELECT * FROM settlement_needs WHERE game_id = {id}"),
                                 format!("SELECT * FROM building_rotation WHERE game_id = {id}"),
                                 format!("SELECT * FROM tower_occupant WHERE game_id = {id}"),
                                 format!("SELECT * FROM player_resources WHERE game_id = {id}"),
@@ -608,6 +669,36 @@ mod backend {
                     cheese: food[2],
                     meat: food[3],
                 });
+            snapshot.keep_population = conn
+                .db
+                .keep_population()
+                .iter()
+                .filter(|k| Some(k.game_id) == snapshot.game_id)
+                .map(|k| super::KeepPopulation {
+                    building_id: k.building_id,
+                    arrived: k.arrived,
+                    seconds: k.seconds,
+                })
+                .collect();
+            snapshot.settlement_needs = conn
+                .db
+                .settlement_needs()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| super::SettlementNeeds {
+                    building_id: n.building_id,
+                    happiness: n.happiness,
+                    food: n.food,
+                    variety: n.variety,
+                    housing: n.housing,
+                    water: n.water,
+                    health: n.health,
+                    leisure: n.leisure,
+                    goods: n.goods,
+                    employment: n.employment,
+                    immigration_seconds: n.immigration_seconds,
+                })
+                .collect();
             snapshot.warehouses = conn
                 .db
                 .warehouse_stock()
@@ -743,6 +834,20 @@ mod backend {
                     z: b.z,
                 })
                 .collect();
+            snapshot.clearings = conn
+                .db
+                .terrain_clearing()
+                .iter()
+                .filter(|c| Some(c.game_id) == snapshot.game_id)
+                .map(|c| super::TerrainClearing {
+                    id: c.id,
+                    x: c.x,
+                    z: c.z,
+                    half_x: c.half_x,
+                    half_z: c.half_z,
+                })
+                .collect();
+            snapshot.clearings.sort_by_key(|c| c.id);
             snapshot
         }
     }

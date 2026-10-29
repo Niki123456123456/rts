@@ -3,14 +3,17 @@
 mod buildings;
 mod combat_units;
 mod dairy;
+mod keep;
 mod logistics;
 mod menu_ui;
+mod minimap;
 #[cfg(not(target_arch = "wasm32"))]
 mod module_bindings;
 mod network;
 mod projectiles;
 mod resources;
 mod storage_models;
+mod terrain;
 mod unit_ui;
 use buildings::BuildingInteraction;
 
@@ -57,6 +60,8 @@ fn main() {
             Startup,
             (
                 setup,
+                terrain::setup,
+                keep::setup,
                 buildings::setup_buildings,
                 resources::setup_resource_ui,
                 unit_ui::setup,
@@ -70,6 +75,14 @@ fn main() {
                 sync_multiplayer,
                 buildings::load_building_models,
                 buildings::sync_buildings,
+                terrain::sync_clearings,
+                (
+                    keep::focus_home,
+                    keep::sync_camp,
+                    keep::animate_fire,
+                    keep::animate_citizens,
+                )
+                    .chain(),
                 logistics::load_storage_assets,
                 combat_units::load_combat_models,
                 combat_units::sync_combat_visuals,
@@ -100,6 +113,7 @@ fn main() {
                 resources::resource_ui,
                 combat_units::unit_health_ui,
                 selection_ui,
+                minimap::minimap_ui,
                 selection_rectangle_ui,
                 buildings::attack_hover_ui,
             )
@@ -164,7 +178,8 @@ impl SelectedUnits {
 }
 
 #[derive(Resource, Default)]
-struct SelectionPanel(Option<egui::Rect>);
+// Screen rectangles consumed by the action bar and the minimap overlay.
+struct SelectionPanel(Option<egui::Rect>, Option<egui::Rect>);
 
 #[derive(Resource, Default)]
 struct SelectionDrag {
@@ -218,39 +233,6 @@ fn setup(
             ..default()
         }),
     });
-    // Ground
-    commands.spawn((
-        Mesh3d(
-            meshes.add(
-                Plane3d::default()
-                    .mesh()
-                    .size(stronghold_map::MAP_SIZE, stronghold_map::MAP_SIZE),
-            ),
-        ),
-        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.5, 0.3))),
-        // Add `Ground` component to any entity you want the camera to treat as ground.
-        Ground,
-    ));
-    // Some "terrain"
-    let terrain_material = materials.add(Color::srgb(0.8, 0.7, 0.6));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(15.0, 1.0, 5.0))),
-        MeshMaterial3d(terrain_material.clone()),
-        Transform::from_xyz(15.0, 0.5, -5.0),
-        Ground,
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(10.0, 5.0, 15.0))),
-        MeshMaterial3d(terrain_material.clone()),
-        Transform::from_xyz(-15.0, 2.5, 0.0),
-        Ground,
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(12.5))),
-        MeshMaterial3d(terrain_material.clone()),
-        Transform::from_xyz(0.0, 0.0, -23.0),
-        Ground,
-    ));
     commands.insert_resource(UnitMaterials {
         invisible: materials.add(StandardMaterial {
             base_color: Color::NONE,
@@ -264,7 +246,7 @@ fn setup(
     // Light
     commands.spawn((
         DirectionalLight {
-            illuminance: 1000.0,
+            illuminance: 6000.0,
             shadow_maps_enabled: true,
             ..default()
         },
@@ -283,7 +265,7 @@ fn setup(
             // Increase min height (decrease max zoom)
             // height_min: 10.0,
             // Increase max height (decrease min zoom)
-            height_max: 50.0,
+            height_max: 140.0,
             bounds: Aabb2d::new(Vec2::ZERO, Vec2::splat(stronghold_map::MAP_LIMIT)),
             // Change the angle of the camera to 35 degrees
             min_angle: 35.0f32.to_radians(),
@@ -353,7 +335,9 @@ fn select_unit(
     let over_ui = contexts.ctx_mut().is_ok_and(|ctx| {
         let ui_position =
             egui::pos2(cursor.x, cursor.y) * (window.scale_factor() / ctx.pixels_per_point());
-        ctx.egui_wants_pointer_input() || panel.0.is_some_and(|rect| rect.contains(ui_position))
+        ctx.egui_wants_pointer_input()
+            || panel.0.is_some_and(|rect| rect.contains(ui_position))
+            || panel.1.is_some_and(|rect| rect.contains(ui_position))
     });
     let move_order = mouse.just_pressed(MouseButton::Right);
     if move_order {
@@ -458,7 +442,9 @@ fn movement_input(
     };
     let over_ui = contexts.ctx_mut().is_ok_and(|ctx| {
         let pos = egui::pos2(cursor.x, cursor.y) * (window.scale_factor() / ctx.pixels_per_point());
-        ctx.egui_wants_pointer_input() || panel.0.is_some_and(|rect| rect.contains(pos))
+        ctx.egui_wants_pointer_input()
+            || panel.0.is_some_and(|rect| rect.contains(pos))
+            || panel.1.is_some_and(|rect| rect.contains(pos))
     });
     if over_ui {
         // Releasing over a panel cancels the order.
@@ -885,7 +871,7 @@ fn selection_ui(
                 ui.separator();
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.;
-                    for category in ["fortifications", "supply", "military"] {
+                    for category in ["fortifications", "supply", "military", "services"] {
                         let active = building_interaction.category.unwrap_or("supply") == category;
                         if menu_ui::category_button(ui, menu_texture, category, active) {
                             building_interaction.category = Some(category);
@@ -988,10 +974,28 @@ fn selection_ui(
                                 .filter(|w| w.source_building == building.id)
                                 .map(|w| w.cargo)
                                 .sum();
-                            ui.label(format!(
-                                "{resource}: 1 je 3 s · Abholung: {} · Unterwegs: {cargo}",
-                                producer.buffer
-                            ));
+                            let staffed=multiplayer.snapshot.workers.iter().any(|w|w.source_building==building.id);
+                            ui.label(format!("{resource}: {} · Vorrat {} · Unterwegs {cargo}",if staffed {"besetzt"} else {"ohne Bauer"},producer.buffer));
+                            if building.owned {
+                                if staffed {
+                                    if ui.button("Bauer freigeben").on_hover_text("Der Bauer kehrt in den freien Vorrat am Lagerfeuer zurück.").clicked() {
+                                        multiplayer.send(Action::UnassignPeasant {building_id:building.id});
+                                    }
+                                } else {
+                                    let pool=resources::population(&multiplayer);
+                                    if ui.add_enabled(pool.capacity>pool.used,egui::Button::new("Bauer zuweisen"))
+                                        .on_hover_text("Einen freien Bauern vom Lagerfeuer zu diesem Arbeitsplatz schicken.").clicked() {
+                                        multiplayer.send(Action::AssignPeasant {building_id:building.id});
+                                    }
+                                }
+                            }
+                        }
+                        if building.kind == "keep" {
+                            if let Some(state) = multiplayer.snapshot.keep_population.iter().find(|k| k.building_id == building.id) {
+                                let jobs = resources::employed(&multiplayer,building.color);
+                                ui.label(format!("Lagerfeuer: {} suchen Arbeit", state.arrived.saturating_sub(jobs)));
+                                ui.label("Burgherr wählen · Rechtsklick auf Boden: Treppe hinunter");
+                            }
                         }
                         if let Some(profile) =
                             stronghold_map::BuildingKind::from_name(&building.kind)

@@ -8,6 +8,21 @@ const TICK_SECONDS: f32 = 0.05;
 const UNIT_SPEED: f32 = 3.0;
 use stronghold_map::{self as map, Obstacle, MAP_LIMIT};
 
+// Successful construction permanently clears trees for this game, including
+// after demolition or reconnect. Clients cannot request arbitrary clearings.
+#[spacetimedb::table(name = terrain_clearing, public)]
+pub struct TerrainClearing {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub game_id: u64,
+    pub x: f32,
+    pub z: f32,
+    pub half_x: f32,
+    pub half_z: f32,
+}
+
 #[spacetimedb::table(name = game, public)]
 pub struct Game {
     #[primary_key]
@@ -215,6 +230,7 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         }
         if player.game_id == game_id {
             ensure_resources(ctx, &player);
+            ensure_player_keep(ctx, &player)?;
             return Ok(());
         }
     }
@@ -293,6 +309,7 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         target_z: z,
     });
     register_combat_unit(ctx, &unit, map::units::UnitKind::Lord);
+    ensure_player_keep(ctx, &participant(ctx)?)?;
     Ok(())
 }
 
@@ -350,6 +367,10 @@ pub fn leave_game(ctx: &ReducerContext) {
             .connection_id()
             .delete(connection_id);
         ctx.db.player().connection_id().delete(connection_id);
+        ctx.db
+            .player_keep_spawn()
+            .connection_id()
+            .delete(connection_id);
     }
 }
 
@@ -381,6 +402,11 @@ pub fn connected(ctx: &ReducerContext) {
     start_production(ctx);
     start_combat_scan(ctx);
     normalize_roof_slots(ctx);
+    for player in ctx.db.participant().iter().collect::<Vec<_>>() {
+        if let Err(error) = ensure_player_keep(ctx, &player) {
+            spacetimedb::log::warn!("Cannot create starting keep: {error}");
+        }
+    }
     if ctx.db.tower_travel().iter().next().is_some() {
         start_tick(ctx);
     }
@@ -686,6 +712,12 @@ fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
         .map_or(0, |row| row.quarter_turns)
 }
 fn delete_building(ctx: &ReducerContext, building_id: u64) {
+    ctx.db.keep_population().building_id().delete(building_id);
+    ctx.db.settlement_needs().building_id().delete(building_id);
+    ctx.db
+        .settlement_progress()
+        .building_id()
+        .delete(building_id);
     remove_logistics_building(ctx, building_id);
     cancel_surface_routes_through(ctx, building_id);
     ctx.db.building_rotation().building_id().delete(building_id);
@@ -703,6 +735,7 @@ fn obstacles(ctx: &ReducerContext, game_id: u64) -> Vec<Obstacle> {
         .game_id()
         .filter(game_id)
         .map(|b| building_shape(ctx, &b))
+        .chain(map::terrain::obstacles())
         .collect()
 }
 fn save_order(ctx: &ReducerContext, u: &ArmyUnit, attack: Option<u64>, path: Vec<map::Point>) {
@@ -953,19 +986,15 @@ fn place_building_for(
         return Err("Rotation must be 0, 1, 2 or 3 quarter turns.".into());
     }
     let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
-    let population = map::population::Population::from_buildings(
-        ctx.db
+    if kind == map::BuildingKind::Keep
+        && ctx
+            .db
             .building()
-            .game_id()
-            .filter(player.game_id)
-            .filter(|b| b.owner == player.connection_id)
-            .filter_map(|b| map::BuildingKind::from_name(&b.kind)),
-    );
-    if !population.can_build(kind, 1) {
-        return Err(format!(
-            "Nicht genug freie Bauern ({}/{} belegt). Eine Unterkunft bietet Platz für vier Bauern.",
-            population.used, population.capacity
-        ));
+            .owner()
+            .filter(player.connection_id)
+            .any(|b| b.kind == "keep")
+    {
+        return Err("Jeder Spieler kann einen Bergfried bauen.".into());
     }
     let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
     let shape = kind.rotated_build_footprint(x, z, quarter_turns);
@@ -1013,13 +1042,8 @@ fn place_building_for(
     {
         return Err("Units are standing in the construction area.".into());
     }
-    let y = terrain_height(x, z);
-    if kind
-        .rotated_build_samples(x, z, quarter_turns)
-        .any(|(px, pz)| (terrain_height(px, pz) - y).abs() > 0.05)
-    {
-        return Err("Place the building on level ground.".into());
-    }
+    let y = map::terrain::construction_height(kind, x, z, quarter_turns).ok_or(
+        "Unpassendes Gelände: Holzfäller brauchen Wald, Steinbrüche Stein und Eisenminen Erz. Normale Gebäude dürfen auf Land, aber nicht auf Fels oder Wasser stehen.")?;
     let mut resources = ensure_resources(ctx, &player);
     let cost = kind.stone_cost();
     resources.stone = resources.stone.checked_sub(cost).ok_or_else(|| {
@@ -1049,6 +1073,18 @@ fn place_building_for(
         quarter_turns,
     });
     register_logistics_building(ctx, &placed)?;
+    if kind == map::BuildingKind::Keep {
+        register_keep(ctx, &placed);
+    }
+    let cleared = map::terrain::clearing_shape(kind, x, z, quarter_turns);
+    ctx.db.terrain_clearing().insert(TerrainClearing {
+        id: 0,
+        game_id: player.game_id,
+        x,
+        z,
+        half_x: cleared.half_x,
+        half_z: cleared.half_z,
+    });
     Ok(())
 }
 
@@ -1123,3 +1159,5 @@ include!("combat.rs");
 include!("combat_surfaces.rs");
 
 include!("ranged.rs");
+include!("keep.rs");
+include!("settlement.rs");

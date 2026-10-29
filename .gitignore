@@ -11,3 +11,5 @@
 /game/web/dist/
 
 /shared/target/
+/runtime/
+/server/.spacetime-local/

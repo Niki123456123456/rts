@@ -1,13 +1,14 @@
 use crate::*;
 use stronghold_map::BuildingKind;
 
-pub(crate) const BUILD_MENU: [BuildingKind; 13] = [
+pub(crate) const BUILD_MENU: [BuildingKind; 18] = [
     BuildingKind::AppleFarm,
     BuildingKind::DairyFarm,
     BuildingKind::Housing,
     BuildingKind::Barracks,
     BuildingKind::Stockpile,
     BuildingKind::Granary,
+    BuildingKind::Keep,
     BuildingKind::StoneWall,
     BuildingKind::TowerLookout,
     BuildingKind::TowerSquare,
@@ -15,6 +16,10 @@ pub(crate) const BUILD_MENU: [BuildingKind; 13] = [
     BuildingKind::Quarry,
     BuildingKind::IronMine,
     BuildingKind::SawPit,
+    BuildingKind::Well,
+    BuildingKind::Apothecary,
+    BuildingKind::Inn,
+    BuildingKind::GardenersHut,
 ];
 
 fn uv(x: f32, y: f32, width: f32, height: f32) -> egui::Rect {
@@ -66,6 +71,11 @@ pub(crate) fn category_button(
     category: &str,
     active: bool,
 ) -> bool {
+    if category == "services" {
+        return image_button(ui, texture, tile(2, 14), egui::vec2(28., 20.), active)
+            .on_hover_text("Bedürfnisse: Brunnen, Apotheke, Wirtshaus und Garten")
+            .clicked();
+    }
     let (x, y, label) = match category {
         "fortifications" => (81., 932., "Befestigungen"),
         "military" => (115., 960., "Militär"),
@@ -75,7 +85,7 @@ pub(crate) fn category_button(
         ui,
         texture,
         uv(x, y, 34., 28.),
-        egui::vec2(32., 26.),
+        egui::vec2(28., 20.),
         active,
     )
     .on_hover_text(label)
@@ -171,6 +181,7 @@ pub(crate) fn building_button(
         GongPit => (5, 15),
         Apothecary => (4, 2),
         FalconersPost => (5, 17),
+        Keep => (1, 15),
         Treasury => (3, 8),
     };
     image_button(ui, texture, tile(row, column), egui::vec2(40., 40.), active)

@@ -112,6 +112,12 @@ def main():
             generator = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(generator)
             minimum, maximum = generator.generate()
+        elif item.get('procedural') == 'keep':
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('keep', ROOT / 'create-keep.py')
+            generator = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(generator)
+            minimum, maximum = generator.generate()
         elif item.get('procedural') == 'apple_farm':
             import importlib.util
             spec = importlib.util.spec_from_file_location('apple_farm', ROOT / 'create-apple-farm.py')
@@ -170,7 +176,7 @@ impl BuildingKind {
     }
     pub fn name(self) -> &'static str { DEFINITIONS[self.index()].name }
     pub fn label(self) -> &'static str { DEFINITIONS[self.index()].label }
-    pub fn category(self) -> &'static str { DEFINITIONS[self.index()].category }
+    pub fn category(self) -> &'static str { if matches!(self, Self::Well | Self::Inn | Self::Apothecary | Self::GardenersHut) { "services" } else { DEFINITIONS[self.index()].category } }
     pub fn scene(self) -> &'static str { DEFINITIONS[self.index()].scene }
     pub fn collision(self) -> &'static str { DEFINITIONS[self.index()].collision }
     pub fn grid_size(self) -> (u16, u16) {

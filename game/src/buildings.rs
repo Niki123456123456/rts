@@ -39,6 +39,8 @@ pub(crate) struct BuildingAssets {
     valid: Handle<StandardMaterial>,
     invalid: Handle<StandardMaterial>,
     selected: Handle<StandardMaterial>,
+    foundation_mesh: Handle<Mesh>,
+    foundation_material: Handle<StandardMaterial>,
 }
 impl BuildingAssets {
     fn hide_previews(&self, commands: &mut Commands) {
@@ -70,6 +72,7 @@ fn model_transform(kind: BuildingKind) -> Transform {
 pub(crate) fn setup_buildings(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let mut material = |color| {
         materials.add(StandardMaterial {
@@ -91,6 +94,8 @@ pub(crate) fn setup_buildings(
         valid,
         invalid,
         selected,
+        foundation_mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        foundation_material: materials.add(Color::srgb(0.46, 0.43, 0.35)),
     });
 }
 /// Bevy's glTF texture scopes can re-enter other IO loads. Keep at most one
@@ -101,6 +106,7 @@ pub(crate) fn load_building_models(
     mut meshes: ResMut<Assets<Mesh>>,
     mut assets: ResMut<BuildingAssets>,
     interaction: Res<BuildingInteraction>,
+    multiplayer: Res<Multiplayer>,
 ) {
     if let Some(index) = assets.loading {
         let model = assets.models[index].as_ref().unwrap();
@@ -122,6 +128,15 @@ pub(crate) fn load_building_models(
         .placing
         .map(BuildingKind::index)
         .filter(|index| assets.models[*index].is_none())
+        .or_else(|| {
+            multiplayer
+                .snapshot
+                .buildings
+                .iter()
+                .filter_map(|building| BuildingKind::from_name(&building.kind))
+                .map(BuildingKind::index)
+                .find(|index| assets.models[*index].is_none())
+        })
         .or_else(|| assets.models.iter().position(Option::is_none));
     let Some(index) = index else {
         return;
@@ -205,6 +220,23 @@ pub(crate) fn sync_buildings(
                 Visibility::default(),
             ))
             .with_children(|parent| {
+                let bottom = kind
+                    .rotated_build_samples(row.x, row.z, row.rotation)
+                    .map(|(px, pz)| terrain_height(px, pz))
+                    .fold(row.y, f32::min);
+                let depth = row.y - bottom;
+                if depth > 0.05 {
+                    let (width, length) = kind.grid_size();
+                    parent.spawn((
+                        Mesh3d(assets.foundation_mesh.clone()),
+                        MeshMaterial3d(assets.foundation_material.clone()),
+                        Transform::from_xyz(0.0, -depth * 0.5, 0.0).with_scale(Vec3::new(
+                            width as f32 * map::BUILD_GRID_SIZE,
+                            depth,
+                            length as f32 * map::BUILD_GRID_SIZE,
+                        )),
+                    ));
+                }
                 parent.spawn((WorldAssetRoot(model.scene.clone()), model_transform(kind)));
                 parent.spawn((
                     BuildingCollider(row.id),
@@ -255,13 +287,18 @@ fn placement_valid(
     kind: BuildingKind,
     x: f32,
     z: f32,
-    y: f32,
+    _y: f32,
     rotation: u8,
     multiplayer: &Multiplayer,
 ) -> bool {
     let shape = kind.rotated_build_footprint(x, z, rotation);
     shape.in_build_area()
-        && resources::population(multiplayer).can_build(kind, 1)
+        && !(kind == BuildingKind::Keep
+            && multiplayer
+                .snapshot
+                .buildings
+                .iter()
+                .any(|b| b.owned && b.kind == "keep"))
         && (kind.stone_cost() == 0
             || multiplayer
                 .snapshot
@@ -278,25 +315,12 @@ fn placement_valid(
             (u.y - terrain_height(u.x, u.z) - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
                 && kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z))
         })
-        && kind
-            .rotated_build_samples(x, z, rotation)
-            .all(|(px, pz)| (terrain_height(px, pz) - y).abs() <= 0.05)
+        && map::terrain::construction_height(kind, x, z, rotation).is_some()
 }
 
 // Keep this identical to the server's terrain surface for the placement preview.
 pub(crate) fn terrain_height(x: f32, z: f32) -> f32 {
-    let mut h: f32 = 0.0;
-    if (7.5..=22.5).contains(&x) && (-7.5..=-2.5).contains(&z) {
-        h = 1.0;
-    }
-    if (-20.0..=-10.0).contains(&x) && (-7.5..=7.5).contains(&z) {
-        h = 5.0;
-    }
-    let sphere = 12.5_f32.powi(2) - x * x - (z + 23.0).powi(2);
-    if sphere >= 0.0 {
-        h = h.max(sphere.sqrt());
-    }
-    h
+    stronghold_map::terrain::height(x, z)
 }
 pub(crate) fn building_input(
     mut commands: Commands,
@@ -354,7 +378,9 @@ pub(crate) fn building_input(
     };
     if contexts.ctx_mut().is_ok_and(|ctx| {
         let pos = egui::pos2(cursor.x, cursor.y) * (window.scale_factor() / ctx.pixels_per_point());
-        ctx.egui_wants_pointer_input() || panel.0.is_some_and(|r| r.contains(pos))
+        ctx.egui_wants_pointer_input()
+            || panel.0.is_some_and(|r| r.contains(pos))
+            || panel.1.is_some_and(|r| r.contains(pos))
     }) {
         return;
     }
@@ -434,8 +460,15 @@ pub(crate) fn building_input(
                 }
                 commands.entity(assets.wall_previews[index]).insert((
                     Visibility::Visible,
-                    placement_transform(x, terrain_height(x, z) + 0.01, z, 0)
-                        .mul_transform(model_transform(kind)),
+                    placement_transform(
+                        x,
+                        map::terrain::construction_height(kind, x, z, 0)
+                            .unwrap_or_else(|| terrain_height(x, z))
+                            + 0.01,
+                        z,
+                        0,
+                    )
+                    .mul_transform(model_transform(kind)),
                     MeshMaterial3d(material.clone()),
                 ));
             }
@@ -462,7 +495,8 @@ pub(crate) fn building_input(
             return;
         };
         let (x, z) = kind.rotated_snap_position(hit.point.x, hit.point.z, state.rotation);
-        let y = terrain_height(x, z);
+        let y = map::terrain::construction_height(kind, x, z, state.rotation)
+            .unwrap_or_else(|| terrain_height(x, z));
         let valid = placement_valid(kind, x, z, y, state.rotation, &multiplayer);
         commands.entity(model.preview).insert((
             Visibility::Visible,
@@ -855,7 +889,7 @@ pub(crate) fn building_button(
             width * 2,
             depth * 2,
             kind.stone_cost(),
-            if kind == BuildingKind::Housing { "Bietet Platz für 4 Bauern." } else if kind.peasant_cost() > 0 { "Benötigt 1 Bauern." } else { "Kein Bauernbedarf." }
+            if kind == BuildingKind::Housing { "Bietet Platz für 4 Bauern." } else if kind.peasant_cost() > 0 { "1 Arbeitsplatz: Bauern im Gebäudefenster zuweisen." } else { "Kein Bauernbedarf." }
         ))
         .clicked()
 }
@@ -918,6 +952,8 @@ mod tests {
             valid: default(),
             invalid: default(),
             selected: default(),
+            foundation_mesh: default(),
+            foundation_material: default(),
         })
         .init_resource::<Multiplayer>()
         .init_resource::<BuildingInteraction>()

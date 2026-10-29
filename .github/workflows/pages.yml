@@ -54,6 +54,9 @@ jobs:
           CARGO_PROFILE_TEST_DEBUG: "0"
         run: cargo fmt --check && cargo test --locked
       - name: Build browser game
+        env:
+          SPACETIMEDB_URI: ${{ vars.SPACETIMEDB_URI || 'http://127.0.0.1:3000' }}
+          SPACETIMEDB_DATABASE: ${{ vars.SPACETIMEDB_DATABASE || 'stronghold-terrain' }}
         run: bash game/build-web.sh
       - name: Upload Pages site
         uses: actions/upload-pages-artifact@v4
@@ -61,7 +64,7 @@ jobs:
           path: public
 
   deploy:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.SPACETIMEDB_URI != '' && vars.SPACETIMEDB_DATABASE != ''
     needs: build
     runs-on: ubuntu-latest
     permissions:

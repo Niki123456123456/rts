@@ -21,7 +21,7 @@ impl Population {
     pub fn from_buildings(buildings: impl IntoIterator<Item = BuildingKind>) -> Self {
         let mut population = Self::default();
         for kind in buildings {
-            if kind == BuildingKind::Housing {
+            if matches!(kind, BuildingKind::Housing | BuildingKind::Keep) {
                 population.capacity += PEASANTS_PER_HOUSING;
             } else {
                 population.used += kind.peasant_cost();
@@ -55,7 +55,11 @@ mod tests {
                 Population::from_buildings([BuildingKind::Housing, kind]),
                 Population {
                     used: expected,
-                    capacity: if kind == BuildingKind::Housing { 8 } else { 4 },
+                    capacity: if matches!(kind, BuildingKind::Housing | BuildingKind::Keep) {
+                        8
+                    } else {
+                        4
+                    },
                 }
             );
         }

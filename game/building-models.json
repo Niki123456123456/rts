@@ -41,7 +41,7 @@
   {
     "variant": "GatehouseWooden",
     "id": "gatehouse_wooden",
-    "label": "Hölzernes Torhaus",
+    "label": "HÃ¶lzernes Torhaus",
     "category": "fortifications",
     "source": "gatehouse_wooden",
     "collision": "gatehouse_wooden_collision",
@@ -80,7 +80,7 @@
   {
     "variant": "GatehouseLarge",
     "id": "gatehouse_large",
-    "label": "Großes Torhaus",
+    "label": "GroÃŸes Torhaus",
     "category": "fortifications",
     "source": "gatehouse_large",
     "collision": "gatehouse_large_collision",
@@ -197,7 +197,7 @@
   {
     "variant": "TowerGreat",
     "id": "tower_great",
-    "label": "Großer Wehrturm",
+    "label": "GroÃŸer Wehrturm",
     "category": "fortifications",
     "source": "tower_great_closed",
     "collision": "tower_great_collision",
@@ -236,7 +236,7 @@
   {
     "variant": "BridgeEnd",
     "id": "bridge_end",
-    "label": "Steinbrücke: Ende",
+    "label": "SteinbrÃ¼cke: Ende",
     "category": "fortifications",
     "source": "bridge_end",
     "collision": null,
@@ -249,7 +249,7 @@
   {
     "variant": "BridgeMiddle",
     "id": "bridge_middle",
-    "label": "Steinbrücke: Mitte",
+    "label": "SteinbrÃ¼cke: Mitte",
     "category": "fortifications",
     "source": "bridge_middle",
     "collision": null,
@@ -262,7 +262,7 @@
   {
     "variant": "BridgeWooden",
     "id": "bridge_wooden",
-    "label": "Holzbrücke",
+    "label": "HolzbrÃ¼cke",
     "category": "fortifications",
     "source": "bridge_wooden",
     "collision": null,
@@ -315,7 +315,7 @@
   {
     "variant": "DairyFarm",
     "id": "dairy_farm",
-    "label": "Käserei",
+    "label": "KÃ¤serei",
     "category": "supply",
     "source": "farm_dairy",
     "collision": "farm_dairy_collision",
@@ -405,7 +405,7 @@
   {
     "variant": "HuntersPost",
     "id": "hunters_post",
-    "label": "Jägerstand",
+    "label": "JÃ¤gerstand",
     "category": "supply",
     "source": "hunter_post",
     "collision": "hunter_post_collision",
@@ -444,7 +444,7 @@
   {
     "variant": "GardenersHut",
     "id": "gardeners_hut",
-    "label": "Gärtnerhütte",
+    "label": "GÃ¤rtnerhÃ¼tte",
     "category": "supply",
     "source": "gardeners_hut",
     "collision": "gardeners_hut_collision",
@@ -457,7 +457,7 @@
   {
     "variant": "VegetableGarden",
     "id": "vegetable_garden",
-    "label": "Gemüsebeet",
+    "label": "GemÃ¼sebeet",
     "category": "supply",
     "source": "gardeners_garden",
     "collision": null,
@@ -483,7 +483,7 @@
   {
     "variant": "Windmill",
     "id": "windmill",
-    "label": "Mühle",
+    "label": "MÃ¼hle",
     "category": "supply",
     "source": "windmill_closed",
     "collision": "windmill_collision",
@@ -496,7 +496,7 @@
   {
     "variant": "Bakery",
     "id": "bakery",
-    "label": "Bäckerei",
+    "label": "BÃ¤ckerei",
     "category": "supply",
     "source": "workshop_bakery_closed",
     "collision": "workshop_bakery_collision",
@@ -535,7 +535,7 @@
   {
     "variant": "Kitchen",
     "id": "kitchen",
-    "label": "Burgküche",
+    "label": "BurgkÃ¼che",
     "category": "supply",
     "source": "kitchen_closed",
     "collision": "kitchen_collision",
@@ -587,7 +587,7 @@
   {
     "variant": "SawPit",
     "id": "saw_pit",
-    "label": "Holzfällerhütte",
+    "label": "HolzfÃ¤llerhÃ¼tte",
     "category": "supply",
     "source": "saw_pit",
     "collision": "saw_pit_collision",
@@ -678,7 +678,7 @@
   {
     "variant": "ChandlersWorkshop",
     "id": "chandlers_workshop",
-    "label": "Kerzengießerei",
+    "label": "KerzengieÃŸerei",
     "category": "supply",
     "source": "chandler_workshop",
     "collision": "chandler_workshop_collision",
@@ -782,5 +782,19 @@
       3,
       3
     ]
+  },
+  {
+    "variant": "Keep",
+    "id": "keep",
+    "label": "Bergfried",
+    "category": "fortifications",
+    "folder": "keep",
+    "grid": [
+      10,
+      14
+    ],
+    "procedural": "keep",
+    "source": null,
+    "collision": null
   }
 ]

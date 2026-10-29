@@ -343,27 +343,24 @@ fn register_logistics_building(ctx: &ReducerContext, b: &Building) -> Result<(),
     if ctx.db.producer().building_id().find(b.id).is_some() {
         return Ok(());
     }
-    let shape = building_shape(ctx, b);
-    let obs = obstacles(ctx, b.game_id);
-    let reserved = ctx
-        .db
-        .army_unit()
-        .game_id()
-        .filter(b.game_id)
-        .filter(|u| on_ground(ctx, u))
-        .map(|u| (u.x, u.z))
-        .collect::<Vec<_>>();
-    let point = map::attack_positions(shape)
-        .into_iter()
-        .filter(|p| p.ring == 0)
-        .map(|p| p.point)
-        .find(|p| {
-            map::free(*p, &obs)
-                && reserved
-                    .iter()
-                    .all(|q| map::distance(*p, *q) >= map::UNIT_SPACING)
-        })
-        .ok_or("Kein Platz für den Transportbauern.")?;
+    ctx.db.producer().insert(Producer {
+        building_id: b.id,
+        game_id: b.game_id,
+        resource: resource as u8,
+        buffer: 0,
+        progress: 0,
+    });
+    start_production(ctx);
+    Ok(())
+}
+fn spawn_production_worker(
+    ctx: &ReducerContext,
+    b: &Building,
+    point: map::Point,
+) -> Result<(), String> {
+    let resource = map::BuildingKind::from_name(&b.kind)
+        .and_then(|k| k.produces())
+        .ok_or("Kein Produktionsarbeitsplatz.")?;
     let u = ctx.db.army_unit().insert(ArmyUnit {
         id: 0,
         game_id: b.game_id,
@@ -376,13 +373,6 @@ fn register_logistics_building(ctx: &ReducerContext, b: &Building) -> Result<(),
         z: point.1,
         target_x: point.0,
         target_z: point.1,
-    });
-    ctx.db.producer().insert(Producer {
-        building_id: b.id,
-        game_id: b.game_id,
-        resource: resource as u8,
-        buffer: 0,
-        progress: 0,
     });
     ctx.db.worker().insert(Worker {
         unit_id: u.id,
@@ -448,6 +438,22 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         return Err("Production is server controlled.".into());
     }
     for mut p in ctx.db.producer().iter().collect::<Vec<_>>() {
+        let staffed = ctx
+            .db
+            .worker()
+            .source_building()
+            .filter(p.building_id)
+            .any(|w| {
+                ctx.db.army_unit().id().find(w.unit_id).is_some_and(|u| {
+                    ctx.db.building().id().find(p.building_id).is_some_and(|b| {
+                        map::distance((u.x, u.z), building_shape(ctx, &b).closest((u.x, u.z)))
+                            <= 1.2
+                    })
+                })
+            });
+        if !staffed {
+            continue;
+        }
         if p.buffer < economy::PRODUCTION_BUFFER {
             p.progress += 1;
             if p.progress >= economy::PRODUCTION_SECONDS {

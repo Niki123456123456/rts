@@ -8,20 +8,9 @@ pub(crate) fn step_towards(x: f32, z: f32, target_x: f32, target_z: f32, step: f
     }
 }
 
-// Matches the plane, two cuboids and sphere created by the Bevy scene.
+// Client mesh, construction and simulation use the same interpolated surface.
 pub(crate) fn terrain_height(x: f32, z: f32) -> f32 {
-    let mut height: f32 = 0.0;
-    if (7.5..=22.5).contains(&x) && (-7.5..=-2.5).contains(&z) {
-        height = 1.0;
-    }
-    if (-20.0..=-10.0).contains(&x) && (-7.5..=7.5).contains(&z) {
-        height = 5.0;
-    }
-    let sphere_height_squared = 12.5_f32.powi(2) - x * x - (z + 23.0).powi(2);
-    if sphere_height_squared >= 0.0 {
-        height = height.max(sphere_height_squared.sqrt());
-    }
-    height
+    stronghold_map::terrain::height(x, z)
 }
 
 #[cfg(test)]
@@ -37,11 +26,10 @@ mod tests {
     }
 
     #[test]
-    fn terrain_matches_scene_geometry() {
-        assert_eq!(terrain_height(0.0, 0.0), 0.0);
-        assert_eq!(terrain_height(15.0, -5.0), 1.0);
-        assert_eq!(terrain_height(-15.0, 0.0), 5.0);
-        assert_eq!(terrain_height(0.0, -23.0), 12.5);
+    fn terrain_matches_shared_landscape() {
+        for (x, z) in [(0.0, 0.0), (-195.0, -275.0), (92.0, 0.0), (-115.0, 55.0)] {
+            assert_eq!(terrain_height(x, z), stronghold_map::terrain::height(x, z));
+        }
     }
 }
 

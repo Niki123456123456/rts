@@ -97,13 +97,22 @@ fn entry_plan(
             let path = map::shortest_path((u.x, u.z), tower.door(door), &obstacles)?;
             let hatch = tower.hatch();
             let cost = map::path_length((u.x, u.z), &path);
-            Some((
-                cost,
-                door,
-                path,
-                vec![(hatch.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1)],
-                vec![3],
-            ))
+            let (points, modes) = if b.kind == "keep" {
+                let top = tower.world((6.5, 3.0));
+                (
+                    vec![
+                        (top.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, top.1),
+                        (hatch.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1),
+                    ],
+                    vec![4, 4],
+                )
+            } else {
+                (
+                    vec![(hatch.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1)],
+                    vec![3],
+                )
+            };
+            Some((cost, door, path, points, modes))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, door, path, points, modes)| (b.id, door, path, points, modes))
@@ -319,8 +328,20 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
         .roof_path((u.x, u.z), tower.hatch())
         .ok_or("Cannot reach the hatch.")?;
     let mut modes = vec![0; points.len()];
-    points.push((door.0, b.y + roof::UNIT_CENTER_HEIGHT, door.1));
-    modes.push(3);
+    if b.kind == "keep" {
+        let top = tower.world((6.5, 3.0));
+        points.push((top.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, top.1));
+        modes.push(4);
+        points.push((
+            door.0,
+            terrain_height(door.0, door.1) + roof::UNIT_CENTER_HEIGHT,
+            door.1,
+        ));
+        modes.push(4);
+    } else {
+        points.push((door.0, b.y + roof::UNIT_CENTER_HEIGHT, door.1));
+        modes.push(3);
+    }
     ctx.db.tower_occupant().unit_id().update(o);
     store_travel(ctx, u, b.id, points, modes, true, false);
     Ok(door)

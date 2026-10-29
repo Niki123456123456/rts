@@ -1,5 +1,16 @@
 # Stronghold
 
+## Lokale Landschaftsversion
+
+Diese Projektkopie enthält Grasland, Wälder, Wüste, Berge, Eisenvorkommen und einen
+Fluss mit drei Furten. `../SPIEL-STARTEN.cmd` startet die fertig gebaute lokale
+Browser-Version und ihren mitgelieferten Server. Der Browser-Build verbindet sich
+mit `http://127.0.0.1:18766`, Datenbank `stronghold-local`. Details stehen in
+`../SPIEL-LESEN.md`. `../Build-Spiel.ps1` baut diese Version erneut.
+
+Die folgenden ursprünglichen Projektanweisungen beschreiben auch das frühere
+Maincloud-Setup; dessen Gelände ist separat und wurde nicht aktualisiert.
+
 ## Lokal spielen
 
 Das Spiel verbindet sich standardmäßig mit dem gehosteten Multiplayer-Server auf
@@ -428,3 +439,14 @@ Alle 1,25 s wird ein sichtbarer Pfeil (`archer_arrow.glb`) abgeschossen. Er flie
 mit 22 m/s auf einer Bogenbahn zum Ziel und verursacht beim Einschlag 0,18 Schaden
 an einer Einheit bzw. 0,06 an einem Gebäude. Der Server berechnet Schüsse und Treffer;
 Browser und native Anwendung stellen dieselben replizierten Projektile dar.
+
+## Minimap
+
+Im Spiel erscheint direkt in der unteren rechten Bildschirmecke über der Aktionsleiste eine nordorientierte
+Minimap der gesamten Karte. Die Geländefarben zeigen Ebenen und Erhebungen;
+Gebäude und Einheiten erscheinen in den Spielerfarben. Ein weißer Rahmen zeigt
+den Kameraausschnitt, ein gelber Kreis den Kamerafokus. Linksklick oder Ziehen
+mit der linken Maustaste versetzt die Kamera an den gewählten Ort. Zoom und
+Kameraausrichtung bleiben dabei erhalten. Die Minimap ist in der Lobby verborgen.
+
+Die Minimap hat keine Titelzeile. Am Griff in ihrer linken oberen Ecke lässt sie sich vergrößern und verkleinern. Ihre rechte untere Ecke bleibt am Bildschirmrand.

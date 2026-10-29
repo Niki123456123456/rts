@@ -5,6 +5,8 @@ type Action =
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
+  | { action: 'assign_peasant'; building_id:string }
+  | { action: 'unassign_peasant'; building_id:string }
   | { action: 'recruit_unit'; building_id: string; kind: string }
   | { action: 'build'; x: number; z: number; building: string; rotation?: number }
   | { action: 'build_wall'; start_x: number; start_z: number; end_x: number; end_z: number }
@@ -21,6 +23,28 @@ let ready = false;
 let error: string | null = null;
 let activeGame: bigint | undefined;
 let unitSubscription: ReturnType<ReturnType<DbConnection['subscriptionBuilder']>['subscribe']> | undefined;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let reconnectDelay = 1000;
+
+function cancelReconnect() {
+  if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
+}
+
+function reconnectLater(uri: string, database: string, previous: DbConnection) {
+  cancelReconnect();
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    if (conn === previous) connect(uri, database);
+  }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+}
+
+function connectionError(reason: unknown) {
+  if (reason instanceof Error && reason.message) return reason.message;
+  if (typeof reason === 'string' && reason) return reason;
+  return 'Verbindung zum Spielserver unterbrochen. Verbinde erneut …';
+}
 
 function result(ctx: ReducerEventContext) {
   if (ctx.event.callerConnectionId?.toHexString() !== conn?.connectionId.toHexString()) return;
@@ -29,12 +53,19 @@ function result(ctx: ReducerEventContext) {
 }
 
 function connect(uri: string, database: string) {
+  cancelReconnect();
   // SDK 1.1 otherwise downgrades https URLs to plain ws, which cloud hosts reject.
-  const socketUri = new URL(uri);
+  // The sharing gateway supplies a same-origin endpoint; ordinary local builds
+  // continue using the server configured by Rust.
+  const sharedServer = typeof document === 'undefined' ? undefined
+    : document.querySelector<HTMLMetaElement>('meta[name="stronghold-server"]')?.content;
+  const socketUri = sharedServer ? new URL(sharedServer, window.location.href) : new URL(uri);
   if (socketUri.protocol === 'https:') socketUri.protocol = 'wss:';
   if (socketUri.protocol === 'http:') socketUri.protocol = 'ws:';
   // Ignore callbacks from a connection replaced by a reconnect.
-  conn?.disconnect();
+  const previous = conn;
+  conn = undefined;
+  previous?.disconnect();
   connected = false;
   ready = false;
   activeGame = undefined;
@@ -45,23 +76,34 @@ function connect(uri: string, database: string) {
     .onConnect((db) => {
       if (conn !== db) return;
       connected = true;
+      error = null;
+      reconnectDelay = 1000;
       db.subscriptionBuilder()
         .onApplied(() => { if (conn === db) ready = true; })
-        .onError((ctx) => { if (conn === db) error = String(ctx.event); })
+        .onError((ctx) => {
+          if (conn !== db) return;
+          ready = false;
+          error = connectionError(ctx.event);
+          reconnectLater(uri, database, db);
+        })
         .subscribe(['SELECT * FROM game', 'SELECT * FROM participant']);
     })
     .onConnectError((_ctx, err) => {
       if (conn !== connection) return;
       connected = ready = false;
-      error = String(err);
+      error = connectionError(err);
+      reconnectLater(uri, database, connection);
     })
     .onDisconnect((_ctx, err) => {
       if (conn !== connection) return;
       connected = ready = false;
-      error = err ? String(err) : 'Disconnected from server.';
+      error = connectionError(err);
+      reconnectLater(uri, database, connection);
     })
     .build();
   conn = connection;
+  connection.reducers.onAssignPeasant(result);
+  connection.reducers.onUnassignPeasant(result);
   connection.reducers.onCreateGame(result);
   connection.reducers.onJoinGame(result);
   connection.reducers.onLeaveGame(result);
@@ -79,6 +121,7 @@ function connect(uri: string, database: string) {
 
 export const strongholdNetwork = {
   disconnect() {
+    cancelReconnect();
     const previous = conn;
     conn = undefined;
     connected = ready = false;
@@ -94,6 +137,8 @@ export const strongholdNetwork = {
     switch (action.action) {
       case 'create': conn.reducers.createGame(action.title); break;
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
+      case 'assign_peasant': conn.reducers.assignPeasant(BigInt(action.building_id)); break;
+      case 'unassign_peasant': conn.reducers.unassignPeasant(BigInt(action.building_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
       case 'recruit_unit': conn.reducers.recruitUnit(BigInt(action.building_id),action.kind); break;
       case 'build': conn.reducers.buildRotated(action.x, action.z, action.building, action.rotation ?? 0); break;
@@ -115,7 +160,7 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
@@ -128,6 +173,9 @@ export const strongholdNetwork = {
       games: ready && connected && conn ? Array.from(conn.db.game.iter())
         .sort((a, b) => a.id < b.id ? -1 : 1)
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
+      keep_population: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.keepPopulation.iter())
+        .filter(k=>k.gameId===gameId).map(k=>({building_id:k.buildingId.toString(),arrived:k.arrived,seconds:k.seconds})) : [],
+      settlement_needs: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.settlementNeeds.iter()).filter(n=>n.gameId===gameId).map(n=>({building_id:n.buildingId.toString(),happiness:n.happiness,food:n.food,variety:n.variety,housing:n.housing,water:n.water,health:n.health,leisure:n.leisure,goods:n.goods,employment:n.employment,immigration_seconds:n.immigrationSeconds})) : [],
       warehouses: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.warehouseStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),wood:s.wood,stone:s.stone,iron:s.iron})) : [],
       granaries: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.granaryStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),apples:s.apples,bread:s.bread,cheese:s.cheese,meat:s.meat})) : [],
       workers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.worker.iter()).filter(w=>w.gameId===gameId).map(w=>({unit_id:w.unitId.toString(),source_building:w.sourceBuilding.toString(),resource:w.resource,cargo:w.cargo})) : [],
@@ -136,6 +184,9 @@ export const strongholdNetwork = {
       roof_occupants: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.towerOccupant.iter())
         .filter(o => o.gameId === gameId)
         .map(o => ({ unit_id: o.unitId.toString(), building_id: o.buildingId.toString(), slot: o.slot, next_building: o.nextBuilding?.toString() ?? null, next_slot: o.nextSlot })) : [],
+      clearings: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.terrainClearing.iter())
+        .filter(c => c.gameId === gameId).sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+        .map(c => ({id:c.id.toString(),x:c.x,z:c.z,half_x:c.halfX,half_z:c.halfZ})) : [],
       buildings: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.building.iter())
         .filter(b => b.gameId === gameId)
         .map(b => ({ rotation: conn!.db.buildingRotation.buildingId.find(b.id)?.quarterTurns ?? 0, kind: b.kind, id: b.id.toString(), color: b.color, health: b.health, owned: b.owner.toHexString() === conn!.connectionId.toHexString(), x: b.x, y: b.y, z: b.z })) : [],

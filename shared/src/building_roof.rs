@@ -71,6 +71,13 @@ impl BuildingKind {
     /// Original meshes stay unchanged. Add profiles here to enable more roofs.
     pub fn roof_profile(self) -> Option<RoofProfile> {
         Some(match self {
+            Self::Keep => RoofProfile {
+                height: 5.4,
+                half_x: 4.7,
+                half_z: 3.0,
+                hatch: (4.1, 2.7),
+                doors: &[(6.5, 10.6)],
+            },
             Self::StoneWall => RoofProfile {
                 height: 6.663,
                 half_x: 1.0,
@@ -236,6 +243,7 @@ mod tests {
             BuildingKind::TowerLookout,
             BuildingKind::TowerSquare,
             BuildingKind::StoneWall,
+            BuildingKind::Keep,
         ] {
             for rotation in 0..4 {
                 let t = BuildingRoof::new(kind, 100., 3., 100., rotation).unwrap();
@@ -245,6 +253,7 @@ mod tests {
                     match kind {
                         BuildingKind::TowerSquare => (8, 8),
                         BuildingKind::StoneWall => (3, 3),
+                        BuildingKind::Keep => (13, 8),
                         _ => (5, 5),
                     }
                 );
@@ -296,6 +305,7 @@ mod tests {
                         | BuildingKind::TowerLookout
                         | BuildingKind::TowerSquare
                         | BuildingKind::StoneWall
+                        | BuildingKind::Keep
                 )
             );
         }
