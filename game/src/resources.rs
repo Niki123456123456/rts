@@ -65,8 +65,10 @@ pub(crate) fn resource_ui(
     mut contexts: EguiContexts,
     multiplayer: Res<Multiplayer>,
     atlas: Res<ResourceAtlas>,
+    mut needs_open: Local<bool>,
 ) -> Result {
     if !multiplayer.snapshot.connected || multiplayer.snapshot.game_id.is_none() {
+        *needs_open = false;
         return Ok(());
     }
     let texture = atlas.texture(&mut contexts);
@@ -118,7 +120,7 @@ pub(crate) fn resource_ui(
                         let room=map::population::Population::from_buildings(multiplayer.snapshot.buildings.iter()
                             .filter(|b|b.owned).filter_map(|b|BuildingKind::from_name(&b.kind))).capacity;
                         let tooltip = format!("Bauern: {} frei am Lagerfeuer · {} arbeiten · {} Bewohner / {} Wohnplätze. Produktionsgebäude anklicken und Bauer zuweisen wählen.",peasants.capacity.saturating_sub(peasants.used),peasants.used,peasants.capacity,room);
-                        satisfaction_icon(ui,&multiplayer);
+                        if satisfaction_icon(ui,&multiplayer) { *needs_open = !*needs_open; }
                         ui.separator();
                         ui.add(egui::Image::new((texture, egui::vec2(14., 18.))).uv(
                             egui::Rect::from_min_max(
@@ -134,10 +136,19 @@ pub(crate) fn resource_ui(
                     });
                 });
         });
+    if *needs_open {
+        egui::Window::new("Zufriedenheit")
+            .open(&mut needs_open)
+            .default_pos(egui::pos2(24., 60.))
+            .default_width(370.)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| satisfaction_details(ui, &multiplayer));
+    }
     Ok(())
 }
 
-fn satisfaction_icon(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
+fn satisfaction_icon(ui: &mut egui::Ui, multiplayer: &Multiplayer) -> bool {
     let state = multiplayer.snapshot.settlement_needs.iter().find(|n| {
         multiplayer
             .snapshot
@@ -153,7 +164,7 @@ fn satisfaction_icon(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
     } else {
         egui::Color32::from_rgb(233, 107, 86)
     };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(19., 19.), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(19., 19.), egui::Sense::click());
     let center = rect.center();
     let ink = egui::Color32::from_rgb(35, 31, 22);
     ui.painter().circle_filled(center, 8., color);
@@ -174,17 +185,102 @@ fn satisfaction_icon(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
             egui::Stroke::new(1.2, ink),
         );
     }
-    let detail=state.map_or_else(||"Zufriedenheit wird ermittelt …".to_owned(),|n| {
-        let movement=if n.happiness<40 {"Freie Bauern wandern alle 14 s ab".into()}
-            else if n.immigration_seconds==0 {"Zurzeit kein Zuzug".into()}
-            else {format!("Ein Zuwanderer alle {} s, solange Wohnraum frei ist",n.immigration_seconds)};
-        format!("Zufriedenheit: {} / 100\nGrundwert: 50\nNahrung: {:+}\nNahrungsvielfalt: {:+}\nWohnraum: {:+}\nWasser (Brunnen): {:+}\nGesundheit (Apotheke): {:+}\nFreizeit (Wirtshaus / Garten): {:+}\nWarenbestände: {:+}\nArbeitsplätze: {:+}\n\n{}\nNahrung wird alle 30 s aus dem Kornspeicher verbraucht.\nVersorgungsgebäude findest du unter Bedürfnisse.",n.happiness,n.food,n.variety,n.housing,n.water,n.health,n.leisure,n.goods,n.employment,movement)
+    let clicked = response
+        .on_hover_text("Zufriedenheit: Für Einflussfaktoren anklicken")
+        .clicked();
+    let label = ui
+        .add(
+            egui::Label::new(
+                egui::RichText::new(
+                    state.map_or_else(|| "…".into(), |n| format!("{}%", n.happiness)),
+                )
+                .size(10.5)
+                .color(color),
+            )
+            .sense(egui::Sense::click()),
+        )
+        .on_hover_text("Für Einflussfaktoren anklicken");
+    clicked || label.clicked()
+}
+
+fn satisfaction_details(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
+    let count = population(multiplayer).capacity;
+    let stage = map::needs::NeedsStage::for_population(count);
+    let state = multiplayer.snapshot.settlement_needs.iter().find(|n| {
+        multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .any(|b| b.id == n.building_id && b.owned)
     });
-    response.on_hover_text(&detail);
-    ui.label(
-        egui::RichText::new(state.map_or_else(|| "…".into(), |n| format!("{}%", n.happiness)))
-            .size(10.5)
-            .color(color),
+    let Some(n) = state else {
+        ui.label("Zufriedenheit wird ermittelt …");
+        return;
+    };
+    ui.heading(format!("{}% · {} Bewohner", n.happiness, count));
+    ui.label(format!("Grundzufriedenheit: {} Punkte", stage.base));
+    ui.small("Mit wachsender Bevölkerung steigen die Ansprüche.");
+    ui.separator();
+    egui::Grid::new("needs_factors")
+        .spacing(egui::vec2(18., 7.))
+        .show(ui, |ui| {
+            for (name, points, threshold) in [
+                ("Nahrung", n.food, 0),
+                ("Wohnraum", n.housing, 0),
+                ("Wasser · Brunnen", n.water, 8),
+                ("Nahrungsvielfalt", n.variety, 16),
+                ("Arbeitsplätze", n.employment, 16),
+                ("Gesundheit · Apotheke", n.health, 24),
+                ("Freizeit · Wirtshaus / Garten", n.leisure, 32),
+                ("Warenbestände", n.goods, 40),
+            ] {
+                let active = count >= threshold;
+                ui.label(name);
+                if active {
+                    ui.colored_label(
+                        if points < 0 {
+                            egui::Color32::LIGHT_RED
+                        } else if points > 0 {
+                            egui::Color32::LIGHT_GREEN
+                        } else {
+                            egui::Color32::GRAY
+                        },
+                        format!("{points:+} Punkte"),
+                    );
+                } else {
+                    ui.weak(format!("ab {threshold} Bewohnern"));
+                }
+                ui.end_row();
+            }
+        });
+    ui.separator();
+    if count <= 4 {
+        ui.label("Starthilfe: Die ersten vier Bauern bleiben auch ohne Nahrung zufrieden. Baue in Ruhe Kornspeicher und Nahrungsproduktion auf.");
+    }
+    ui.small("Ab 5 Bewohnern zählt fehlende Nahrung. Nahrung wird alle 30 s aus dem Kornspeicher verbraucht.");
+    let room = map::population::Population::from_buildings(
+        multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .filter(|b| b.owned)
+            .filter_map(|b| BuildingKind::from_name(&b.kind)),
     )
-    .on_hover_text(detail);
+    .capacity;
+    if count >= room {
+        ui.label("Kein freier Wohnraum: Baue eine Unterkunft für weiteren Zuzug.");
+    }
+    if n.happiness < 40 {
+        ui.label("Freie Bauern wandern alle 14 s ab.");
+    } else if n.immigration_seconds == 0 {
+        ui.label("Zurzeit kein Zuzug.");
+    } else {
+        ui.label(format!(
+            "Ein neuer Bauer alle {} s, solange Wohnraum frei ist.",
+            n.immigration_seconds
+        ));
+    }
+    ui.small(
+        "Die Summe wird auf 0 bis 100% begrenzt. Versorgungsgebäude findest du unter Bedürfnisse.",
+    );
 }

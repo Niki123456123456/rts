@@ -32,16 +32,23 @@ Er hat einzelne Steine und Dachziegel als 3D-Geometrie, eine begehbare Terrasse,
 eine Außentreppe und eine Feuerstelle mit Bänken. Der vorhandene Burgherr nimmt
 beim Start seinen Platz auf der Terrasse ein. Den Burgherrn auswählen und mit
 rechts auf freien Boden klicken: Er läuft über die Außentreppe hinunter.
-Mit Rechtsklick auf die eigene Terrasse kann er wieder hinaufsteigen.
+Mit Rechtsklick auf die eigene Terrasse kann er wieder hinaufsteigen. Der Burgherr
+ist direkt auf der Terrasse anklickbar. Bewaffnete Bauern und Bogenschützen
+benutzen dieselbe Außentreppe; auch auf dem Treppenabsatz kann ein neuer
+Befehl zum Boden erteilt werden.
 
 Der Bergfried bietet vier Wohnplätze, jede Unterkunft vier weitere. Freie Bauern
 warten sichtbar am Lagerfeuer. Produktionsgebäude können zunächst leer gebaut
 werden. Zum Besetzen ein eigenes Produktionsgebäude anklicken und „Bauer zuweisen“ wählen. Der Bauer läuft vom Feuer zum Arbeitsplatz. Mit „Bauer freigeben“ wird er
 wieder für andere Gebäude verfügbar. Ohne zugewiesenen Bauern gibt es keine Produktion.
 
-Das neue Gesicht-Symbol oben zeigt die Zufriedenheit. Beim Darüberfahren werden
-die Beiträge von Nahrung, Nahrungsvielfalt, Wohnraum, Wasser, Gesundheit, Freizeit,
-Warenbeständen und Arbeitsplätzen aufgelistet. Unter „Bedürfnisse“ sind Brunnen,
+Das neue Gesicht-Symbol oben zeigt die Zufriedenheit. Ein Klick auf das Gesicht oder den Prozentwert öffnet die Übersicht mit allen
+Einflussfaktoren und den Bevölkerungsgrenzen für spätere Bedürfnisse. Die ersten
+vier Bauern bleiben auch ohne Nahrung bei mindestens 80% zufrieden, solange
+Wohnraum vorhanden ist. Ab fünf Bewohnern zählt fehlende Nahrung, ab acht Wasser,
+ab 16 Nahrungsvielfalt und Arbeitsplätze, ab 24 Gesundheit, ab 32 Freizeit und
+ab 40 Warenbestände. Die Grundzufriedenheit sinkt dabei von 75 auf 65, 55 und
+schließlich 50 Punkte. Unter „Bedürfnisse“ sind Brunnen,
 Apotheke, Wirtshaus und Garten verfügbar. Ein Kornspeicher liefert den ersten
 Nahrungsvorrat. Alle 30 Sekunden wird je vier Bauern eine Ration verbraucht.
 

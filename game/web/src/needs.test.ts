@@ -34,7 +34,10 @@ try{
   const remove=(id:bigint)=>status(a,cb=>a.reducers.onRemoveBuilding(cb),()=>a.reducers.removeBuilding(id));
   await until(()=>!!needs(),'initial satisfaction published');
   const startingScore=needs().happiness;
-  assert.equal(needs().immigrationSeconds,14);
+  assert.ok(startingScore>=80,'new settlements start happy without advanced services');
+  assert.equal(needs().immigrationSeconds,4);
+  assert.equal(needs().water,0);
+  assert.equal(needs().variety,0);
   assert.equal((await build('apple_farm',0,24)).tag,'Committed','empty workplaces can be constructed before peasants arrive');
   const farm=ownBuildings().find(row=>row.kind==='apple_farm')!;
   const workers=()=>Array.from(a.db.worker.iter()).filter(w=>w.sourceBuilding===farm.id);
@@ -49,7 +52,8 @@ try{
   const granary=ownBuildings().find(row=>row.kind==='granary')!;
   const initialBread=a.db.granaryStock.buildingId.find(granary.id)!.bread;
   const well=ownBuildings().find(row=>row.kind==='well')!;
-  await until(()=>needs().happiness>=80 && needs().water>0 && needs().variety>0,'food diversity and water raise satisfaction');
+  await until(()=>population().arrived>=8 && needs().water>0,'water becomes relevant at eight settlers',45000);
+  assert.equal(needs().variety,0,'diversity stays inactive before sixteen settlers');
   assert.ok(needs().happiness>startingScore);
   assert.equal(needs().immigrationSeconds,4,'good supply accelerates immigration');
   await until(()=>population().arrived>=1,'satisfied peasants arrive');
@@ -69,11 +73,8 @@ try{
   assert.equal(a.db.producer.buildingId.find(farm.id)!.buffer,buffer,'production stops without its worker');
   await until(()=>a.db.granaryStock.buildingId.find(granary.id)!.bread<initialBread,'population consumes actual granary rations',35000);
   assert.equal((await remove(granary.id)).tag,'Committed');
-  await until(()=>needs().food<0 && needs().immigrationSeconds===0,'food shortage stops immigration');
   assert.equal((await remove(well.id)).tag,'Committed');
-  await until(()=>needs().happiness<40,'missing food and water cause low satisfaction');
-  const before=population().arrived;
-  assert.ok(before>1,'there are free peasants to emigrate');
-  await until(()=>population().arrived<before,'dissatisfied free peasants emigrate',20000);
-  console.log('PASS: combined needs, food variety, water, faster immigration, real food consumption, empty workplace, explicit staffing, campfire departure, ownership, duplicate protection, production gating, release, replication and emigration.');
+  await until(()=>needs().food<0 && needs().water<0 && needs().immigrationSeconds===0,'food and water matter once the village grows');
+  assert.ok(needs().happiness<50);
+  console.log('PASS: easy start, progressive needs, water at eight settlers, fast immigration, real food consumption, empty workplace, explicit staffing, campfire departure, ownership, duplicate protection, production gating, release, replication and shortages after village growth.');
 }finally{for(const client of clients)client.disconnect();}

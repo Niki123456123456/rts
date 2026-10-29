@@ -68,6 +68,21 @@ try {
   assert.equal((await status(a,cb=>a.reducers.onMoveToRoof(cb),()=>a.reducers.moveToRoof([lord().id],keep.id,keep.x,keep.z+2))).tag,'Committed');
   await until(()=>lord().y>1 && lord().y<5,'lord visibly climbs staircase');
   await until(()=>Math.abs(lord().y-6.15)<.02,'lord returns to terrace',20000);
+  // Every controllable unit type uses the same physical staircase.
+  assert.equal((await build('barracks',keep.x+40,keep.z-12)).tag,'Committed');
+  const barracks=buildings().find(row=>row.kind==='barracks'&&row.owner.toHexString()===a.connectionId.toHexString())!;
+  for(const kind of ['armed_peasant','archer']) {
+    assert.equal((await status(a,cb=>a.reducers.onRecruitUnit(cb),()=>a.reducers.recruitUnit(barracks.id,kind))).tag,'Committed');
+    const profile=Array.from(a.db.unitProfile.iter()).find(p=>p.gameId===game&&p.kind===kind&&a.db.armyUnit.id.find(p.unitId)?.owner.toHexString()===a.connectionId.toHexString())!;
+    const soldier=()=>a.db.armyUnit.id.find(profile.unitId)!;
+    assert.equal((await status(a,cb=>a.reducers.onMoveToRoof(cb),()=>a.reducers.moveToRoof([profile.unitId],keep.id,keep.x,keep.z))).tag,'Committed');
+    await until(()=>soldier().y>1&&soldier().y<5,`${kind} climbs actual stairs`,30000);
+    await until(()=>Math.abs(soldier().y-6.15)<.02,`${kind} reaches terrace`,30000);
+    const departure=await status(a,cb=>a.reducers.onSetTargets(cb),()=>a.reducers.setTargets([profile.unitId],keep.x+12,keep.z+18+(kind==='archer'?3:0)));
+    assert.equal(departure.tag,'Committed',`${kind} descent: ${departure.tag==='Failed'?departure.value:departure.tag}`);
+    await until(()=>soldier().y>1&&soldier().y<5,`${kind} descends actual stairs`,30000);
+    await until(()=>!a.db.towerOccupant.unitId.find(profile.unitId),`${kind} reaches ground`,30000);
+  }
   await until(()=>a.db.keepPopulation.buildingId.find(keep.id)!.arrived>=2,'further job seekers arrive');
   await until(()=>b.db.keepPopulation.buildingId.find(keep.id)?.arrived===a.db.keepPopulation.buildingId.find(keep.id)?.arrived,'migration replicated');
   assert.equal((await status(a,cb=>a.reducers.onRemoveBuilding(cb),()=>a.reducers.removeBuilding(keep.id))).tag,'Committed');

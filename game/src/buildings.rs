@@ -394,6 +394,31 @@ pub(crate) fn building_input(
     let Ok(ray) = camera.viewport_to_world(transform, cursor) else {
         return;
     };
+    // The keep's full-height proxy box encloses its open terrace. Let visible
+    // roof occupants receive the left click before selecting that proxy building.
+    if state.placing.is_none() && mouse.just_pressed(MouseButton::Left) {
+        let unit_filter = |e| units.contains(e) || ground.contains(e);
+        let occupant = ray_cast
+            .cast_ray(
+                ray,
+                &MeshRayCastSettings::default().with_filter(&unit_filter),
+            )
+            .first()
+            .map(|(e, _)| *e)
+            .filter(|e| {
+                units.get(*e).is_ok_and(|(_, u)| {
+                    multiplayer
+                        .snapshot
+                        .roof_occupants
+                        .iter()
+                        .any(|o| o.unit_id == u.id)
+                })
+            });
+        if occupant.is_some() {
+            state.selected = None;
+            return;
+        }
+    }
     let filter = |e| {
         ground.contains(e)
             || (state.placing.is_none() && (colliders.contains(e) || units.contains(e)))
@@ -596,7 +621,12 @@ pub(crate) fn building_input(
             .iter()
             .filter(|b| b.owned)
             .filter_map(|b| roof_ray_hit(ray, b).map(|(distance, point)| (b, distance, point)))
-            .filter(|(_, distance, _)| *distance <= hit.distance + 0.08 || units.contains(*entity))
+            .filter(|(building, distance, _)| {
+                *distance <= hit.distance + 0.08
+                    || units.contains(*entity)
+                    || (building.kind == "keep"
+                        && colliders.get(*entity).is_ok_and(|c| c.0 == building.id))
+            })
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((building, _, point)) = target {
             let id = building.id;
@@ -1023,6 +1053,7 @@ mod tests {
         ))
         .init_asset::<WorldAsset>()
         .init_asset::<StandardMaterial>()
+        .init_resource::<Multiplayer>()
         .insert_resource(BuildingInteraction {
             placing: Some(BuildingKind::Treasury),
             ..default()
@@ -1204,15 +1235,28 @@ mod tests {
                     .unwrap();
                 let mut floor_min = Vec3::splat(f32::INFINITY);
                 let mut floor_max = Vec3::splat(f32::NEG_INFINITY);
+                let mut floor_vertices = 0;
                 for p in floor {
                     let p = model_transform(kind).transform_point(Vec3::from(*p));
+                    // The keep batches walls and terrace tiles by stone material;
+                    // other buildings provide a separate planar roof primitive.
+                    let tolerance = if kind == BuildingKind::Keep {
+                        0.08
+                    } else {
+                        0.006
+                    };
+                    if kind == BuildingKind::Keep && (p.y - profile.height).abs() >= tolerance {
+                        continue;
+                    }
                     assert!(
-                        (p.y - profile.height).abs() < 0.006,
+                        (p.y - profile.height).abs() < tolerance,
                         "{kind:?}: roof height must match the visual mesh"
                     );
+                    floor_vertices += 1;
                     floor_min = floor_min.min(p);
                     floor_max = floor_max.max(p);
                 }
+                assert!(floor_vertices >= 4, "{kind:?}: walkable floor must exist");
                 assert!(profile.half_x <= (-floor_min.x).min(floor_max.x));
                 assert!(profile.half_z <= (-floor_min.z).min(floor_max.z));
             }

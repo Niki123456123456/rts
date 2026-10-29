@@ -324,9 +324,23 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
             .ok_or("All tower doors are blocked. Clear a doorway first.")?;
     }
     let door = tower.door(o.door);
-    let mut points = tower
-        .roof_path((u.x, u.z), tower.hatch())
-        .ok_or("Cannot reach the hatch.")?;
+    // The external keep staircase ends outside the terrace's walkable rectangle.
+    // A new ground order while crossing that landing must not require an impossible
+    // roof path from the stairs. Finish the landing, then walk back down physically.
+    let on_keep_stairs = b.kind == "keep"
+        && ctx
+            .db
+            .tower_travel()
+            .unit_id()
+            .find(u.id)
+            .is_some_and(|t| !t.leaving && t.modes.get(t.next as usize) == Some(&4));
+    let mut points = if on_keep_stairs {
+        Vec::new()
+    } else {
+        tower
+            .roof_path((u.x, u.z), tower.hatch())
+            .ok_or("Cannot reach the hatch.")?
+    };
     let mut modes = vec![0; points.len()];
     if b.kind == "keep" {
         let top = tower.world((6.5, 3.0));

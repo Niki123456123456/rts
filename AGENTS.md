@@ -65,3 +65,13 @@ Pages deployment requires repository variables SPACETIMEDB_URI and
 SPACETIMEDB_DATABASE pointing to a server updated with this module. Until both
 are set, CI builds and tests the source but does not replace the public site.
 The previous Maincloud module is incompatible with the new client schema.
+
+
+Satisfaction has population-based stages in shared/src/needs.rs::NeedsStage.
+The first four settlers have no food-shortage penalty; water activates at 8,
+variety and employment at 16, health at 24, leisure at 32, goods at 40.
+The clickable happiness window displays the same thresholds and base score.
+Keep terrace occupants must take selection priority over the full-height building
+proxy, and that proxy must not block roof movement commands. Keep travel mode 4
+also allows a new ground order while crossing its external upper stair landing.
+keep.test.ts covers lord, armed peasant and archer physical ascent/descent.
