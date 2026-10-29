@@ -39,9 +39,11 @@ Do not revert to requiring manual keep construction at game start.
 Satisfaction is calculated in shared/src/needs.rs and published in settlement_needs.
 Migration now follows satisfaction, food is consumed from actual granaries, and
 only free peasants may emigrate. Buildings can be constructed without workers:
-register_logistics_building creates the producer but must never auto-assign a
-worker on placement or connection. assign_peasant / unassign_peasant explicitly
-manage one worker per producer. Production requires an assigned worker at the
+register_logistics_building creates the producer; auto_assign_peasants staffs open
+buildings whenever peasants arrive or a building is placed/opened/closed. The
+public building_operation table records closed buildings (missing row = open).
+Legacy assign_peasant / unassign_peasant reducers now mean open / close. Never
+restart a closed workplace automatically; never create duplicate workers. Production requires an assigned worker at the
 workplace. Count employed population from worker records, never building demand.
 Amenity models have the services UI category, retaining their original asset paths.
 The focused real-server test is game/web/src/needs.test.ts. Keep both native and
@@ -75,3 +77,12 @@ Keep terrace occupants must take selection priority over the full-height buildin
 proxy, and that proxy must not block roof movement commands. Keep travel mode 4
 also allows a new ground order while crossing its external upper stair landing.
 keep.test.ts covers lord, armed peasant and archer physical ascent/descent.
+
+Camp positions and arrival paths live in shared/src/camp.rs. Both waiting visuals
+and automatically assigned workers must use free camp positions; no straight-line
+arrival animation through buildings and no fallback spawning at the workplace.
+The client caches/replans arrival routes when building obstacles change.
+Nearby stone/iron deposits, forest, desert and small mountains complement the
+original landscape. Keep those resource plots buildable and the starting clearing
+free. needs.test.ts now verifies automatic staffing, close/open persistence and
+actual worker positions while routing around a building, plus nearby resource jobs.

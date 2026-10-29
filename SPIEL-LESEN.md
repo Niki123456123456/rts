@@ -11,7 +11,10 @@ werden nicht ins Repository hochgeladen.
 ## Landschaft
 
 Die 800 × 800 Meter große Karte enthält offenes Grasland, zwei Waldgebiete mit
-Bäumen, Wüsten mit kleinen Dünen, Bergketten und vier Eisenvorkommen. Ein Fluss
+Bäumen, Wüsten mit kleinen Dünen, Bergketten und sieben Eisenvorkommen.
+Zusätzliche Stein- und Eisenplätze, ein weiteres Waldstück, eine Sandfläche und
+kleinere Berge liegen nahe den Startburgen, sodass mehrere Geländetypen früh
+erreichbar sind. Ein Fluss
 durchzieht die Karte. Drei trockene Furten verbinden die Ufer. Einheiten umgehen
 Flussabschnitte und Bergspitzen; die Bewegungshöhe entspricht der sichtbaren
 Geländeoberfläche. Holzfällerhütten brauchen Wald, Steinbrüche ein Steinvorkommen
@@ -39,8 +42,14 @@ Befehl zum Boden erteilt werden.
 
 Der Bergfried bietet vier Wohnplätze, jede Unterkunft vier weitere. Freie Bauern
 warten sichtbar am Lagerfeuer. Produktionsgebäude können zunächst leer gebaut
-werden. Zum Besetzen ein eigenes Produktionsgebäude anklicken und „Bauer zuweisen“ wählen. Der Bauer läuft vom Feuer zum Arbeitsplatz. Mit „Bauer freigeben“ wird er
-wieder für andere Gebäude verfügbar. Ohne zugewiesenen Bauern gibt es keine Produktion.
+werden. Freie Bauern werden automatisch offenen Betrieben zugeteilt und laufen
+vom Lagerfeuer zum Arbeitsplatz. Ein Produktionsgebäude anklicken und „Gebäude
+schließen“ wählen, um die Produktion anzuhalten und den Bauern freizugeben.
+Geschlossene Betriebe bleiben auch bei weiterem Zuzug unbesetzt. „Gebäude öffnen“
+gibt den Arbeitsplatz wieder für die automatische Vergabe frei. Sind gerade keine
+Bauern frei, wartet der Betrieb auf den nächsten Zuwanderer. Bauern umgehen die
+Gebäudeflächen auf ihren Arbeitswegen; auch die Ankunft am Feuer nutzt sichere Wege.
+Ohne angekommenen Bauern am Arbeitsplatz gibt es keine Produktion.
 
 Das neue Gesicht-Symbol oben zeigt die Zufriedenheit. Ein Klick auf das Gesicht oder den Prozentwert öffnet die Übersicht mit allen
 Einflussfaktoren und den Bevölkerungsgrenzen für spätere Bedürfnisse. Die ersten

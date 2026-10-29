@@ -438,6 +438,9 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         return Err("Production is server controlled.".into());
     }
     for mut p in ctx.db.producer().iter().collect::<Vec<_>>() {
+        if !building_open(ctx, p.building_id) {
+            continue;
+        }
         let staffed = ctx
             .db
             .worker()

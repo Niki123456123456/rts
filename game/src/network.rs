@@ -19,6 +19,8 @@ pub struct Snapshot {
     #[serde(default)]
     pub settlement_needs: Vec<SettlementNeeds>,
     #[serde(default)]
+    pub building_operations: Vec<BuildingOperation>,
+    #[serde(default)]
     pub roof_occupants: Vec<RoofOccupant>,
     #[serde(default)]
     pub resources: Option<Resources>,
@@ -144,6 +146,13 @@ pub struct Building {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct BuildingOperation {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub closed: bool,
 }
 
 #[derive(Clone, Deserialize)]
@@ -615,6 +624,7 @@ mod backend {
                                 format!("SELECT * FROM terrain_clearing WHERE game_id = {id}"),
                                 format!("SELECT * FROM keep_population WHERE game_id = {id}"),
                                 format!("SELECT * FROM settlement_needs WHERE game_id = {id}"),
+                                format!("SELECT * FROM building_operation WHERE game_id = {id}"),
                                 format!("SELECT * FROM building_rotation WHERE game_id = {id}"),
                                 format!("SELECT * FROM tower_occupant WHERE game_id = {id}"),
                                 format!("SELECT * FROM player_resources WHERE game_id = {id}"),
@@ -678,6 +688,16 @@ mod backend {
                     building_id: k.building_id,
                     arrived: k.arrived,
                     seconds: k.seconds,
+                })
+                .collect();
+            snapshot.building_operations = conn
+                .db
+                .building_operation()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| super::BuildingOperation {
+                    building_id: n.building_id,
+                    closed: n.closed,
                 })
                 .collect();
             snapshot.settlement_needs = conn

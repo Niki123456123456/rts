@@ -6,6 +6,7 @@ pub const HALF_X: f32 = (581.97156 - 34.17932) * MODEL_SCALE / 2.0;
 pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
 pub mod building_roof;
+pub mod camp;
 pub mod logistics;
 pub mod needs;
 pub mod population;

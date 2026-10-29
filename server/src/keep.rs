@@ -178,6 +178,7 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
             ctx.db.settlement_progress().insert(progress);
         }
         ctx.db.keep_population().building_id().update(state);
+        auto_assign_peasants(ctx, keep.owner);
     }
     start_migration(ctx);
     Ok(())

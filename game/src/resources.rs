@@ -119,7 +119,7 @@ pub(crate) fn resource_ui(
                         let peasants = population(&multiplayer);
                         let room=map::population::Population::from_buildings(multiplayer.snapshot.buildings.iter()
                             .filter(|b|b.owned).filter_map(|b|BuildingKind::from_name(&b.kind))).capacity;
-                        let tooltip = format!("Bauern: {} frei am Lagerfeuer · {} arbeiten · {} Bewohner / {} Wohnplätze. Produktionsgebäude anklicken und Bauer zuweisen wählen.",peasants.capacity.saturating_sub(peasants.used),peasants.used,peasants.capacity,room);
+                        let tooltip = format!("Bauern: {} frei am Lagerfeuer · {} arbeiten · {} Bewohner / {} Wohnplätze. Freie Bauern besetzen offene Produktionsgebäude automatisch. Ein Gebäude zum Pausieren schließen.",peasants.capacity.saturating_sub(peasants.used),peasants.used,peasants.capacity,room);
                         if satisfaction_icon(ui,&multiplayer) { *needs_open = !*needs_open; }
                         ui.separator();
                         ui.add(egui::Image::new((texture, egui::vec2(14., 18.))).uv(

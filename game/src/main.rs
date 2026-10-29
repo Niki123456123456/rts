@@ -975,18 +975,15 @@ fn selection_ui(
                                 .map(|w| w.cargo)
                                 .sum();
                             let staffed=multiplayer.snapshot.workers.iter().any(|w|w.source_building==building.id);
-                            ui.label(format!("{resource}: {} · Vorrat {} · Unterwegs {cargo}",if staffed {"besetzt"} else {"ohne Bauer"},producer.buffer));
+                            let closed=multiplayer.snapshot.building_operations.iter().any(|s|s.building_id==building.id&&s.closed);
+                            ui.label(format!("{resource}: {} · Vorrat {} · Unterwegs {cargo}",
+                                if closed {"geschlossen"} else if staffed {"besetzt"} else {"wartet auf Bauern"},producer.buffer));
                             if building.owned {
-                                if staffed {
-                                    if ui.button("Bauer freigeben").on_hover_text("Der Bauer kehrt in den freien Vorrat am Lagerfeuer zurück.").clicked() {
-                                        multiplayer.send(Action::UnassignPeasant {building_id:building.id});
-                                    }
-                                } else {
-                                    let pool=resources::population(&multiplayer);
-                                    if ui.add_enabled(pool.capacity>pool.used,egui::Button::new("Bauer zuweisen"))
-                                        .on_hover_text("Einen freien Bauern vom Lagerfeuer zu diesem Arbeitsplatz schicken.").clicked() {
-                                        multiplayer.send(Action::AssignPeasant {building_id:building.id});
-                                    }
+                                if ui.button(if closed {"Gebäude öffnen"} else {"Gebäude schließen"})
+                                    .on_hover_text(if closed {"Freie Bauern besetzen diesen Arbeitsplatz wieder automatisch."}
+                                        else {"Produktion anhalten und den Bauern für andere offene Gebäude freigeben."}).clicked() {
+                                    multiplayer.send(if closed {Action::AssignPeasant{building_id:building.id}}
+                                        else {Action::UnassignPeasant{building_id:building.id}});
                                 }
                             }
                         }

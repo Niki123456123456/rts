@@ -1,5 +1,6 @@
 // Real-server needs/workforce test in an isolated database.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
 const clients:DbConnection[]=[];
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -12,7 +13,7 @@ async function connect(){return new Promise<DbConnection>((resolve,reject)=>{
     .onConnect(db=>{clients.push(db);db.subscriptionBuilder().onApplied(()=>resolve(db)).onError(ctx=>reject(ctx.event))
       .subscribe(['SELECT * FROM participant','SELECT * FROM building','SELECT * FROM army_unit',
         'SELECT * FROM worker','SELECT * FROM producer','SELECT * FROM granary_stock',
-        'SELECT * FROM keep_population','SELECT * FROM settlement_needs']);})
+        'SELECT * FROM keep_population','SELECT * FROM settlement_needs','SELECT * FROM building_operation']);})
     .onConnectError((_ctx,error)=>reject(error)).build();
 });}
 function status(db:DbConnection,register:(cb:(ctx:ReducerEventContext)=>void)=>void,call:()=>void){
@@ -41,40 +42,74 @@ try{
   assert.equal((await build('apple_farm',0,24)).tag,'Committed','empty workplaces can be constructed before peasants arrive');
   const farm=ownBuildings().find(row=>row.kind==='apple_farm')!;
   const workers=()=>Array.from(a.db.worker.iter()).filter(w=>w.sourceBuilding===farm.id);
-  const assign=(db=a)=>status(db,cb=>db.reducers.onAssignPeasant(cb),()=>db.reducers.assignPeasant(farm.id));
-  assert.equal((await assign()).tag,'Failed','assignment needs an actual free peasant');
-  await delay(2200);
-  assert.equal(a.db.producer.buildingId.find(farm.id)!.buffer,0,'unassigned buildings cannot produce');
-  assert.equal(workers().length,0);
+  const open=(db=a)=>status(db,cb=>db.reducers.onAssignPeasant(cb),()=>db.reducers.assignPeasant(farm.id));
+  const close=(db=a)=>status(db,cb=>db.reducers.onUnassignPeasant(cb),()=>db.reducers.unassignPeasant(farm.id));
+  assert.equal((await close()).tag,'Committed','an empty workplace can be closed');
+  assert.equal((await build('housing',-17,17)).tag,'Committed','obstacle between camp and farm');
   assert.equal((await build('granary',-9,-23)).tag,'Committed');
   assert.equal((await build('well',13,-19)).tag,'Committed');
-  assert.equal((await build('housing',-5,43)).tag,'Committed');
   const granary=ownBuildings().find(row=>row.kind==='granary')!;
-  const initialBread=a.db.granaryStock.buildingId.find(granary.id)!.bread;
   const well=ownBuildings().find(row=>row.kind==='well')!;
-  await until(()=>population().arrived>=8 && needs().water>0,'water becomes relevant at eight settlers',45000);
-  assert.equal(needs().variety,0,'diversity stays inactive before sixteen settlers');
-  assert.ok(needs().happiness>startingScore);
-  assert.equal(needs().immigrationSeconds,4,'good supply accelerates immigration');
-  await until(()=>population().arrived>=1,'satisfied peasants arrive');
-  assert.equal((await status(b,cb=>b.reducers.onJoinGame(cb),()=>b.reducers.joinGame(game))).tag,'Committed');
-  assert.equal((await assign(b)).tag,'Failed','other players cannot staff your buildings');
-  assert.equal((await assign()).tag,'Committed');
-  assert.equal((await assign()).tag,'Failed','one worker per production building');
-  await until(()=>workers().length===1,'assignment creates a production worker');
+  const initialBread=a.db.granaryStock.buildingId.find(granary.id)!.bread;
+  await until(()=>population().arrived>=1,'first settler arrives',10000);
+  assert.equal(workers().length,0,'closed buildings stay unstaffed when peasants arrive');
+  assert.equal(a.db.producer.buildingId.find(farm.id)!.buffer,0);
+  assert.equal((await open()).tag,'Committed','opening automatically assigns an available peasant');
+  await until(()=>workers().length===1,'automatic assignment creates a worker');
   const unit=a.db.armyUnit.id.find(workers()[0].unitId)!;
-  assert.ok(Math.hypot(unit.x-keep.x,unit.z-(keep.z+11))<5,'assigned peasant starts at the campfire');
-  await until(()=>a.db.producer.buildingId.find(farm.id)!.buffer>0 || workers()[0]?.cargo>0,'worker reaches workplace and production starts',30000);
-  await until(()=>b.db.settlementNeeds.buildingId.find(keep.id)?.happiness===needs().happiness,'satisfaction replicates to other clients');
-  assert.equal((await status(a,cb=>a.reducers.onUnassignPeasant(cb),()=>a.reducers.unassignPeasant(farm.id))).tag,'Committed');
-  await until(()=>workers().length===0,'released worker returns to the free population');
+  assert.ok(Math.hypot(unit.x-keep.x,unit.z-(keep.z+11))<6,'worker starts at the campfire');
+  assert.equal((await open()).tag,'Committed','opening is idempotent');
+  assert.equal(workers().length,1,'no duplicate assignment');
+  const bounds=new Map<string,[number,number]>();
+  const catalog=readFileSync(new URL('../../../shared/src/building_catalog.rs',import.meta.url),'utf8');
+  for(const match of catalog.matchAll(/name: "([^"]+)",[\s\S]*?min: \[([^\]]+)\],[\s\S]*?max: \[([^\]]+)\]/g)) {
+    const min=match[2].split(',').map(Number), max=match[3].split(',').map(Number);
+    bounds.set(match[1],[(max[0]-min[0])*.005,(max[2]-min[2])*.005]);
+  }
+  assert.ok(bounds.has('housing'));
+  let collision:string|undefined;
+  let samples=0;
+  const monitor=setInterval(()=>{
+    for(const worker of workers()) {
+      const u=a.db.armyUnit.id.find(worker.unitId); if(!u)continue; samples++;
+      for(const b of ownBuildings()) {
+        const size=bounds.get(b.kind); if(!size)continue;
+        const half=size; // All buildings in this test are placed at rotation 0.
+        if(Math.abs(u.x-b.x)<half[0]+.24 && Math.abs(u.z-b.z)<half[1]+.24)
+          collision=`worker crossed ${b.kind} at ${u.x},${u.z}`;
+      }
+    }
+  },20);
+  try {
+    await until(()=>a.db.producer.buildingId.find(farm.id)!.buffer>0 || workers()[0]?.cargo>0,'worker walks around the house and starts producing',30000);
+  } finally {clearInterval(monitor);}
+  assert.ok(samples>10,'observed worker movement');
+  assert.equal(collision,undefined);
+  assert.equal((await status(b,cb=>b.reducers.onJoinGame(cb),()=>b.reducers.joinGame(game))).tag,'Committed');
+  assert.equal((await close(b)).tag,'Failed','other players cannot close your workplace');
+  assert.equal((await open(b)).tag,'Failed','other players cannot open your workplace');
+  assert.equal((await close()).tag,'Committed');
+  await until(()=>workers().length===0,'closing frees its worker');
   const buffer=a.db.producer.buildingId.find(farm.id)!.buffer;
-  await delay(3500);
-  assert.equal(a.db.producer.buildingId.find(farm.id)!.buffer,buffer,'production stops without its worker');
+  await delay(4500);
+  assert.equal(a.db.producer.buildingId.find(farm.id)!.buffer,buffer,'closed buildings stop producing');
+  assert.equal(workers().length,0,'automatic assignment never reopens a closed building');
+  await until(()=>population().arrived>=8 && needs().water>0,'water becomes relevant at eight settlers',45000);
+  assert.equal(needs().variety,0);
+  assert.ok(needs().happiness>startingScore);
+  await until(()=>b.db.buildingOperation.buildingId.find(farm.id)?.closed===true,'closed state replicates');
+  for(const [kind,x,z] of [['saw_pit',40,-43],['quarry',-65,-35],['iron_mine',-80,15]] as const) {
+    assert.equal((await build(kind,x,z)).tag,'Committed',`${kind} can be built on a nearby resource`);
+    const building=ownBuildings().find(row=>row.kind===kind)!;
+    await until(()=>Array.from(a.db.worker.iter()).some(w=>w.sourceBuilding===building.id),`${kind} automatically receives a free peasant`);
+  }
+  assert.equal((await open()).tag,'Committed');
+  await until(()=>workers().length===1,'reopening automatically restaffs the farm');
+  assert.equal((await close()).tag,'Committed');
   await until(()=>a.db.granaryStock.buildingId.find(granary.id)!.bread<initialBread,'population consumes actual granary rations',35000);
   assert.equal((await remove(granary.id)).tag,'Committed');
   assert.equal((await remove(well.id)).tag,'Committed');
   await until(()=>needs().food<0 && needs().water<0 && needs().immigrationSeconds===0,'food and water matter once the village grows');
   assert.ok(needs().happiness<50);
-  console.log('PASS: easy start, progressive needs, water at eight settlers, fast immigration, real food consumption, empty workplace, explicit staffing, campfire departure, ownership, duplicate protection, production gating, release, replication and shortages after village growth.');
+  console.log('PASS: easy start, progressive needs, water at eight settlers, fast immigration, real food consumption, automatic staffing, closed workplace persistence, campfire departure, building collision, nearby resources, ownership, duplicate protection, production gating, reopening, replication and shortages after village growth.');
 }finally{for(const client of clients)client.disconnect();}

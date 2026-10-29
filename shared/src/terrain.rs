@@ -2,19 +2,30 @@
 use crate::{Obstacle, Point};
 
 pub const GRID: f32 = 2.0;
-pub const STONE: [Point; 3] = [(-245.0, -140.0), (-110.0, -220.0), (310.0, -140.0)];
-pub const IRON: [Point; 4] = [
+pub const STONE: [Point; 5] = [
+    (-245.0, -140.0),
+    (-110.0, -220.0),
+    (310.0, -140.0),
+    (-65.0, -35.0),
+    (20.0, 75.0),
+];
+pub const IRON: [Point; 7] = [
     (-155.0, -110.0),
     (-285.0, -125.0),
     (230.0, -115.0),
     (275.0, 260.0),
+    (-80.0, 15.0),
+    (35.0, 65.0),
+    (-20.0, -80.0),
 ];
-pub const PEAKS: [(f32, f32, f32, f32); 5] = [
+pub const PEAKS: [(f32, f32, f32, f32); 7] = [
     (-275.0, -255.0, 78.0, 85.0),
     (-195.0, -275.0, 96.0, 76.0),
     (-185.0, -190.0, 58.0, 70.0),
     (285.0, -270.0, 68.0, 88.0),
     (230.0, -205.0, 44.0, 70.0),
+    (-78.0, -74.0, 24.0, 25.0),
+    (65.0, 100.0, 20.0, 25.0),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,12 +98,16 @@ pub fn biome(x: f32, z: f32) -> Biome {
         return Biome::Mountain;
     }
     let desert_edge = 170.0 + 14.0 * (x * 0.021).sin();
-    if (x < -45.0 && z > desert_edge) || (x > 175.0 && z > 240.0) {
+    if (x < -45.0 && z > desert_edge)
+        || (x > 175.0 && z > 240.0)
+        || ((x + 25.0) / 28.0).powi(2) + ((z - 65.0) / 22.0).powi(2) < 1.0
+    {
         return Biome::Desert;
     }
     let forest_west = ((x + 115.0) / 94.0).powi(2) + ((z - 55.0) / 116.0).powi(2);
     let forest_east = ((x - 278.0) / 104.0).powi(2) + ((z - 65.0) / 139.0).powi(2);
-    if x.hypot(z) > 42.0 && (forest_west < 1.0 || forest_east < 1.0) {
+    let forest_start = ((x - 40.0) / 26.0).powi(2) + ((z + 43.0) / 24.0).powi(2);
+    if x.hypot(z) > 42.0 && (forest_west < 1.0 || forest_east < 1.0 || forest_start < 1.0) {
         return Biome::Forest;
     }
     Biome::Grassland
@@ -226,6 +241,31 @@ pub fn obstacles() -> Vec<Obstacle> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn starting_area_has_nearby_varied_terrain_and_buildable_resources() {
+        use crate::BuildingKind::*;
+        for start in [(-32., 0.), (0., -36.), (0., 36.), (32., 0.)] {
+            for target in [Biome::Forest, Biome::Desert, Biome::Mountain, Biome::River] {
+                assert!(
+                    (-140..=140).step_by(4).any(|x| (-140..=140)
+                        .step_by(4)
+                        .any(|z| crate::distance(start, (x as f32, z as f32)) < 150.
+                            && biome(x as f32, z as f32) == target)),
+                    "{start:?} lacks {target:?}"
+                );
+            }
+            for (kind, points) in [(Quarry, STONE.as_slice()), (IronMine, IRON.as_slice())] {
+                assert!(points.iter().any(|p| crate::distance(start, *p) < 120.
+                    && construction_height(
+                        kind,
+                        kind.snap_position(p.0, p.1).0,
+                        kind.snap_position(p.0, p.1).1,
+                        0
+                    )
+                    .is_some()));
+            }
+        }
+    }
     #[test]
     fn resource_buildings_require_their_entire_plot_on_the_right_resource() {
         use crate::BuildingKind::*;

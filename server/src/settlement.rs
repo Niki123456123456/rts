@@ -78,7 +78,8 @@ fn settlement_satisfaction(
         workplaces: buildings
             .iter()
             .filter(|b| {
-                map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.produces().is_some())
+                building_open(ctx, b.id)
+                    && map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.produces().is_some())
             })
             .count() as u32,
         water: buildings.iter().any(|b| b.kind == "well"),
@@ -145,112 +146,155 @@ fn feed_population(ctx: &ReducerContext, keep: &Building, population: u32, round
     }
 }
 
-#[spacetimedb::reducer]
-pub fn assign_peasant(ctx: &ReducerContext, building_id: u64) -> Result<(), String> {
+// Missing operation row means open, including buildings from earlier versions.
+#[derive(Clone)]
+#[spacetimedb::table(name = building_operation, public)]
+pub struct BuildingOperation {
+    #[primary_key]
+    pub building_id: u64,
+    #[index(btree)]
+    pub game_id: u64,
+    pub closed: bool,
+}
+fn building_open(ctx: &ReducerContext, id: u64) -> bool {
+    !ctx.db
+        .building_operation()
+        .building_id()
+        .find(id)
+        .is_some_and(|s| s.closed)
+}
+fn production_building(ctx: &ReducerContext, id: u64) -> Result<Building, String> {
     let player = participant(ctx)?;
-    let building = ctx
+    let b = ctx
         .db
         .building()
         .id()
-        .find(building_id)
+        .find(id)
         .ok_or("Unbekanntes Gebäude.")?;
-    if building.owner != player.connection_id || building.game_id != player.game_id {
-        return Err("Du kannst Bauern nur deinen eigenen Gebäuden zuweisen.".into());
+    if b.owner != player.connection_id || b.game_id != player.game_id {
+        return Err("Du kannst nur deine eigenen Gebäude öffnen und schließen.".into());
     }
-    if map::BuildingKind::from_name(&building.kind)
+    if map::BuildingKind::from_name(&b.kind)
         .and_then(|k| k.produces())
         .is_none()
     {
         return Err("Dieses Gebäude hat keinen Produktionsarbeitsplatz.".into());
     }
-    if ctx
-        .db
-        .worker()
-        .source_building()
-        .filter(building_id)
-        .next()
-        .is_some()
-    {
-        return Err("Der Arbeitsplatz ist bereits besetzt.".into());
-    }
-    let keep = ctx
+    Ok(b)
+}
+fn auto_assign_peasants(ctx: &ReducerContext, owner: spacetimedb::ConnectionId) {
+    let Some(keep) = ctx
         .db
         .building()
         .owner()
-        .filter(player.connection_id)
+        .filter(owner)
         .find(|b| b.kind == "keep")
-        .ok_or("Es fehlt ein Bergfried mit Lagerfeuer.")?;
-    let population = ctx
-        .db
-        .keep_population()
-        .building_id()
-        .find(keep.id)
-        .ok_or("Es sind noch keine Bauern angekommen.")?;
-    if population.arrived <= employed_peasants(ctx, player.connection_id) {
-        return Err("Am Lagerfeuer wartet kein freier Bauer. Verbessere Versorgung und Wohnraum für weiteren Zuzug.".into());
+    else {
+        return;
+    };
+    let Some(population) = ctx.db.keep_population().building_id().find(keep.id) else {
+        return;
+    };
+    let mut free = population
+        .arrived
+        .saturating_sub(employed_peasants(ctx, owner));
+    if free == 0 {
+        return;
     }
-    let shape = building_shape(ctx, &building);
-    let obs = obstacles(ctx, player.game_id);
-    let reserved = ctx
+    let mut buildings = ctx
         .db
-        .army_unit()
-        .game_id()
-        .filter(player.game_id)
-        .filter(|u| on_ground(ctx, u))
-        .map(|u| (u.x, u.z))
-        .collect::<Vec<_>>();
-    let camp = tower_geometry(ctx, &keep).world((0., 11.));
-    let point = (0..16)
-        .map(|i| {
-            let a = i as f32 * std::f32::consts::TAU / 16.;
-            (camp.0 + a.cos() * 2., camp.1 + a.sin() * 2.)
+        .building()
+        .owner()
+        .filter(owner)
+        .filter(|b| {
+            b.game_id == keep.game_id
+                && building_open(ctx, b.id)
+                && map::BuildingKind::from_name(&b.kind)
+                    .and_then(|k| k.produces())
+                    .is_some()
+                && ctx
+                    .db
+                    .worker()
+                    .source_building()
+                    .filter(b.id)
+                    .next()
+                    .is_none()
         })
-        .chain(
-            map::attack_positions(shape)
-                .into_iter()
-                .filter(|p| p.ring == 0)
-                .map(|p| p.point),
-        )
-        .find(|p| {
-            map::free(*p, &obs)
-                && reserved
-                    .iter()
-                    .all(|q| map::distance(*p, *q) >= map::UNIT_SPACING)
+        .collect::<Vec<_>>();
+    buildings.sort_by_key(|b| b.id);
+    let obs = obstacles(ctx, keep.game_id);
+    let spots = map::camp::spots(tower_geometry(ctx, &keep), &obs, 64);
+    for b in buildings {
+        if free == 0 {
+            break;
+        }
+        let reserved = ctx
+            .db
+            .army_unit()
+            .game_id()
+            .filter(keep.game_id)
+            .filter(|u| on_ground(ctx, u))
+            .map(|u| (u.x, u.z))
+            .collect::<Vec<_>>();
+        let shape = building_shape(ctx, &b);
+        let point = spots.iter().copied().find(|p| {
+            reserved
+                .iter()
+                .all(|q| map::distance(*p, *q) >= map::UNIT_SPACING)
                 && map::attack_positions(shape)
                     .into_iter()
                     .filter(|s| s.ring == 0)
                     .any(|s| map::shortest_path(*p, s.point, &obs).is_some())
-        })
-        .ok_or("Der Weg vom Lagerfeuer zum Arbeitsplatz ist blockiert.".to_owned())?;
-    spawn_production_worker(ctx, &building, point)?;
-    settlement_satisfaction(ctx, &keep, population.arrived);
+        });
+        if let Some(point) = point {
+            if spawn_production_worker(ctx, &b, point).is_ok() {
+                free -= 1;
+            }
+        }
+    }
+}
+// Retain reducer names for existing clients; opening now queues automatic staffing.
+#[spacetimedb::reducer]
+pub fn assign_peasant(ctx: &ReducerContext, building_id: u64) -> Result<(), String> {
+    let b = production_building(ctx, building_id)?;
+    ctx.db.building_operation().building_id().delete(b.id);
+    auto_assign_peasants(ctx, b.owner);
     Ok(())
 }
 #[spacetimedb::reducer]
 pub fn unassign_peasant(ctx: &ReducerContext, building_id: u64) -> Result<(), String> {
-    let player = participant(ctx)?;
-    let building = ctx
+    let b = production_building(ctx, building_id)?;
+    let row = BuildingOperation {
+        building_id: b.id,
+        game_id: b.game_id,
+        closed: true,
+    };
+    if ctx
         .db
-        .building()
-        .id()
-        .find(building_id)
-        .ok_or("Unbekanntes Gebäude.")?;
-    if building.owner != player.connection_id || building.game_id != player.game_id {
-        return Err("Das ist nicht dein Gebäude.".into());
+        .building_operation()
+        .building_id()
+        .find(b.id)
+        .is_some()
+    {
+        ctx.db.building_operation().building_id().update(row);
+    } else {
+        ctx.db.building_operation().insert(row);
     }
-    let worker = ctx
+    for worker in ctx
         .db
         .worker()
         .source_building()
-        .filter(building_id)
-        .next()
-        .ok_or("Kein Bauer zugewiesen.")?;
-    if let Some(mut producer) = ctx.db.producer().building_id().find(building_id) {
-        producer.buffer = producer.buffer.saturating_add(worker.cargo);
-        ctx.db.producer().building_id().update(producer);
+        .filter(b.id)
+        .collect::<Vec<_>>()
+    {
+        if let Some(mut p) = ctx.db.producer().building_id().find(b.id) {
+            p.buffer = p.buffer.saturating_add(worker.cargo);
+            ctx.db.producer().building_id().update(p);
+        }
+        ctx.db.unit_order().unit_id().delete(worker.unit_id);
+        ctx.db.army_unit().id().delete(worker.unit_id);
+        ctx.db.worker().unit_id().delete(worker.unit_id);
     }
-    ctx.db.unit_order().unit_id().delete(worker.unit_id);
-    ctx.db.army_unit().id().delete(worker.unit_id);
-    ctx.db.worker().unit_id().delete(worker.unit_id);
+    auto_assign_peasants(ctx, b.owner);
     Ok(())
 }

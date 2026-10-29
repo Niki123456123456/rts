@@ -57,6 +57,15 @@ pub(crate) struct Citizen {
     building: u64,
     index: u32,
     age: f32,
+    point: Option<stronghold_map::Point>,
+    path: Vec<stronghold_map::Point>,
+    revision: u64,
+}
+#[derive(Default)]
+pub(crate) struct CampNavigation {
+    revision: u64,
+    obstacles: Vec<stronghold_map::Obstacle>,
+    spots: std::collections::HashMap<u64, Vec<stronghold_map::Point>>,
 }
 
 pub(crate) fn setup(
@@ -181,6 +190,9 @@ pub(crate) fn sync_camp(
                         building: keep.id,
                         index,
                         age,
+                        point: None,
+                        path: Vec::new(),
+                        revision: u64::MAX,
                     },
                     Transform::from_xyz(keep.x, keep.y, keep.z),
                     Visibility::default(),
@@ -291,36 +303,116 @@ pub(crate) fn animate_fire(
 pub(crate) fn animate_citizens(
     time: Res<Time>,
     multiplayer: Res<Multiplayer>,
-    mut query: Query<(&mut Citizen, &mut Transform)>,
+    mut cache: Local<CampNavigation>,
+    mut query: Query<(&mut Citizen, &mut Transform, &mut Visibility)>,
 ) {
-    for (mut citizen, mut transform) in &mut query {
-        let Some(keep) = multiplayer
-            .snapshot
-            .buildings
+    use stronghold_map::{self as map, building_roof::BuildingRoof};
+    let buildings = &multiplayer.snapshot.buildings;
+    let revision = buildings.iter().fold(1u64, |h, b| {
+        h.wrapping_mul(31).wrapping_add(b.id)
+            ^ (b.x.to_bits() as u64).rotate_left(17)
+            ^ (b.z.to_bits() as u64).rotate_left(33)
+            ^ u64::from(b.rotation)
+    });
+    if revision != cache.revision {
+        cache.revision = revision;
+        cache.obstacles = buildings
             .iter()
-            .find(|b| b.id == citizen.building)
-        else {
+            .filter_map(|b| {
+                BuildingKind::from_name(&b.kind).map(|k| k.rotated_obstacle(b.x, b.z, b.rotation))
+            })
+            .chain(map::terrain::obstacles())
+            .collect();
+        cache.spots = buildings
+            .iter()
+            .filter(|b| b.kind == "keep")
+            .map(|b| {
+                let keep =
+                    BuildingRoof::new(BuildingKind::Keep, b.x, b.y, b.z, b.rotation).unwrap();
+                (b.id, map::camp::spots(keep, &cache.obstacles, 16))
+            })
+            .collect();
+    }
+    for (mut citizen, mut transform, mut visibility) in &mut query {
+        let Some(keep) = buildings.iter().find(|b| b.id == citizen.building) else {
             continue;
         };
-        citizen.age += time.delta_secs();
-        let i = citizen.index as f32;
-        let angle = 2.1 + i * 2.39996;
-        let radius = 1.9 + (citizen.index / 6) as f32 * 0.65;
-        let goal = Vec3::new(radius * angle.cos(), 0., 11. + radius * angle.sin());
-        let start = Vec3::new(-8.5, 0., 12.5);
-        let fraction = (citizen.age / 6.).min(1.);
-        let mut local = start.lerp(goal, fraction);
-        let facing = if fraction < 1. {
-            goal - start
-        } else {
-            Vec3::new(0., 0., 11.) - goal
-        };
-        if fraction < 1. {
-            local.y = 0.045 * (time.elapsed_secs() * 11. + i).sin().abs();
+        if citizen.revision != revision {
+            citizen.revision = revision;
+            let Some(goal) = cache
+                .spots
+                .get(&keep.id)
+                .and_then(|s| s.get(citizen.index as usize))
+                .copied()
+            else {
+                *visibility = Visibility::Hidden;
+                continue;
+            };
+            let roof = BuildingRoof::new(BuildingKind::Keep, keep.x, keep.y, keep.z, keep.rotation)
+                .unwrap();
+            let route =
+                if let Some(point) = citizen.point.filter(|p| map::free(*p, &cache.obstacles)) {
+                    map::shortest_path(point, goal, &cache.obstacles).map(|path| (point, path))
+                } else if citizen.age >= 6. {
+                    Some((goal, Vec::new()))
+                } else {
+                    map::camp::arrival(roof, goal, &cache.obstacles)
+                };
+            let Some((point, path)) = route else {
+                *visibility = Visibility::Hidden;
+                continue;
+            };
+            citizen.point = Some(point);
+            citizen.path = path;
+            *visibility = Visibility::Inherited;
         }
-        transform.translation = world(keep, local);
-        transform.rotation = Quat::from_rotation_y(
-            keep.rotation as f32 * std::f32::consts::FRAC_PI_2 + facing.x.atan2(facing.z),
+        if *visibility == Visibility::Hidden {
+            continue;
+        }
+        let Some(mut point) = citizen.point else {
+            continue;
+        };
+        let old = point;
+        let mut budget = time.delta_secs() * 1.6;
+        while budget > 0.0001 {
+            let Some(next) = citizen.path.first().copied() else {
+                break;
+            };
+            if !map::segment_clear(point, next, &cache.obstacles) {
+                break;
+            }
+            let distance = map::distance(point, next);
+            if distance <= budget {
+                point = next;
+                budget -= distance;
+                citizen.path.remove(0);
+            } else {
+                point = (
+                    point.0 + (next.0 - point.0) * budget / distance,
+                    point.1 + (next.1 - point.1) * budget / distance,
+                );
+                budget = 0.;
+            }
+        }
+        citizen.point = Some(point);
+        citizen.age += time.delta_secs();
+        let walking = map::distance(old, point) > 0.00001;
+        let fire = world(keep, Vec3::new(0., 0., 11.));
+        let facing = if walking {
+            (point.0 - old.0, point.1 - old.1)
+        } else {
+            (fire.x - point.0, fire.z - point.1)
+        };
+        transform.translation = Vec3::new(
+            point.0,
+            map::terrain::height(point.0, point.1)
+                + if walking {
+                    0.045 * (time.elapsed_secs() * 11.).sin().abs()
+                } else {
+                    0.
+                },
+            point.1,
         );
+        transform.rotation = Quat::from_rotation_y(facing.0.atan2(facing.1));
     }
 }

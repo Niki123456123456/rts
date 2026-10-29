@@ -718,6 +718,10 @@ fn delete_building(ctx: &ReducerContext, building_id: u64) {
         .settlement_progress()
         .building_id()
         .delete(building_id);
+    ctx.db
+        .building_operation()
+        .building_id()
+        .delete(building_id);
     remove_logistics_building(ctx, building_id);
     cancel_surface_routes_through(ctx, building_id);
     ctx.db.building_rotation().building_id().delete(building_id);
@@ -1085,6 +1089,7 @@ fn place_building_for(
         half_x: cleared.half_x,
         half_z: cleared.half_z,
     });
+    auto_assign_peasants(ctx, player.connection_id);
     Ok(())
 }
 

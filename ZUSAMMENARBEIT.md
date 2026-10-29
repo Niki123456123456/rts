@@ -1,7 +1,7 @@
 # Gemeinsam am RTS arbeiten
 
 Die Version enthält die Minimap, Gelände und Bauregeln, einen automatischen
-Bergfried pro Spieler sowie Zufriedenheit, Zuwanderung und manuell zugewiesene Bauern.
+Bergfried pro Spieler sowie Zufriedenheit, Zuwanderung und automatisch zugewiesene Bauern und schließbare Betriebe.
 
 Vor Änderungen `git pull --rebase` bei sauberem Arbeitsverzeichnis ausführen.
 Nach dem Testen Änderungen committen und `git push` ausführen. Falls der Push

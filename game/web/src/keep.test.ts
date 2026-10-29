@@ -62,7 +62,7 @@ try {
   assert.ok(Math.abs(lord().y-.75)<.02);
   await until(()=>a.db.keepPopulation.buildingId.find(keep.id)!.arrived>=1,'first immigrant arrives');
   const farm=buildings().find(row=>row.kind==='apple_farm')!;
-  assert.equal((await status(a,cb=>a.reducers.onAssignPeasant(cb),()=>a.reducers.assignPeasant(farm.id))).tag,'Committed','immigrant is explicitly assigned to the production job');
+  await until(()=>Array.from(a.db.worker.iter()).some(w=>w.sourceBuilding===farm.id),'immigrant automatically takes the open production job');
   await until(()=>Array.from(a.db.worker.iter()).some(w=>w.gameId===game),'production worker exists');
   assert.equal((await build('housing',-42,20)).tag,'Committed');
   assert.equal((await status(a,cb=>a.reducers.onMoveToRoof(cb),()=>a.reducers.moveToRoof([lord().id],keep.id,keep.x,keep.z+2))).tag,'Committed');
