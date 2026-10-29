@@ -13,3 +13,6 @@
 /shared/target/
 /runtime/
 /server/.spacetime-local/
+
+__pycache__/
+*.pyc

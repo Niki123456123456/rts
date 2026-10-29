@@ -56,8 +56,9 @@ origin and inspect incoming commits; integrate them without overwriting local
 work. After relevant checks, commit and push the changes to main. Fetch again
 before pushing; if main advanced, integrate and recheck affected behavior. Never
 force-push shared history. Report the uploaded commit and any pending conflicts.
-This workflow applies whenever working on this project; it is not a continuously
-running background synchronization service. Never upload credentials, database
+This workflow applies whenever working on this project. A separate Codex
+heartbeat checks for incoming changes every ten minutes, using a fast-forward
+only when the working tree is clean. Do not auto-commit unfinished changes. Never upload credentials, database
 data, runtime executables, build caches, or generated browser binaries.
 
 Pages deployment requires repository variables SPACETIMEDB_URI and
