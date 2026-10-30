@@ -21,6 +21,20 @@ pub struct Snapshot {
     #[serde(default)]
     pub building_operations: Vec<BuildingOperation>,
     #[serde(default)]
+    pub resource_nodes: Vec<ResourceNode>,
+    #[serde(default)]
+    pub gates: Vec<GateStatus>,
+    #[serde(default)]
+    pub moats: Vec<MoatView>,
+    #[serde(default)]
+    pub stairs: Vec<StairView>,
+    #[serde(default)]
+    pub wildlife: Vec<Wildlife>,
+    #[serde(default)]
+    pub ox_carts: Vec<OxCart>,
+    #[serde(default)]
+    pub fish_stocks: Vec<FishStock>,
+    #[serde(default)]
     pub roof_occupants: Vec<RoofOccupant>,
     #[serde(default)]
     pub resources: Option<Resources>,
@@ -36,6 +50,72 @@ pub struct Snapshot {
     pub arrows: Vec<Arrow>,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct GateStatus {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub open: bool,
+}
+#[derive(Clone, Deserialize)]
+pub struct MoatView {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub owned: bool,
+    pub x: f32,
+    pub z: f32,
+}
+#[derive(Clone, Deserialize)]
+pub struct StairView {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    #[serde(deserialize_with = "id")]
+    pub wall_id: u64,
+    pub owned: bool,
+    pub base_x: f32,
+    pub base_y: f32,
+    pub base_z: f32,
+    pub top_x: f32,
+    pub top_y: f32,
+    pub top_z: f32,
+}
+#[derive(Clone, Deserialize)]
+pub struct ResourceNode {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub site: u32,
+    pub kind: u8,
+    pub x: f32,
+    pub z: f32,
+    pub remaining: u32,
+    pub capacity: u32,
+    pub phase: u8,
+    pub phase_ticks: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct Wildlife {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub species: u8,
+    pub group_id: u32,
+    pub x: f32,
+    pub z: f32,
+    pub health: f32,
+    pub state: u8,
+    pub meat: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct OxCart {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    #[serde(default, deserialize_with = "optional_id")]
+    pub source_building: Option<u64>,
+}
+#[derive(Clone, Deserialize)]
+pub struct FishStock {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub amount: u32,
+}
 #[derive(Clone, Deserialize)]
 pub struct Arrow {
     #[serde(deserialize_with = "id")]
@@ -244,6 +324,50 @@ pub enum Action {
     UnassignPeasant {
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
+    },
+    AssignOxCart {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+    },
+    ReleaseOxCart {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+    },
+    HuntAnimal {
+        #[serde(serialize_with = "serialize_ids")]
+        unit_ids: Vec<u64>,
+        #[serde(serialize_with = "serialize_id")]
+        animal_id: u64,
+    },
+    SetGate {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+        open: bool,
+    },
+    DigMoat {
+        start_x: f32,
+        start_z: f32,
+        end_x: f32,
+        end_z: f32,
+    },
+    FillMoat {
+        #[serde(serialize_with = "serialize_id")]
+        moat_id: u64,
+    },
+    BuildWallStair {
+        #[serde(serialize_with = "serialize_id")]
+        wall_id: u64,
+        base_x: f32,
+        base_z: f32,
+        top_x: f32,
+        top_z: f32,
+    },
+    BuildWallKind {
+        start_x: f32,
+        start_z: f32,
+        end_x: f32,
+        end_z: f32,
+        kind: String,
     },
     RecruitUnit {
         #[serde(serialize_with = "serialize_id")]
@@ -506,6 +630,30 @@ mod backend {
                 let errors = self.status.clone();
                 conn.reducers
                     .on_unassign_peasant(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_assign_ox_cart(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_release_ox_cart(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_hunt_animal(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_set_gate(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_dig_moat(move |ctx, _, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_fill_moat(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_build_wall_stair(move |ctx, _, _, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_build_wall_kind(move |ctx, _, _, _, _, _| record_status(&errors, ctx));
                 self.connection = Some(conn);
                 return Ok(());
             }
@@ -515,9 +663,41 @@ mod backend {
                 .as_ref()
                 .ok_or("Connect to a server first.")?;
             match action {
+                Action::SetGate { building_id, open } => conn.reducers.set_gate(building_id, open),
+                Action::DigMoat {
+                    start_x,
+                    start_z,
+                    end_x,
+                    end_z,
+                } => conn.reducers.dig_moat(start_x, start_z, end_x, end_z),
+                Action::FillMoat { moat_id } => conn.reducers.fill_moat(moat_id),
+                Action::BuildWallStair {
+                    wall_id,
+                    base_x,
+                    base_z,
+                    top_x,
+                    top_z,
+                } => conn
+                    .reducers
+                    .build_wall_stair(wall_id, base_x, base_z, top_x, top_z),
+                Action::BuildWallKind {
+                    start_x,
+                    start_z,
+                    end_x,
+                    end_z,
+                    kind,
+                } => conn
+                    .reducers
+                    .build_wall_kind(start_x, start_z, end_x, end_z, kind),
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
+                Action::AssignOxCart { building_id } => conn.reducers.assign_ox_cart(building_id),
+                Action::ReleaseOxCart { building_id } => conn.reducers.release_ox_cart(building_id),
+                Action::HuntAnimal {
+                    unit_ids,
+                    animal_id,
+                } => conn.reducers.hunt_animal(unit_ids, animal_id),
                 Action::AssignPeasant { building_id } => conn.reducers.assign_peasant(building_id),
                 Action::UnassignPeasant { building_id } => {
                     conn.reducers.unassign_peasant(building_id)
@@ -625,6 +805,13 @@ mod backend {
                                 format!("SELECT * FROM keep_population WHERE game_id = {id}"),
                                 format!("SELECT * FROM settlement_needs WHERE game_id = {id}"),
                                 format!("SELECT * FROM building_operation WHERE game_id = {id}"),
+                                format!("SELECT * FROM resource_node WHERE game_id = {id}"),
+                                format!("SELECT * FROM gate_state WHERE game_id = {id}"),
+                                format!("SELECT * FROM moat WHERE game_id = {id}"),
+                                format!("SELECT * FROM wall_stair WHERE game_id = {id}"),
+                                format!("SELECT * FROM wildlife WHERE game_id = {id}"),
+                                format!("SELECT * FROM ox_cart WHERE game_id = {id}"),
+                                format!("SELECT * FROM fish_stock WHERE game_id = {id}"),
                                 format!("SELECT * FROM building_rotation WHERE game_id = {id}"),
                                 format!("SELECT * FROM tower_occupant WHERE game_id = {id}"),
                                 format!("SELECT * FROM player_resources WHERE game_id = {id}"),
@@ -688,6 +875,98 @@ mod backend {
                     building_id: k.building_id,
                     arrived: k.arrived,
                     seconds: k.seconds,
+                })
+                .collect();
+            snapshot.gates = conn
+                .db
+                .gate_state()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| GateStatus {
+                    building_id: n.building_id,
+                    open: n.open,
+                })
+                .collect();
+            snapshot.moats = conn
+                .db
+                .moat()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| MoatView {
+                    id: n.id,
+                    owned: n.owner == conn.connection_id(),
+                    x: n.x,
+                    z: n.z,
+                })
+                .collect();
+            snapshot.stairs = conn
+                .db
+                .wall_stair()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| StairView {
+                    id: n.id,
+                    wall_id: n.wall_id,
+                    owned: n.owner == conn.connection_id(),
+                    base_x: n.base_x,
+                    base_y: n.base_y,
+                    base_z: n.base_z,
+                    top_x: n.top_x,
+                    top_y: n.top_y,
+                    top_z: n.top_z,
+                })
+                .collect();
+            snapshot.resource_nodes = conn
+                .db
+                .resource_node()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| super::ResourceNode {
+                    id: n.id,
+                    site: n.site,
+                    kind: n.kind,
+                    x: n.x,
+                    z: n.z,
+                    remaining: n.remaining,
+                    capacity: n.capacity,
+                    phase: n.phase,
+                    phase_ticks: n.phase_ticks,
+                })
+                .collect();
+            snapshot.wildlife = conn
+                .db
+                .wildlife()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| super::Wildlife {
+                    id: n.id,
+                    species: n.species,
+                    group_id: n.group_id,
+                    x: n.x,
+                    z: n.z,
+                    health: n.health,
+                    state: n.state,
+                    meat: n.meat,
+                })
+                .collect();
+            snapshot.ox_carts = conn
+                .db
+                .ox_cart()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| super::OxCart {
+                    building_id: n.building_id,
+                    source_building: n.source_building,
+                })
+                .collect();
+            snapshot.fish_stocks = conn
+                .db
+                .fish_stock()
+                .iter()
+                .filter(|n| Some(n.game_id) == snapshot.game_id)
+                .map(|n| super::FishStock {
+                    building_id: n.building_id,
+                    amount: n.amount,
                 })
                 .collect();
             snapshot.building_operations = conn

@@ -30,3 +30,13 @@ impl UnitKind {
         }
     }
 }
+
+impl UnitKind {
+    pub fn cost(self) -> crate::Cost {
+        match self {
+            Self::Lord => crate::Cost::new(0, 0, 0),
+            Self::ArmedPeasant => crate::Cost::new(2, 0, 2),
+            Self::Archer => crate::Cost::new(6, 0, 1),
+        }
+    }
+}

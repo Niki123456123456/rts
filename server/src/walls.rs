@@ -25,13 +25,17 @@ fn roof_pieces(
     pieces
 }
 fn is_wall(b: &Building) -> bool {
-    b.kind == "stone_wall"
+    map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_wall())
 }
 fn wall_level(b: &Building) -> f32 {
-    b.y + map::walls::WALL_HEIGHT + roof::UNIT_CENTER_HEIGHT
+    b.y + map::BuildingKind::from_name(&b.kind)
+        .and_then(|k| k.roof_profile())
+        .map_or(map::walls::WALL_HEIGHT, |p| p.height)
+        + roof::UNIT_CENTER_HEIGHT
 }
 fn wall_connected(ctx: &ReducerContext, b: &Building) -> bool {
-    !map::walls::tower_routes(b.id, &roof_pieces(ctx, b.game_id, b.owner)).is_empty()
+    stair_for(ctx, b).is_some()
+        || !map::walls::tower_routes(b.id, &roof_pieces(ctx, b.game_id, b.owner)).is_empty()
 }
 fn access_building(ctx: &ReducerContext, unit_id: u64, b: &Building) -> Option<Building> {
     let id = if is_wall(b) {
@@ -57,6 +61,19 @@ fn wall_entry_plan_using(
     pieces: &[map::walls::RoofPiece],
 ) -> Option<(u64, u8, Vec<map::Point>, Vec<Position>, Vec<u8>)> {
     let obstacles = obstacles(ctx, b.game_id);
+    if let Some(s) = stair_for(ctx, b) {
+        let landing = stair_landing(&s);
+        if let Some(path) = map::shortest_path((u.x, u.z), landing, &obstacles) {
+            let mut points = vec![
+                (s.base_x, s.base_y + roof::UNIT_CENTER_HEIGHT, s.base_z),
+                (s.top_x, s.top_y + roof::UNIT_CENTER_HEIGHT, s.top_z),
+            ];
+            let route = map::walls::wall_path(s.wall_id, b.id, pieces)?;
+            points.extend(route.into_iter().map(|p| (p.0, wall_level(b), p.1)));
+            let modes = vec![4; points.len()];
+            return Some((s.wall_id, 0, path, points, modes));
+        }
+    }
     let mut best = None;
     for (id, route) in map::walls::tower_routes(b.id, &pieces) {
         let access = pieces.iter().find(|p| p.id == id)?.roof();
@@ -74,7 +91,7 @@ fn wall_entry_plan_using(
             }
             let hatch = access.hatch();
             let mut points = vec![(hatch.0, access.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1)];
-            let mut modes = vec![3];
+            let mut modes = vec![4];
             if (points[0].1 - wall_level(b)).abs() > 0.01 {
                 points.push((hatch.0, wall_level(b), hatch.1));
                 modes.push(5);
@@ -98,10 +115,53 @@ fn depart_wall(
     b: &Building,
     mut o: TowerOccupant,
 ) -> Result<map::Point, String> {
+    if let Some(s) = stair_for(ctx, b) {
+        let pieces = roof_pieces(ctx, b.game_id, b.owner);
+        let current = pieces
+            .iter()
+            .find(|p| p.kind.is_wall() && p.roof().roof_contains((u.x, u.z)));
+        if current.is_none() && ctx.db.tower_travel().unit_id().find(u.id).is_some() {
+            let mut points = Vec::new();
+            if u.y >= s.top_y + roof::UNIT_CENTER_HEIGHT - 0.1 {
+                points.push((s.top_x, s.top_y + roof::UNIT_CENTER_HEIGHT, s.top_z));
+            }
+            points.push((s.base_x, s.base_y + roof::UNIT_CENTER_HEIGHT, s.base_z));
+            let landing = stair_landing(&s);
+            points.push((
+                landing.0,
+                terrain_height(landing.0, landing.1) + roof::UNIT_CENTER_HEIGHT,
+                landing.1,
+            ));
+            let modes = vec![4; points.len()];
+            store_travel(ctx, u, b.id, points, modes, true, false);
+            return Ok(landing);
+        }
+        let current = current.ok_or("Einheit steht nicht auf der Mauer.")?;
+        let route = map::walls::wall_path(current.id, s.wall_id, &pieces)
+            .ok_or("Keine Verbindung zur Treppe.")?;
+        let mut points = route
+            .into_iter()
+            .map(|p| (p.0, wall_level(b), p.1))
+            .collect::<Vec<_>>();
+        points.extend([
+            (s.top_x, s.top_y + roof::UNIT_CENTER_HEIGHT, s.top_z),
+            (s.base_x, s.base_y + roof::UNIT_CENTER_HEIGHT, s.base_z),
+        ]);
+        let landing = stair_landing(&s);
+        points.push((
+            landing.0,
+            terrain_height(landing.0, landing.1) + roof::UNIT_CENTER_HEIGHT,
+            landing.1,
+        ));
+        let modes = vec![4; points.len()];
+        store_travel(ctx, u, b.id, points, modes, true, false);
+        return Ok(landing);
+    }
+
     let pieces = combat_roof_pieces(ctx, b.game_id);
     let current = pieces
         .iter()
-        .find(|p| p.kind == map::BuildingKind::StoneWall && p.roof().roof_contains((u.x, u.z)));
+        .find(|p| p.kind.is_wall() && p.roof().roof_contains((u.x, u.z)));
     let mut routes = if let Some(current) = current {
         map::walls::tower_routes(current.id, &pieces)
     } else {
@@ -138,7 +198,7 @@ fn depart_wall(
         }
         let landing = tower.door(door);
         points.push((landing.0, access.y + roof::UNIT_CENTER_HEIGHT, landing.1));
-        modes.push(3);
+        modes.push(4);
         o.door = door;
         ctx.db.tower_occupant().unit_id().update(o);
         ctx.db.wall_entry().unit_id().delete(u.id);
@@ -279,7 +339,7 @@ fn move_to_wall(
                 start_roof_entry(ctx, u, &target, *slot as u8)?;
             } else {
                 let current = pieces.iter().find(|p| {
-                    p.kind == map::BuildingKind::StoneWall
+                    p.kind.is_wall()
                         && p.roof().roof_contains((u.x, u.z))
                         && (u.y - wall_level(b)).abs() < 0.01
                 });

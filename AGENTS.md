@@ -86,3 +86,37 @@ Nearby stone/iron deposits, forest, desert and small mountains complement the
 original landscape. Keep those resource plots buildable and the starting clearing
 free. needs.test.ts now verifies automatic staffing, close/open persistence and
 actual worker positions while routing around a building, plus nearby resource jobs.
+
+
+The keep wire ID now represents the automatically granted PALACE (Palast).
+Do not expose manual palace construction. TowerGreat is the separate round
+Bergfried; TowerLookout uses a 1.4 vertical model scale and the matching roof
+height, making the narrow lookout the tallest tower. Keep old wire IDs stable.
+All buildings use shared Cost; recruitment consumes both materials and a free
+peasant. StartingSupplies is a private one-time migration/grant marker, cleared
+on leave. Warehouse initialization transfers remaining starting supplies; never
+add the starting balance again when a warehouse is built.
+
+Living resources are in shared/server/game ecology.rs. ResourceNode.site is the
+stable deterministic tree/deposit/fish key. Harvesting must consume these rows,
+not create unlimited producer buffer. Fish regenerates slowly; terrestrial
+resources stay depleted. OxCart links one OxTether to one raw-material producer.
+Stone/iron loads require a cart; cart access points must satisfy work_range as
+well as inflated collision clearance or they can get stuck outside delivery range.
+FishStock is additive so existing GranaryStock rows remain upgrade-compatible.
+Wildlife includes herds, corpses, hunting, territorial defence and reachable-camp raids.
+
+Fortifications use shared/server/game fortifications.rs. GateState drives actual
+server/client gate collision and animation. Opening a drawbridge cuts a narrow
+corridor through conservative river/moat obstacles and uses the real deck height.
+Moat centres align to the terrain grid; client terrain indices cut real holes.
+WallStair stores the ramp upper endpoint, with a horizontal landing to wall_id.
+Both away and parallel stairs use continuous travel mode 4, including reversing
+an order while on the upper landing. Reserve the entire ramp against construction.
+Walkable roof slot bounds must fit the actual model floor. Merlons are 3D arrow
+blocks. Building construction reserves both logical plots and visible bounds;
+wall joins intentionally share mortar edges. Keep snapshots/actions in both
+native Rust and TypeScript synchronized. Regenerate gate leaves with
+prepare-gates.py; procedural walls/bridge come from create-fortifications.py.
+Run ecology.test.ts, fortifications.test.ts and the existing needs/keep/terrain
+real-server tests against stronghold-terrain-test, never the player's database.

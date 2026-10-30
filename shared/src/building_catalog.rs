@@ -64,6 +64,10 @@ pub enum BuildingKind {
     Treasury,
     Housing,
     Keep,
+    StoneWallLow,
+    StoneWallHigh,
+    StoneWallCrenellated,
+    DrawbridgeGate,
 }
 struct Definition {
     name: &'static str,
@@ -75,7 +79,7 @@ struct Definition {
     max: [f32; 3],
     grid: [u16; 2],
 }
-const DEFINITIONS: [Definition; 59] = [
+const DEFINITIONS: [Definition; 63] = [
     Definition {
         name: "granary",
         label: "Kornspeicher",
@@ -218,7 +222,7 @@ const DEFINITIONS: [Definition; 59] = [
     },
     Definition {
         name: "tower_round_short",
-        label: "Niedriger Rundturm",
+        label: "Kleiner Rundturm",
         category: "fortifications",
         scene: "models/buildings/fortifications/tower_round_short/mesh.glb#Scene0",
         collision:
@@ -240,7 +244,7 @@ const DEFINITIONS: [Definition; 59] = [
     },
     Definition {
         name: "tower_great",
-        label: "Großer Wehrturm",
+        label: "Bergfried",
         category: "fortifications",
         scene: "models/buildings/fortifications/tower_great/mesh.glb#Scene0",
         collision: "models/buildings/fortifications/tower_great/collision.glb#Mesh0/Primitive0",
@@ -384,7 +388,7 @@ const DEFINITIONS: [Definition; 59] = [
     },
     Definition {
         name: "hunters_post",
-        label: "Jägerstand",
+        label: "Jägerhütte",
         category: "supply",
         scene: "models/buildings/supply/hunters_post/mesh.glb#Scene0",
         collision: "models/buildings/supply/hunters_post/collision.glb#Mesh0/Primitive0",
@@ -394,7 +398,7 @@ const DEFINITIONS: [Definition; 59] = [
     },
     Definition {
         name: "fishpond",
-        label: "Fischteich",
+        label: "Fischerei",
         category: "supply",
         scene: "models/buildings/supply/fishpond/mesh.glb#Scene0",
         collision: "models/buildings/supply/fishpond/collision.glb#Mesh0/Primitive0",
@@ -572,7 +576,7 @@ const DEFINITIONS: [Definition; 59] = [
     },
     Definition {
         name: "ox_tether",
-        label: "Ochsenjoch",
+        label: "Ochsenplatz",
         category: "supply",
         scene: "models/buildings/supply/ox_tether/mesh.glb#Scene0",
         collision: "models/buildings/supply/ox_tether/collision.glb#Mesh0/Primitive0",
@@ -686,7 +690,7 @@ const DEFINITIONS: [Definition; 59] = [
     },
     Definition {
         name: "keep",
-        label: "Bergfried",
+        label: "Palast",
         category: "fortifications",
         scene: "models/buildings/fortifications/keep/mesh.glb#Scene0",
         collision: "models/buildings/fortifications/keep/collision.glb#Mesh0/Primitive0",
@@ -694,9 +698,50 @@ const DEFINITIONS: [Definition; 59] = [
         max: [800.0, 1300.0, 800.0],
         grid: [10, 14],
     },
+    Definition {
+        name: "stone_wall_low",
+        label: "Niedrige Mauer (3 m)",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/stone_wall_low/mesh.glb#Scene0",
+        collision: "models/buildings/fortifications/stone_wall_low/collision.glb#Mesh0/Primitive0",
+        min: [-107.0, 0.0, -107.0],
+        max: [107.0, 340.0, 107.0],
+        grid: [1, 1],
+    },
+    Definition {
+        name: "stone_wall_high",
+        label: "Hohe Mauer (10 m)",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/stone_wall_high/mesh.glb#Scene0",
+        collision: "models/buildings/fortifications/stone_wall_high/collision.glb#Mesh0/Primitive0",
+        min: [-107.0, 0.0, -107.0],
+        max: [107.0, 1010.0, 107.0],
+        grid: [1, 1],
+    },
+    Definition {
+        name: "stone_wall_crenellated",
+        label: "Zinnenmauer (7 m)",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/stone_wall_crenellated/mesh.glb#Scene0",
+        collision:
+            "models/buildings/fortifications/stone_wall_crenellated/collision.glb#Mesh0/Primitive0",
+        min: [-107.0, 0.0, -107.0],
+        max: [107.0, 796.3, 107.0],
+        grid: [1, 1],
+    },
+    Definition {
+        name: "drawbridge_gate",
+        label: "Tor mit Zugbrücke",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/drawbridge_gate/mesh.glb#Scene0",
+        collision: "models/buildings/fortifications/drawbridge_gate/collision.glb#Mesh0/Primitive0",
+        min: [-780.0, 0.0, -3600.0],
+        max: [780.0, 900.0, 3600.0],
+        grid: [8, 20],
+    },
 ];
 impl BuildingKind {
-    pub const ALL: [Self; 59] = [
+    pub const ALL: [Self; 63] = [
         Self::Granary,
         Self::Barracks,
         Self::Stockpile,
@@ -756,6 +801,10 @@ impl BuildingKind {
         Self::Treasury,
         Self::Housing,
         Self::Keep,
+        Self::StoneWallLow,
+        Self::StoneWallHigh,
+        Self::StoneWallCrenellated,
+        Self::DrawbridgeGate,
     ];
     pub fn index(self) -> usize {
         self as usize
@@ -790,12 +839,15 @@ impl BuildingKind {
         (width, depth)
     }
     pub fn center(self) -> Point {
+        if self == Self::DrawbridgeGate {
+            return (0., 0.);
+        }
         let d = &DEFINITIONS[self.index()];
         ((d.min[0] + d.max[0]) * 0.5, (d.min[2] + d.max[2]) * 0.5)
     }
     pub fn height(self) -> f32 {
         let d = &DEFINITIONS[self.index()];
-        (d.max[1] - d.min[1]) * MODEL_SCALE
+        (d.max[1] - d.min[1]) * MODEL_SCALE * if self == Self::TowerLookout { 1.4 } else { 1. }
     }
     pub fn ground_offset(self) -> f32 {
         -DEFINITIONS[self.index()].min[1] * MODEL_SCALE

@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {world,status,until} from './test-world';
+const a=await world();const {db,own,build,lord,game}=a;
+try{
+ const keep=own().find(b=>b.kind==='keep')!;
+ assert.equal((await build('keep',40,40)).tag,'Failed','palaces cannot be built manually');
+ assert.equal((await build('stockpile',-9,-23)).tag,'Committed');
+ const before=db.db.playerResources.connectionId.find(db.connectionId)!;
+ assert.equal((await build('gatehouse_small',25,25)).tag,'Committed');
+ const after=db.db.playerResources.connectionId.find(db.connectionId)!;assert.deepEqual([before.wood-after.wood,before.stone-after.stone,before.iron-after.iron],[8,18,3]);
+ assert.equal((await build('housing',25,25)).tag,'Failed','overlap is rejected');
+ const gate=own().find(b=>b.kind==='gatehouse_small')!;
+ assert.equal((await status(db,c=>db.reducers.onSetGate(c),()=>db.reducers.setGate(gate.id,true))).tag,'Committed');assert.equal(db.db.gateState.buildingId.find(gate.id)!.open,true);
+ assert.equal((await status(db,c=>db.reducers.onSetGate(c),()=>db.reducers.setGate(gate.id,false))).tag,'Committed');
+ assert.equal((await build('tower_round_short',45,-15)).tag,'Committed','round keep is a separate buildable building');
+ assert.equal((await build('tower_lookout',45,15)).tag,'Committed');
+ assert.equal((await status(db,c=>db.reducers.onBuildWallKind(c),()=>db.reducers.buildWallKind(25,1,31,1,'stone_wall_low'))).tag,'Committed');
+ const wall=own().find(b=>b.kind==='stone_wall_low'&&b.x===25)!;
+ assert.equal((await status(db,c=>db.reducers.onBuildWallStair(c),()=>db.reducers.buildWallStair(wall.id,25,-10,25,1))).tag,'Committed','drawn wall stair');
+ assert.ok(Array.from(db.db.wallStair.iter()).some(s=>s.wallId===wall.id));
+ assert.equal((await build('housing',25,-5)).tag,'Failed','stair reservation cannot be overbuilt');
+ assert.equal((await status(db,c=>db.reducers.onMoveToRoof(c),()=>db.reducers.moveToRoof([lord().id],wall.id,25,1))).tag,'Committed');
+ await until(()=>Math.abs(lord().y-4.05)<0.03&&Math.abs(lord().x-25)<.73&&Math.abs(lord().z-1)<.73,'lord climbs a low wall via drawn stair',45000);
+ assert.equal((await status(db,c=>db.reducers.onSetTargets(c),()=>db.reducers.setTargets([lord().id],25,-17))).tag,'Committed');
+ await until(()=>!db.db.towerOccupant.unitId.find(lord().id),'lord descends the same stair',25000);
+ assert.equal((await status(db,c=>db.reducers.onBuildWallKind(c),()=>db.reducers.buildWallKind(35,1,35,7,'stone_wall_low'))).tag,'Committed');
+ const parallelWall=own().find(b=>b.kind==='stone_wall_low'&&b.x===35&&b.z===7)!;
+ assert.equal((await status(db,c=>db.reducers.onBuildWallStair(c),()=>db.reducers.buildWallStair(parallelWall.id,38,-2,35,7))).tag,'Committed','stairs can run parallel beside a wall');
+ const parallel=Array.from(db.db.wallStair.iter()).find(s=>s.wallId===parallelWall.id)!;assert.equal(parallel.topX,38,'parallel ramp stays beside the wall');
+ assert.equal((await status(db,c=>db.reducers.onMoveToRoof(c),()=>db.reducers.moveToRoof([lord().id],parallelWall.id,35,7))).tag,'Committed');
+ await until(()=>Math.abs(lord().y-4.05)<.03,'parallel upper landing reached',30000);
+ assert.equal((await status(db,c=>db.reducers.onSetTargets(c),()=>db.reducers.setTargets([lord().id],39,-8))).tag,'Committed','a new ground command also works on the upper landing');
+ await until(()=>!db.db.towerOccupant.unitId.find(lord().id),'parallel stair descends',25000);
+ assert.equal((await build('stone_wall_high',-5,25)).tag,'Committed');
+ assert.equal((await build('stone_wall_crenellated',-3,25)).tag,'Committed');
+ assert.equal((await build('gatehouse_large',-5,45)).tag,'Committed','large gate');
+ assert.equal((await status(db,c=>db.reducers.onDigMoat(c),()=>db.reducers.digMoat(-10,-47,10,-47))).tag,'Committed');
+ assert.ok(Array.from(db.db.moat.iter()).filter(m=>m.gameId===game).length>=10);
+ assert.equal((await build('housing',-1,-47)).tag,'Failed','moat blocks ordinary construction');
+ console.log('PASS: palace only at start; round keep; real building costs and overlap rollback; open/close gates; large gate; different wall height; drawn stair ascent/descent; excavated moat and construction reservations.');
+}finally{db.disconnect()}
+const b=await world();try{
+ assert.equal((await b.build('drawbridge_gate',74,0,1)).tag,'Committed','drawbridge joins both banks');
+ const gate=b.own().find(x=>x.kind==='drawbridge_gate')!;
+ assert.equal((await status(b.db,c=>b.db.reducers.onSetGate(c),()=>b.db.reducers.setGate(gate.id,true))).tag,'Committed');
+ assert.equal((await status(b.db,c=>b.db.reducers.onSetTargets(c),()=>b.db.reducers.setTargets([b.lord().id],65,0))).tag,'Committed');
+ await until(()=>Math.hypot(b.lord().x-65,b.lord().z)<0.3,'lord reaches west bank',45000);
+ assert.equal((await status(b.db,c=>b.db.reducers.onSetTargets(c),()=>b.db.reducers.setTargets([b.lord().id],114,0))).tag,'Committed');
+ let onDeck=false;const end=Date.now()+30000;while(Math.hypot(b.lord().x-114,b.lord().z)>0.3){assert.ok(Date.now()<end,'river crossing');if(b.lord().x>82&&b.lord().x<103){onDeck=true;assert.ok(b.lord().y>0.9,'unit stands on bridge, above water')}await new Promise(r=>setTimeout(r,30))}assert.ok(onDeck,'unit crossed new bridge corridor');
+ console.log('PASS: lowered drawbridge provides a new river crossing with physical deck height.');
+}finally{b.db.disconnect()}

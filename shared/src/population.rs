@@ -49,6 +49,8 @@ mod tests {
                     | BuildingKind::SawPit
                     | BuildingKind::DairyFarm
                     | BuildingKind::AppleFarm
+                    | BuildingKind::Fishpond
+                    | BuildingKind::HuntersPost
             ));
             assert_eq!(kind.peasant_cost(), expected, "{}", kind.name());
             assert_eq!(

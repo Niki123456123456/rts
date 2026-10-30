@@ -217,6 +217,7 @@ pub(crate) fn sync_storage_visuals(
                 1 => 2,
                 5 => 24,
                 3 => 22,
+                6 | 7 => 25,
                 _ => 11,
             };
             let Some(scene) = &assets.scenes[model] else {

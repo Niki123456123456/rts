@@ -177,7 +177,34 @@ pub fn buildable(kind: crate::BuildingKind, x: f32, z: f32) -> bool {
 
 /// A level foundation supports buildings even on gently undulating sand.
 pub fn construction_height(kind: crate::BuildingKind, x: f32, z: f32, rotation: u8) -> Option<f32> {
+    if kind == crate::BuildingKind::DrawbridgeGate {
+        if (0..=23).any(|i| {
+            let p = crate::fortifications::world((x, z), rotation, (0., -10. + i as f32 * 2.));
+            matches!(
+                biome(p.0, p.1),
+                Biome::Mountain | Biome::Stone | Biome::Iron
+            )
+        }) {
+            return None;
+        }
+        let bank = crate::fortifications::world((x, z), rotation, (0., 0.));
+        let end = crate::fortifications::world((x, z), rotation, (0., 36.));
+        if !matches!(
+            biome(bank.0, bank.1),
+            Biome::Mountain | Biome::Stone | Biome::Iron | Biome::River
+        ) && !matches!(
+            biome(end.0, end.1),
+            Biome::Mountain | Biome::Stone | Biome::Iron | Biome::River
+        ) {
+            return Some(height(bank.0, bank.1).max(height(end.0, end.1)).max(0.));
+        }
+        return None;
+    }
+
     if !x.is_finite() || !z.is_finite() {
+        return None;
+    }
+    if kind == crate::BuildingKind::Fishpond && crate::ecology::fish_school((x, z)).is_none() {
         return None;
     }
     let mut top = f32::NEG_INFINITY;

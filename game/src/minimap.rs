@@ -124,6 +124,15 @@ pub(crate) fn minimap_ui(
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                 egui::Color32::WHITE,
             );
+            for n in multiplayer
+                .snapshot
+                .resource_nodes
+                .iter()
+                .filter(|n| n.kind == 7 && n.remaining > 0)
+            {
+                let p = map_position(rect, n.x, n.z);
+                painter.circle_filled(p, 2., egui::Color32::from_rgb(70, 230, 240));
+            }
             for building in &multiplayer.snapshot.buildings {
                 if building.health <= 0.0 {
                     continue;

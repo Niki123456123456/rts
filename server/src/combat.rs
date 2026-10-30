@@ -254,6 +254,25 @@ fn return_from_combat(ctx: &ReducerContext, u: &mut ArmyUnit, e: &UnitEngagement
     }
 }
 fn kill_combat_unit(ctx: &ReducerContext, id: u64) {
+    ctx.db.hunt_order().unit_id().delete(id);
+    if let Some(w) = ctx.db.worker().unit_id().find(id) {
+        if let Some(b) = ctx.db.building().id().find(w.source_building) {
+            if let Some(k) = ctx
+                .db
+                .building()
+                .owner()
+                .filter(b.owner)
+                .find(|b| b.kind == "keep")
+            {
+                if let Some(mut p) = ctx.db.keep_population().building_id().find(k.id) {
+                    p.arrived = p.arrived.saturating_sub(1);
+                    ctx.db.keep_population().building_id().update(p);
+                }
+            }
+        }
+        ctx.db.worker().unit_id().delete(id);
+    }
+
     clear_tower(ctx, id);
     ctx.db.unit_order().unit_id().delete(id);
     ctx.db.unit_engagement().unit_id().delete(id);

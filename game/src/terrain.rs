@@ -5,9 +5,12 @@ use stronghold_map::terrain::{self as land, Biome};
 
 #[derive(Component)]
 pub(crate) struct TerrainTree {
-    x: f32,
-    z: f32,
+    pub(crate) x: f32,
+    pub(crate) z: f32,
     radius: f32,
+    pub(crate) site: u32,
+    pub(crate) crown: bool,
+    pub(crate) original: Transform,
 }
 
 pub(crate) fn sync_clearings(
@@ -78,6 +81,12 @@ fn tint(rgb: [u8; 3]) -> [f32; 4] {
         .to_f32_array()
 }
 
+#[derive(Component)]
+pub(crate) struct TerrainChunk {
+    x: usize,
+    z: usize,
+}
+
 pub(crate) fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -122,6 +131,10 @@ pub(crate) fn setup(
                 }
             }
             commands.spawn((
+                TerrainChunk {
+                    x: tile_x,
+                    z: tile_z,
+                },
                 Mesh3d(meshes.add(colored_mesh(positions, colors, indices))),
                 MeshMaterial3d(ground.clone()),
                 Ground,
@@ -185,6 +198,10 @@ pub(crate) fn setup(
                     x,
                     z,
                     radius: 2.5 * scale,
+                    site: row as u32 * 88 + column as u32 + 1,
+                    crown: false,
+                    original: Transform::from_xyz(x, y + 1.8 * scale, z)
+                        .with_scale(Vec3::splat(scale)),
                 },
                 Mesh3d(trunk.clone()),
                 MeshMaterial3d(bark.clone()),
@@ -196,6 +213,14 @@ pub(crate) fn setup(
                     x,
                     z,
                     radius: 2.5 * scale,
+                    site: row as u32 * 88 + column as u32 + 1,
+                    crown: true,
+                    original: Transform::from_xyz(
+                        x,
+                        y + if evergreen { 4.7 } else { 4.2 } * scale,
+                        z,
+                    )
+                    .with_scale(Vec3::splat(scale)),
                 },
                 Mesh3d(if evergreen {
                     pine.clone()
@@ -214,7 +239,7 @@ pub(crate) fn setup(
         perceptual_roughness: 0.95,
         ..default()
     });
-    for &(x, z) in &land::STONE {
+    for (site, &(x, z)) in land::STONE.iter().enumerate() {
         for index in 0..13 {
             let angle = index as f32 * 2.4;
             let radius = (index % 5) as f32 * 2.3;
@@ -226,6 +251,12 @@ pub(crate) fn setup(
                 Transform::from_xyz(px, land::height(px, pz) + 0.8, pz)
                     .with_scale(Vec3::new(2.7, 1.3 + (index % 3) as f32 * 0.5, 2.0))
                     .with_rotation(Quat::from_rotation_y(angle)),
+                ecology::DepositVisual {
+                    site: 10000 + site as u32,
+                    original: Transform::from_xyz(px, land::height(px, pz) + 0.8, pz)
+                        .with_scale(Vec3::new(2.7, 1.3 + (index % 3) as f32 * 0.5, 2.))
+                        .with_rotation(Quat::from_rotation_y(angle)),
+                },
             ));
         }
     }
@@ -240,7 +271,7 @@ pub(crate) fn setup(
         metallic: 0.35,
         ..default()
     });
-    for &(x, z) in &land::IRON {
+    for (site, &(x, z)) in land::IRON.iter().enumerate() {
         for index in 0..11 {
             let angle = index as f32 * 2.4;
             let radius = (index % 4) as f32 * 2.3;
@@ -253,6 +284,12 @@ pub(crate) fn setup(
                 Transform::from_xyz(px, y + 0.7, pz)
                     .with_scale(Vec3::new(2.2, 1.4 + (index % 3) as f32 * 0.5, 1.6))
                     .with_rotation(Quat::from_rotation_y(angle)),
+                ecology::DepositVisual {
+                    site: 20000 + site as u32,
+                    original: Transform::from_xyz(px, y + 0.7, pz)
+                        .with_scale(Vec3::new(2.2, 1.4 + (index % 3) as f32 * 0.5, 1.6))
+                        .with_rotation(Quat::from_rotation_y(angle)),
+                },
             ));
             commands.spawn((
                 Mesh3d(rock.clone()),
@@ -260,7 +297,55 @@ pub(crate) fn setup(
                 Transform::from_xyz(px + 0.4, y + 1.6, pz + 0.3)
                     .with_scale(Vec3::new(1.0, 0.3, 0.3))
                     .with_rotation(Quat::from_rotation_y(angle)),
+                ecology::DepositVisual {
+                    site: 20000 + site as u32,
+                    original: Transform::from_xyz(px + 0.4, y + 1.6, pz + 0.3)
+                        .with_scale(Vec3::new(1., 0.3, 0.3))
+                        .with_rotation(Quat::from_rotation_y(angle)),
+                },
             ));
         }
+    }
+}
+
+pub(crate) fn sync_excavations(
+    m: Res<Multiplayer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    chunks: Query<(&TerrainChunk, &Mesh3d)>,
+    mut previous: Local<Vec<(u64, u32, u32)>>,
+) {
+    let state = m
+        .snapshot
+        .moats
+        .iter()
+        .map(|m| (m.id, m.x.to_bits(), m.z.to_bits()))
+        .collect::<Vec<_>>();
+    if *previous == state {
+        return;
+    }
+    *previous = state;
+    for (tile, handle) in &chunks {
+        let Some(mut mesh) = meshes.get_mut(&handle.0) else {
+            continue;
+        };
+        let mut indices = Vec::new();
+        for z in 0..40 {
+            for x in 0..40 {
+                let wx = -400. + (tile.x * 40 + x) as f32 * land::GRID + land::GRID * 0.5;
+                let wz = -400. + (tile.z * 40 + z) as f32 * land::GRID + land::GRID * 0.5;
+                if m.snapshot
+                    .moats
+                    .iter()
+                    .any(|m| (m.x - wx).abs() < 2. && (m.z - wz).abs() < 2.)
+                {
+                    continue;
+                }
+                let a = (z * 41 + x) as u32;
+                let b = a + 1;
+                let c = a + 41;
+                indices.extend([a, c, b, b, c, c + 1]);
+            }
+        }
+        mesh.insert_indices(Indices::U32(indices));
     }
 }

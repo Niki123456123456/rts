@@ -97,8 +97,12 @@ fn entry_plan(
             let path = map::shortest_path((u.x, u.z), tower.door(door), &obstacles)?;
             let hatch = tower.hatch();
             let cost = map::path_length((u.x, u.z), &path);
-            let (points, modes) = if b.kind == "keep" {
-                let top = tower.world((6.5, 3.0));
+            let (points, modes) = if b.kind == "keep" || b.kind == "drawbridge_gate" {
+                let top = tower.world(if b.kind == "keep" {
+                    (6.5, 3.0)
+                } else {
+                    (6.4, 2.5)
+                });
                 (
                     vec![
                         (top.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, top.1),
@@ -109,7 +113,7 @@ fn entry_plan(
             } else {
                 (
                     vec![(hatch.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, hatch.1)],
-                    vec![3],
+                    vec![4],
                 )
             };
             Some((cost, door, path, points, modes))
@@ -342,8 +346,12 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
             .ok_or("Cannot reach the hatch.")?
     };
     let mut modes = vec![0; points.len()];
-    if b.kind == "keep" {
-        let top = tower.world((6.5, 3.0));
+    if b.kind == "keep" || b.kind == "drawbridge_gate" {
+        let top = tower.world(if b.kind == "keep" {
+            (6.5, 3.0)
+        } else {
+            (6.4, 2.5)
+        });
         points.push((top.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, top.1));
         modes.push(4);
         points.push((
@@ -354,7 +362,7 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
         modes.push(4);
     } else {
         points.push((door.0, b.y + roof::UNIT_CENTER_HEIGHT, door.1));
-        modes.push(3);
+        modes.push(4);
     }
     ctx.db.tower_occupant().unit_id().update(o);
     store_travel(ctx, u, b.id, points, modes, true, false);
@@ -394,12 +402,15 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
         }
         if !t.leaving && ctx.db.unit_order().unit_id().find(u.id).is_some() {
             let o = ctx.db.tower_occupant().unit_id().find(u.id).unwrap();
-            let Some(access) = access_building(ctx, u.id, &b) else {
+            let Some(_access) = access_building(ctx, u.id, &b) else {
                 clear_tower(ctx, u.id);
                 stop_unit(ctx, u);
                 continue;
             };
-            let door = tower_geometry(ctx, &access).door(o.door);
+            let Some(door) = access_door(ctx, u.id, &b, o.door) else {
+                clear_tower(ctx, u.id);
+                continue;
+            };
             if map::distance((u.x, u.z), door) > 0.55 {
                 continue;
             }
@@ -482,7 +493,7 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
                 continue;
             }
             if t.modes[i] == 4 {
-                let length = map::distance((u.x, u.z), (goal.0, goal.2));
+                let length = map::distance((u.x, u.z), (goal.0, goal.2)).hypot(goal.1 - u.y);
                 let fraction = if length < 0.00001 {
                     1.
                 } else {

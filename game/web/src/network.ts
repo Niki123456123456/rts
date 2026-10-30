@@ -5,8 +5,15 @@ type Action =
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
   | { action: 'leave' }
+  | {action:'set_gate';building_id:string;open:boolean}
+  | {action:'dig_moat';start_x:number;start_z:number;end_x:number;end_z:number}
+  | {action:'fill_moat';moat_id:string}
+  | {action:'build_wall_stair';wall_id:string;base_x:number;base_z:number;top_x:number;top_z:number}
+  | {action:'build_wall_kind';start_x:number;start_z:number;end_x:number;end_z:number;kind:string}
   | { action: 'assign_peasant'; building_id:string }
   | { action: 'unassign_peasant'; building_id:string }
+  | { action:'assign_ox_cart'|'release_ox_cart';building_id:string }
+  | { action:'hunt_animal';unit_ids:string[];animal_id:string }
   | { action: 'recruit_unit'; building_id: string; kind: string }
   | { action: 'build'; x: number; z: number; building: string; rotation?: number }
   | { action: 'build_wall'; start_x: number; start_z: number; end_x: number; end_z: number }
@@ -104,6 +111,10 @@ function connect(uri: string, database: string) {
   conn = connection;
   connection.reducers.onAssignPeasant(result);
   connection.reducers.onUnassignPeasant(result);
+  connection.reducers.onAssignOxCart(result);
+  connection.reducers.onReleaseOxCart(result);
+  connection.reducers.onSetGate(result);connection.reducers.onDigMoat(result);connection.reducers.onFillMoat(result);connection.reducers.onBuildWallStair(result);connection.reducers.onBuildWallKind(result);
+  connection.reducers.onHuntAnimal(result);
   connection.reducers.onCreateGame(result);
   connection.reducers.onJoinGame(result);
   connection.reducers.onLeaveGame(result);
@@ -139,6 +150,14 @@ export const strongholdNetwork = {
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'assign_peasant': conn.reducers.assignPeasant(BigInt(action.building_id)); break;
       case 'unassign_peasant': conn.reducers.unassignPeasant(BigInt(action.building_id)); break;
+      case 'assign_ox_cart': conn.reducers.assignOxCart(BigInt(action.building_id)); break;
+      case 'release_ox_cart': conn.reducers.releaseOxCart(BigInt(action.building_id)); break;
+      case 'set_gate': conn?.reducers.setGate(BigInt(action.building_id),action.open);break;
+      case 'dig_moat': conn?.reducers.digMoat(action.start_x,action.start_z,action.end_x,action.end_z);break;
+      case 'fill_moat': conn?.reducers.fillMoat(BigInt(action.moat_id));break;
+      case 'build_wall_stair': conn?.reducers.buildWallStair(BigInt(action.wall_id),action.base_x,action.base_z,action.top_x,action.top_z);break;
+      case 'build_wall_kind': conn?.reducers.buildWallKind(action.start_x,action.start_z,action.end_x,action.end_z,action.kind);break;
+      case 'hunt_animal': conn.reducers.huntAnimal(action.unit_ids.map(BigInt),BigInt(action.animal_id)); break;
       case 'leave': conn.reducers.leaveGame(); break;
       case 'recruit_unit': conn.reducers.recruitUnit(BigInt(action.building_id),action.kind); break;
       case 'build': conn.reducers.buildRotated(action.x, action.z, action.building, action.rotation ?? 0); break;
@@ -160,7 +179,7 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
@@ -175,6 +194,13 @@ export const strongholdNetwork = {
         .map(g => ({ id: g.id.toString(), title: g.title })) : [],
       keep_population: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.keepPopulation.iter())
         .filter(k=>k.gameId===gameId).map(k=>({building_id:k.buildingId.toString(),arrived:k.arrived,seconds:k.seconds})) : [],
+      gates: ready&&connected&&conn&&gameId!==undefined?Array.from(conn.db.gateState.iter()).filter(n=>n.gameId===gameId).map(n=>({building_id:n.buildingId.toString(),open:n.open})):[],
+      moats: ready&&connected&&conn&&gameId!==undefined?Array.from(conn.db.moat.iter()).filter(n=>n.gameId===gameId).map(n=>({id:n.id.toString(),owned:n.owner.toHexString()===conn!.connectionId.toHexString(),x:n.x,z:n.z})):[],
+      stairs: ready&&connected&&conn&&gameId!==undefined?Array.from(conn.db.wallStair.iter()).filter(n=>n.gameId===gameId).map(n=>({id:n.id.toString(),wall_id:n.wallId.toString(),owned:n.owner.toHexString()===conn!.connectionId.toHexString(),base_x:n.baseX,base_y:n.baseY,base_z:n.baseZ,top_x:n.topX,top_y:n.topY,top_z:n.topZ})):[],
+      resource_nodes: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.resourceNode.iter()).filter(n=>n.gameId===gameId).map(n=>({id:n.id.toString(),site:n.site,kind:n.kind,x:n.x,z:n.z,remaining:n.remaining,capacity:n.capacity,phase:n.phase,phase_ticks:n.phaseTicks})) : [],
+      wildlife: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.wildlife.iter()).filter(n=>n.gameId===gameId).map(n=>({id:n.id.toString(),species:n.species,group_id:n.groupId,x:n.x,z:n.z,health:n.health,state:n.state,meat:n.meat})) : [],
+      ox_carts: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.oxCart.iter()).filter(n=>n.gameId===gameId).map(n=>({building_id:n.buildingId.toString(),source_building:n.sourceBuilding?.toString()??null})) : [],
+      fish_stocks: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.fishStock.iter()).filter(n=>n.gameId===gameId).map(n=>({building_id:n.buildingId.toString(),amount:n.amount})) : [],
       building_operations: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.buildingOperation.iter()).filter(n=>n.gameId===gameId).map(n=>({building_id:n.buildingId.toString(),closed:n.closed})) : [],
       settlement_needs: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.settlementNeeds.iter()).filter(n=>n.gameId===gameId).map(n=>({building_id:n.buildingId.toString(),happiness:n.happiness,food:n.food,variety:n.variety,housing:n.housing,water:n.water,health:n.health,leisure:n.leisure,goods:n.goods,employment:n.employment,immigration_seconds:n.immigrationSeconds})) : [],
       warehouses: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.warehouseStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),wood:s.wood,stone:s.stone,iron:s.iron})) : [],

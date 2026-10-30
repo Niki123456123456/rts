@@ -308,21 +308,24 @@ pub(crate) fn animate_citizens(
 ) {
     use stronghold_map::{self as map, building_roof::BuildingRoof};
     let buildings = &multiplayer.snapshot.buildings;
-    let revision = buildings.iter().fold(1u64, |h, b| {
-        h.wrapping_mul(31).wrapping_add(b.id)
-            ^ (b.x.to_bits() as u64).rotate_left(17)
-            ^ (b.z.to_bits() as u64).rotate_left(33)
-            ^ u64::from(b.rotation)
-    });
+    let revision = buildings.iter().fold(
+        multiplayer
+            .snapshot
+            .gates
+            .iter()
+            .fold(multiplayer.snapshot.moats.len() as u64 + 1, |h, g| {
+                h.wrapping_mul(31) + u64::from(g.open)
+            }),
+        |h, b| {
+            h.wrapping_mul(31).wrapping_add(b.id)
+                ^ (b.x.to_bits() as u64).rotate_left(17)
+                ^ (b.z.to_bits() as u64).rotate_left(33)
+                ^ u64::from(b.rotation)
+        },
+    );
     if revision != cache.revision {
         cache.revision = revision;
-        cache.obstacles = buildings
-            .iter()
-            .filter_map(|b| {
-                BuildingKind::from_name(&b.kind).map(|k| k.rotated_obstacle(b.x, b.z, b.rotation))
-            })
-            .chain(map::terrain::obstacles())
-            .collect();
+        cache.obstacles = crate::fortifications::obstacles(&multiplayer.snapshot);
         cache.spots = buildings
             .iter()
             .filter(|b| b.kind == "keep")

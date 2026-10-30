@@ -173,20 +173,14 @@ fn combat_surface_move(
         points = path;
         modes.resize(points.len(), 4);
     } else {
-        let route = if start.kind == map::BuildingKind::StoneWall
-            && dest.kind == map::BuildingKind::StoneWall
-        {
+        let route = if start.kind.is_wall() && dest.kind.is_wall() {
             map::walls::wall_path(start.id, dest.id, &pieces)
-        } else if start.kind != map::BuildingKind::StoneWall
-            && dest.kind == map::BuildingKind::StoneWall
-        {
+        } else if !start.kind.is_wall() && dest.kind.is_wall() {
             map::walls::tower_routes(dest.id, &pieces)
                 .into_iter()
                 .find(|(id, _)| *id == start.id)
                 .map(|(_, r)| r)
-        } else if start.kind == map::BuildingKind::StoneWall
-            && dest.kind != map::BuildingKind::StoneWall
-        {
+        } else if start.kind.is_wall() && !dest.kind.is_wall() {
             map::walls::tower_routes(start.id, &pieces)
                 .into_iter()
                 .find(|(id, _)| *id == dest.id)
@@ -213,7 +207,7 @@ fn combat_surface_move(
         };
         let mut y = u.y;
         for (index, p) in route.iter().enumerate() {
-            if index == 0 && start.kind != map::BuildingKind::StoneWall {
+            if index == 0 && !start.kind.is_wall() {
                 let Some(path) = start.roof().roof_path((u.x, u.z), *p) else {
                     return false;
                 };
@@ -224,17 +218,14 @@ fn combat_surface_move(
                 modes.push(4);
             }
             // Change height at the joining edge, never walk under a tower roof.
-            if start.kind != map::BuildingKind::StoneWall && index == 1 {
+            if !start.kind.is_wall() && index == 1 {
                 y = dest.roof().roof_y() + roof::UNIT_CENTER_HEIGHT;
                 if (points.last().unwrap().1 - y).abs() > 0.01 {
                     points.push((p.0, y, p.1));
                     modes.push(5);
                 }
             }
-            if start.kind == map::BuildingKind::StoneWall
-                && dest.kind != map::BuildingKind::StoneWall
-                && index + 2 == route.len()
-            {
+            if start.kind.is_wall() && !dest.kind.is_wall() && index + 2 == route.len() {
                 let next_y = dest.roof().roof_y() + roof::UNIT_CENTER_HEIGHT;
                 if (y - next_y).abs() > 0.01 {
                     y = next_y;
@@ -262,7 +253,7 @@ fn combat_surface_move(
     o.slot = slot as u8;
     o.next_building = None;
     if is_wall(&b) && ctx.db.wall_entry().unit_id().find(u.id).is_none() {
-        let access = if start.kind != map::BuildingKind::StoneWall {
+        let access = if !start.kind.is_wall() {
             start.id
         } else {
             map::walls::tower_routes(dest.id, &pieces)

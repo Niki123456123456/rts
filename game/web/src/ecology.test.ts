@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {world,status,until,delay} from './test-world';
+const w=await world();const {db,game,build,own}=w;
+try{
+ const nodes=()=>Array.from(db.db.resourceNode.iter()).filter(n=>n.gameId===game);
+ assert.ok(nodes().some(n=>n.kind===0&&n.remaining===6));assert.ok(nodes().some(n=>n.kind===1&&n.remaining===180));assert.ok(nodes().some(n=>n.kind===2&&n.remaining===140));assert.equal(nodes().filter(n=>n.kind===7).length,8);
+ const animals=Array.from(db.db.wildlife.iter()).filter(a=>a.gameId===game);assert.equal(new Set(animals.map(a=>a.species)).size,5);assert.ok(animals.some(a=>a.species===4));assert.ok(animals.filter(a=>a.species===3).length>10);
+ assert.equal((await build('stockpile',-9,-43)).tag,'Committed');
+ assert.equal((await build('granary',-9,-23)).tag,'Committed');
+ assert.equal((await build('housing',-17,17)).tag,'Committed');
+ assert.equal((await build('quarry',-65,-35)).tag,'Committed');
+ assert.equal((await build('ox_tether',-51,-17)).tag,'Committed');
+ const quarry=own().find(b=>b.kind==='quarry')!,tether=own().find(b=>b.kind==='ox_tether')!;
+ const producer=()=>db.db.producer.buildingId.find(quarry.id)!;
+ await until(()=>producer().buffer>=2,'quarry actually depletes stone',45000);
+ assert.ok(nodes().find(n=>n.kind===1&&Math.hypot(n.x+65,n.z+35)<1)!.remaining<180);
+ assert.ok(Array.from(db.db.worker.iter()).filter(w=>w.sourceBuilding===quarry.id).every(w=>w.cargo===0),'stone cannot travel without cart');
+ assert.equal((await status(db,c=>db.reducers.onAssignOxCart(c),()=>db.reducers.assignOxCart(quarry.id))).tag,'Committed');
+ assert.equal(db.db.oxCart.buildingId.find(tether.id)?.sourceBuilding,quarry.id);
+ let observedLoad=0;const start=db.db.playerResources.connectionId.find(db.connectionId)!.stone;const end=Date.now()+100000;let log=Date.now();
+ while(db.db.playerResources.connectionId.find(db.connectionId)!.stone===start){assert.ok(Date.now()<end,JSON.stringify({message:'cart delivers real stone',producer:producer(),workers:Array.from(db.db.worker.iter()).filter(w=>w.sourceBuilding===quarry.id).map(w=>({...w,unit:db.db.armyUnit.id.find(w.unitId)}))},(_k,v)=>typeof v==='bigint'?v.toString():v));observedLoad=Math.max(observedLoad,...Array.from(db.db.worker.iter()).filter(w=>w.sourceBuilding===quarry.id).map(w=>w.cargo));if(Date.now()-log>15000){console.log('Cart progress',producer().buffer,Array.from(db.db.worker.iter()).filter(w=>w.sourceBuilding===quarry.id).map(w=>({cargo:w.cargo,phase:w.phase,x:db.db.armyUnit.id.find(w.unitId)?.x,z:db.db.armyUnit.id.find(w.unitId)?.z})));log=Date.now()}await delay(40)}assert.equal(observedLoad,20,'cart transports a full larger load');
+ assert.equal((await build('saw_pit',40,-43)).tag,'Committed');
+ const initial=new Map(nodes().filter(n=>n.kind===0).map(n=>[n.site,n.remaining]));
+ await until(()=>nodes().some(n=>n.kind===0&&n.remaining>0&&n.remaining<(initial.get(n.site)??0)),'tree falls, is chopped, and wood is consumed',60000);
+ assert.equal((await build('fishpond',25,25)).tag,'Failed','fisheries reject land away from fish');
+ let fishPlaced=false;for(const z of [-23,-25,-21,-27]){for(const x of [45,43,47,41]){if((await build('fishpond',x,z)).tag==='Committed'){fishPlaced=true;break}}if(fishPlaced)break}assert.ok(fishPlaced,'fishery can be built at a discrete fish school');
+ assert.equal((await build('hunters_post',-51,47)).tag,'Committed');
+ await until(()=>Array.from(db.db.wildlife.iter()).filter(a=>a.gameId===game).some(a=>a.health<({0:1,1:.45,2:1.5,3:1.4,4:3.5} as Record<number,number>)[a.species]),'hunters engage actual wildlife',60000);
+ await until(()=>nodes().some(n=>n.kind===7&&n.remaining<80),'fisher actually reduces its fish school',90000);
+ await until(()=>Array.from(db.db.fishStock.iter()).some(s=>s.gameId===game&&s.amount>0),'fish is delivered to an actual granary',90000);
+ console.log('PASS: five wildlife species, varied herds, finite tree/stone/iron and discrete fish schools; stone transport requires cart; full 20-load delivery; falling/chopped trees; fisheries only near fish; hunters damage real animals.');
+}finally{db.disconnect()}

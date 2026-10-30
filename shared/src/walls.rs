@@ -52,7 +52,7 @@ impl RoofPiece {
 }
 /// Only full side contact connects walls; diagonal corner contact never does.
 pub fn portal(a: RoofPiece, b: RoofPiece) -> Option<Point> {
-    if (a.y - b.y).abs() > 0.05 {
+    if (a.roof().roof_y() - b.roof().roof_y()).abs() > 0.05 {
         return None;
     }
     let (a, b) = (a.plot(), b.plot());
@@ -75,7 +75,7 @@ pub fn portal(a: RoofPiece, b: RoofPiece) -> Option<Point> {
 fn wall_tree(target: u64, pieces: &[RoofPiece]) -> HashMap<u64, Option<u64>> {
     let walls: HashMap<_, _> = pieces
         .iter()
-        .filter(|p| p.kind == BuildingKind::StoneWall)
+        .filter(|p| p.kind.is_wall())
         .map(|p| ((p.x.round() as i32, p.z.round() as i32), p))
         .collect();
     let by_id: HashMap<_, _> = pieces.iter().map(|p| (p.id, p)).collect();
@@ -118,7 +118,7 @@ pub fn wall_component(target: u64, pieces: &[RoofPiece]) -> Vec<RoofPiece> {
     let tree = wall_tree(target, pieces);
     let mut result = pieces
         .iter()
-        .filter(|p| p.kind == BuildingKind::StoneWall && tree.contains_key(&p.id))
+        .filter(|p| p.kind.is_wall() && tree.contains_key(&p.id))
         .copied()
         .collect::<Vec<_>>();
     result.sort_by_key(|p| p.id);
@@ -135,11 +135,11 @@ pub fn tower_routes(target: u64, pieces: &[RoofPiece]) -> Vec<(u64, Vec<Point>)>
     let mut routes = Vec::new();
     for tower in pieces
         .iter()
-        .filter(|p| p.kind != BuildingKind::StoneWall && p.kind.roof_profile().is_some())
+        .filter(|p| !p.kind.is_wall() && p.kind.roof_profile().is_some())
     {
         for wall in pieces
             .iter()
-            .filter(|p| p.kind == BuildingKind::StoneWall && tree.contains_key(&p.id))
+            .filter(|p| p.kind.is_wall() && tree.contains_key(&p.id))
         {
             if let Some(portal) = portal(*tower, *wall) {
                 let mut points = vec![tower.roof().hatch(), portal];
@@ -219,7 +219,7 @@ pub fn surface_component(start: u64, pieces: &[RoofPiece]) -> Vec<RoofPiece> {
         if let Some(a) = pieces.iter().find(|p| p.id == queue[index]) {
             for b in pieces {
                 if !ids.contains(&b.id)
-                    && (a.kind == BuildingKind::StoneWall || b.kind == BuildingKind::StoneWall)
+                    && (a.kind.is_wall() || b.kind.is_wall())
                     && portal(*a, *b).is_some()
                 {
                     ids.insert(b.id);
@@ -241,8 +241,18 @@ pub fn surface_supports(p: (f32, f32, f32), pieces: &[RoofPiece]) -> bool {
         let roof = piece.roof();
         let (x, z) = roof.local((p.0, p.2));
         (p.1 - roof.roof_y() - crate::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
-            && x.abs() <= roof.profile.half_x + crate::CLEARANCE
-            && z.abs() <= roof.profile.half_z + crate::CLEARANCE
+            && x.abs()
+                <= if piece.kind.is_wall() {
+                    1.0
+                } else {
+                    roof.profile.half_x + crate::CLEARANCE
+                }
+            && z.abs()
+                <= if piece.kind.is_wall() {
+                    1.0
+                } else {
+                    roof.profile.half_z + crate::CLEARANCE
+                }
     })
 }
 pub fn surface_contact(a: (f32, f32, f32), b: (f32, f32, f32), pieces: &[RoofPiece]) -> bool {
@@ -303,5 +313,42 @@ mod combat_surface_tests {
                 .copied()
                 .collect::<Vec<_>>()
         ));
+    }
+}
+
+#[cfg(test)]
+mod additional_wall_tests {
+    use super::*;
+    #[test]
+    fn all_wall_heights_have_continuous_floors_and_only_equal_levels_connect() {
+        for kind in [
+            BuildingKind::StoneWallLow,
+            BuildingKind::StoneWallHigh,
+            BuildingKind::StoneWallCrenellated,
+        ] {
+            let a = RoofPiece {
+                id: 1,
+                kind,
+                x: 1.,
+                y: 0.,
+                z: 1.,
+                rotation: 0,
+            };
+            let b = RoofPiece { id: 2, x: 3., ..a };
+            let pieces = [a, b];
+            assert!(portal(a, b).is_some());
+            assert_eq!(surface_component(1, &pieces).len(), 2);
+            let h = a.roof().roof_y() + crate::building_roof::UNIT_CENTER_HEIGHT;
+            assert!(surface_contact((1., h, 1.), (3., h, 1.), &pieces));
+            let other = RoofPiece {
+                kind: if kind == BuildingKind::StoneWallLow {
+                    BuildingKind::StoneWallHigh
+                } else {
+                    BuildingKind::StoneWallLow
+                },
+                ..b
+            };
+            assert!(portal(a, other).is_none());
+        }
     }
 }

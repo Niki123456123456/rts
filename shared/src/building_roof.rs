@@ -78,6 +78,84 @@ impl BuildingKind {
                 hatch: (4.1, 2.7),
                 doors: &[(6.5, 10.6)],
             },
+            Self::StoneWallLow | Self::StoneWallHigh | Self::StoneWallCrenellated => RoofProfile {
+                height: match self {
+                    Self::StoneWallLow => 3.3,
+                    Self::StoneWallHigh => 10.,
+                    _ => 6.663,
+                },
+                half_x: if self == Self::StoneWallCrenellated {
+                    0.65
+                } else {
+                    0.72
+                },
+                half_z: 0.72,
+                hatch: (0., 0.),
+                doors: &[],
+            },
+            Self::GatehouseWooden => RoofProfile {
+                height: 5.945,
+                half_x: 1.6,
+                half_z: 0.65,
+                hatch: (0., 0.),
+                doors: &[(0., 2.1)],
+            },
+            Self::GatehouseSmall => RoofProfile {
+                height: 6.6613,
+                half_x: 2.4,
+                half_z: 2.4,
+                hatch: (0., 2.2),
+                doors: &[(0., 4.1)],
+            },
+            Self::GatehouseMedium => RoofProfile {
+                height: 12.3,
+                half_x: 3.0,
+                half_z: 1.8,
+                hatch: (0., 1.6),
+                doors: &[(0., 7.3)],
+            },
+            Self::GatehouseLarge => RoofProfile {
+                height: 14.3682,
+                half_x: 2.3,
+                half_z: 1.8,
+                hatch: (0., 1.6),
+                doors: &[(0., 9.3)],
+            },
+            Self::DrawbridgeGate => RoofProfile {
+                height: 8.,
+                half_x: 1.8,
+                half_z: 3.2,
+                hatch: (0., 2.5),
+                doors: &[(6.4, -10.2)],
+            },
+            Self::TowerRoundShort => RoofProfile {
+                height: 10.722,
+                half_x: 3.2,
+                half_z: 3.2,
+                hatch: (0., 3.0),
+                doors: &[(0., 6.5)],
+            },
+            Self::TowerRoundTall => RoofProfile {
+                height: 16.251,
+                half_x: 3.4,
+                half_z: 3.4,
+                hatch: (0., 3.2),
+                doors: &[(0., 7.0)],
+            },
+            Self::TowerGreat => RoofProfile {
+                height: 17.721,
+                half_x: 4.5,
+                half_z: 4.5,
+                hatch: (0., 4.3),
+                doors: &[(0., 9.0)],
+            },
+            Self::TowerWooden => RoofProfile {
+                height: 4.1,
+                half_x: 0.7,
+                half_z: 0.7,
+                hatch: (0., 0.),
+                doors: &[(0., 2.0)],
+            },
             Self::StoneWall => RoofProfile {
                 height: 6.663,
                 half_x: 1.0,
@@ -93,7 +171,7 @@ impl BuildingKind {
                 doors: &[(-2.7, 1.04), (-0.99, 2.7)],
             },
             Self::TowerLookout => RoofProfile {
-                height: 15.513,
+                height: 21.7182,
                 half_x: 1.78,
                 half_z: 1.78,
                 hatch: (-0.782, 0.85),
@@ -297,17 +375,33 @@ mod tests {
             }
         }
         for kind in BuildingKind::ALL {
-            assert_eq!(
-                kind.roof_profile().is_some(),
-                matches!(
-                    kind,
-                    BuildingKind::TowerStairwell
-                        | BuildingKind::TowerLookout
-                        | BuildingKind::TowerSquare
-                        | BuildingKind::StoneWall
-                        | BuildingKind::Keep
-                )
-            );
+            if let Some(profile) = kind.roof_profile() {
+                assert!(profile.height > 0. && profile.capacity() <= 256);
+                if !kind.is_wall() {
+                    assert!(!profile.doors.is_empty());
+                }
+                for rotation in 0..4 {
+                    let roof = BuildingRoof::new(kind, 0., 0., 0., rotation).unwrap();
+                    for door in 0..roof.door_count() {
+                        assert!(
+                            free(
+                                roof.door(door),
+                                &if kind.is_gate() {
+                                    crate::fortifications::gate_solids(
+                                        kind,
+                                        (0., 0.),
+                                        rotation,
+                                        false,
+                                    )
+                                } else {
+                                    vec![kind.rotated_obstacle(0., 0., rotation)]
+                                }
+                            ),
+                            "{kind:?} entrance must be outside its solid footprint"
+                        );
+                    }
+                }
+            }
         }
     }
 }

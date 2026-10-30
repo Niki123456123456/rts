@@ -94,6 +94,7 @@ pub(crate) fn resource_ui(
                             ("Brot", stock.map(|s| s.bread)),
                             ("Käse", stock.map(|s| s.cheese)),
                             ("Fleisch", stock.map(|s| s.meat)),
+                            ("Fisch",Some(multiplayer.snapshot.fish_stocks.iter().filter(|s|multiplayer.snapshot.buildings.iter().any(|b|b.id==s.building_id&&b.owned)).map(|s|s.amount).sum())),
                         ]
                         .into_iter()
                         .enumerate()
@@ -101,11 +102,9 @@ pub(crate) fn resource_ui(
                             if index > 0 {
                                 ui.separator();
                             }
-                            ui.add(
-                                egui::Image::new((texture, egui::vec2(18., 18.)))
-                                    .uv(resource_uv(index)),
-                            )
-                            .on_hover_text(name);
+                            if index==7 {ui.small("Fisch");}else{
+                                ui.add(egui::Image::new((texture, egui::vec2(18.,18.))).uv(resource_uv(index))).on_hover_text(name);
+                            }
                             ui.label(
                                 egui::RichText::new(
                                     value.map_or_else(|| "…".into(), |v| v.to_string()),

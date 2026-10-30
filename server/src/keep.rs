@@ -45,7 +45,7 @@ fn ensure_player_keep(ctx: &ReducerContext, player: &Participant) -> Result<(), 
             }
         }
         if !placed {
-            return Err("Kein freier Bauplatz für den Start-Bergfried vorhanden.".into());
+            return Err("Kein freier Bauplatz für den Startpalast vorhanden.".into());
         }
     }
     ctx.db.player_keep_spawn().insert(PlayerKeepSpawn {
@@ -137,6 +137,7 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
                 .delete(state.building_id);
             continue;
         };
+        ensure_ecology(ctx, keep.game_id);
         let population = map::population::Population::from_buildings(
             ctx.db
                 .building()

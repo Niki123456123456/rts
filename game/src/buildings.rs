@@ -4,6 +4,8 @@ use stronghold_map::{self as map, BuildingKind};
 #[derive(Resource, Default)]
 pub(crate) struct BuildingInteraction {
     pub placing: Option<BuildingKind>,
+    pub fort_tool: Option<u8>,
+    pub fort_start: Option<map::Point>,
     pub rotation: u8,
     pub wall_start: Option<map::Point>,
     pub wall_cost: u32,
@@ -67,7 +69,16 @@ fn model_transform(kind: BuildingKind) -> Transform {
         kind.ground_offset(),
         -center.1 * map::MODEL_SCALE,
     )
-    .with_scale(Vec3::splat(map::MODEL_SCALE))
+    .with_scale(Vec3::new(
+        map::MODEL_SCALE,
+        map::MODEL_SCALE
+            * if kind == BuildingKind::TowerLookout {
+                1.4
+            } else {
+                1.
+            },
+        map::MODEL_SCALE,
+    ))
 }
 pub(crate) fn setup_buildings(
     mut commands: Commands,
@@ -291,24 +302,52 @@ fn placement_valid(
     rotation: u8,
     multiplayer: &Multiplayer,
 ) -> bool {
-    let shape = kind.rotated_build_footprint(x, z, rotation);
+    let required = match kind {
+        BuildingKind::Quarry => Some(1),
+        BuildingKind::IronMine => Some(2),
+        BuildingKind::Fishpond => Some(7),
+        _ => None,
+    };
+    if required.is_some_and(|k| {
+        !multiplayer.snapshot.resource_nodes.iter().any(|n| {
+            n.kind == k
+                && n.remaining > 0
+                && map::distance((x, z), (n.x, n.z)) < if k == 7 { 34. } else { 17. }
+        })
+    }) {
+        return false;
+    }
+    let shape = kind.construction_bounds(x, z, rotation);
     shape.in_build_area()
+        && (kind == BuildingKind::DrawbridgeGate
+            || !multiplayer.snapshot.moats.iter().any(|m| {
+                map::Obstacle {
+                    x: m.x,
+                    z: m.z,
+                    half_x: 2.,
+                    half_z: 2.,
+                }
+                .overlaps(shape)
+            }))
+        && !multiplayer.snapshot.stairs.iter().any(|s| {
+            map::fortifications::stair_bounds((s.base_x, s.base_z), (s.top_x, s.top_z))
+                .overlaps(shape)
+        })
         && !(kind == BuildingKind::Keep
             && multiplayer
                 .snapshot
                 .buildings
                 .iter()
                 .any(|b| b.owned && b.kind == "keep"))
-        && (kind.stone_cost() == 0
-            || multiplayer
-                .snapshot
-                .resources
-                .is_some_and(|s| s.stone >= kind.stone_cost()))
+        && multiplayer
+            .snapshot
+            .resources
+            .is_some_and(|s| kind.cost().affordable(s.wood, s.stone, s.iron))
         && !multiplayer.snapshot.buildings.iter().any(|b| {
             shape.overlaps(
                 BuildingKind::from_name(&b.kind)
                     .unwrap_or_default()
-                    .rotated_build_footprint(b.x, b.z, b.rotation),
+                    .construction_bounds(b.x, b.z, b.rotation),
             )
         })
         && !multiplayer.snapshot.units.iter().any(|u| {
@@ -340,7 +379,10 @@ pub(crate) fn building_input(
     mut state: ResMut<BuildingInteraction>,
     mut assets: ResMut<BuildingAssets>,
 ) {
-    state.consumed = false;
+    state.consumed = state.fort_tool.is_some();
+    if state.fort_tool.is_some() {
+        return;
+    }
     state.attack_hover = None;
     state.attack_error = None;
     state.enemy_group_preview.clear();
@@ -428,7 +470,7 @@ pub(crate) fn building_input(
         return;
     };
     if let Some(kind) = state.placing {
-        if kind == BuildingKind::StoneWall {
+        if kind.is_wall() {
             let end = kind.snap_position(hit.point.x, hit.point.z);
             let start = state.wall_start.unwrap_or(end);
             let line = map::walls::wall_line(start, end);
@@ -437,13 +479,13 @@ pub(crate) fn building_input(
                     .snapshot
                     .buildings
                     .iter()
-                    .any(|b| b.owned && b.kind == "stone_wall" && b.x == x && b.z == z)
+                    .any(|b| b.owned && b.kind == kind.name() && b.x == x && b.z == z)
             };
             let wall_count = multiplayer
                 .snapshot
                 .buildings
                 .iter()
-                .filter(|b| b.kind == "stone_wall")
+                .filter(|b| BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_wall()))
                 .count();
             state.wall_cost =
                 line.iter().filter(|p| !existing(p.0, p.1)).count() as u32 * kind.stone_cost();
@@ -504,7 +546,8 @@ pub(crate) fn building_input(
                         state.wall_start = Some(end);
                     }
                 } else if valid
-                    && multiplayer.send(Action::BuildWall {
+                    && multiplayer.send(Action::BuildWallKind {
+                        kind: kind.name().into(),
                         start_x: start.0,
                         start_z: start.1,
                         end_x: end.0,
@@ -624,21 +667,25 @@ pub(crate) fn building_input(
             .filter(|(building, distance, _)| {
                 *distance <= hit.distance + 0.08
                     || units.contains(*entity)
-                    || (building.kind == "keep"
-                        && colliders.get(*entity).is_ok_and(|c| c.0 == building.id))
+                    || colliders.get(*entity).is_ok_and(|c| c.0 == building.id)
             })
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((building, _, point)) = target {
             let id = building.id;
             let tower = roof_geometry(building).unwrap();
-            let accessible = building.kind != "stone_wall"
+            let accessible = !BuildingKind::from_name(&building.kind).is_some_and(|k| k.is_wall())
+                || multiplayer.snapshot.stairs.iter().any(|s| {
+                    map::walls::wall_component(id, &owned_roof_pieces(&multiplayer.snapshot))
+                        .iter()
+                        .any(|p| p.id == s.wall_id)
+                })
                 || !map::walls::tower_routes(id, &owned_roof_pieces(&multiplayer.snapshot))
                     .is_empty();
             if !accessible {
                 state.roof_error = Some("Mauer zuerst mit einem eigenen Turm verbinden");
             }
             let pieces = owned_roof_pieces(&multiplayer.snapshot);
-            let surfaces = if building.kind == "stone_wall" {
+            let surfaces = if BuildingKind::from_name(&building.kind).is_some_and(|k| k.is_wall()) {
                 map::walls::wall_component(id, &pieces)
                     .into_iter()
                     .map(|p| (p.id, p.roof()))
@@ -754,7 +801,9 @@ fn owned_roof_pieces(snapshot: &network::Snapshot) -> Vec<map::walls::RoofPiece>
         })
         .collect()
 }
-fn roof_geometry(building: &network::Building) -> Option<map::building_roof::BuildingRoof> {
+pub(crate) fn roof_geometry(
+    building: &network::Building,
+) -> Option<map::building_roof::BuildingRoof> {
     map::building_roof::BuildingRoof::new(
         BuildingKind::from_name(&building.kind)?,
         building.x,
@@ -906,20 +955,20 @@ pub(crate) fn building_button(
     active: bool,
 ) -> bool {
     let response = menu_ui::building_button(ui, texture, kind, active);
-    if kind == BuildingKind::StoneWall {
-        return response.on_hover_text("Steinmauer: 2×2-m-Segmente, je 1 Stein. Kein Bauernbedarf. Startpunkt anklicken, Endpunkt anklicken. Vorschau zeigt die gesamte Mauer. Rechtsklick / Esc bricht ab.").clicked();
+    if kind.is_wall() {
+        return response.on_hover_text(format!("{}: 2×2-m-Segmente, {} je Segment. Startpunkt und Endpunkt anklicken. Rechtsklick / Esc bricht ab.",kind.label(),kind.cost().label())).clicked();
     }
     let (width, depth) = kind.grid_size();
     response
         .on_hover_text(format!(
-            "{}: {}×{} Felder ({}×{} m). Kosten: {} Stein. {} R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
+            "{}: {}×{} Felder ({}×{} m). Kosten: {}. {} R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
             kind.label(),
             width,
             depth,
             width * 2,
             depth * 2,
-            kind.stone_cost(),
-            if kind == BuildingKind::Housing { "Bietet Platz für 4 Bauern." } else if kind.peasant_cost() > 0 { "1 Arbeitsplatz: Bauern im Gebäudefenster zuweisen." } else { "Kein Bauernbedarf." }
+            kind.cost().label(),
+            if kind == BuildingKind::Housing { "Bietet Platz für 4 Bauern." } else if kind.peasant_cost() > 0 { "1 Arbeitsplatz: wird automatisch besetzt." } else { "Kein Bauernbedarf." }
         ))
         .clicked()
 }
@@ -934,7 +983,7 @@ mod tests {
     fn roof_click_uses_elevated_plane_for_every_tower_rotation() {
         for (kind, height) in [
             ("tower_stairwell", 6.663),
-            ("tower_lookout", 15.513),
+            ("tower_lookout", 21.7182),
             ("tower_square", 14.399),
         ] {
             for rotation in 0..4 {
@@ -949,14 +998,14 @@ mod tests {
                     y: 3.,
                     z: 20.,
                 };
-                let ray = Ray3d::new(Vec3::new(10., 20., 20.), Dir3::NEG_Y);
+                let ray = Ray3d::new(Vec3::new(10., 50., 20.), Dir3::NEG_Y);
                 let (_, point) = roof_ray_hit(ray, &row).unwrap();
                 assert!((point.y - (height + 3.)).abs() < 0.001);
                 assert!(
-                    roof_ray_hit(Ray3d::new(Vec3::new(15., 20., 20.), Dir3::NEG_Y), &row).is_none()
+                    roof_ray_hit(Ray3d::new(Vec3::new(15., 50., 20.), Dir3::NEG_Y), &row).is_none()
                 );
                 assert!(
-                    roof_ray_hit(Ray3d::new(Vec3::new(10., 20., 20.), Dir3::X), &row).is_none()
+                    roof_ray_hit(Ray3d::new(Vec3::new(10., 50., 20.), Dir3::X), &row).is_none()
                 );
             }
         }
@@ -1142,6 +1191,9 @@ mod tests {
                 let primitive = match kind {
                     BuildingKind::TowerSquare => 1,
                     BuildingKind::StoneWall => 4,
+                    BuildingKind::TowerRoundShort | BuildingKind::TowerRoundTall => 1,
+                    BuildingKind::GatehouseSmall => 4,
+                    BuildingKind::GatehouseLarge => 4,
                     _ => 0,
                 };
                 assets.load(format!(
@@ -1240,12 +1292,23 @@ mod tests {
                     let p = model_transform(kind).transform_point(Vec3::from(*p));
                     // The keep batches walls and terrace tiles by stone material;
                     // other buildings provide a separate planar roof primitive.
-                    let tolerance = if kind == BuildingKind::Keep {
+                    let tolerance = if kind == BuildingKind::Keep
+                        || !matches!(
+                            kind,
+                            BuildingKind::StoneWall
+                                | BuildingKind::TowerStairwell
+                                | BuildingKind::TowerLookout
+                                | BuildingKind::TowerSquare
+                                | BuildingKind::TowerRoundShort
+                                | BuildingKind::TowerRoundTall
+                                | BuildingKind::TowerGreat
+                                | BuildingKind::GatehouseSmall
+                        ) {
                         0.08
                     } else {
                         0.006
                     };
-                    if kind == BuildingKind::Keep && (p.y - profile.height).abs() >= tolerance {
+                    if (p.y - profile.height).abs() >= tolerance {
                         continue;
                     }
                     assert!(
@@ -1258,7 +1321,10 @@ mod tests {
                 }
                 assert!(floor_vertices >= 4, "{kind:?}: walkable floor must exist");
                 assert!(profile.half_x <= (-floor_min.x).min(floor_max.x));
-                assert!(profile.half_z <= (-floor_min.z).min(floor_max.z));
+                assert!(
+                    profile.half_z <= (-floor_min.z).min(floor_max.z),
+                    "{kind:?}: roof extends beyond Z floor {floor_min:?} {floor_max:?}"
+                );
             }
             let positions = meshes
                 .get(&collision)
@@ -1357,45 +1423,36 @@ fn enemy_surface_accessible(snapshot: &network::Snapshot, selected: &[u64], targ
             Some(BuildingKind::from_name(&b.kind)?.rotated_obstacle(b.x, b.z, b.rotation))
         })
         .collect::<Vec<_>>();
-    component
-        .iter()
-        .filter(|p| p.kind != BuildingKind::StoneWall)
-        .any(|p| {
-            let roof = p.roof();
-            (0..roof.door_count()).any(|door| {
-                let entrance = roof.door(door);
-                map::free(entrance, &obstacles)
-                    && actors.iter().any(|u| {
-                        let from = pieces.iter().find(|p| {
-                            p.roof().roof_contains((u.x, u.z))
-                                && (u.y
-                                    - p.roof().roof_y()
-                                    - map::building_roof::UNIT_CENTER_HEIGHT)
-                                    .abs()
-                                    < 0.2
-                        });
-                        if let Some(from) = from {
-                            map::walls::surface_component(from.id, &pieces)
-                                .iter()
-                                .filter(|p| p.kind != BuildingKind::StoneWall)
-                                .any(|p| {
-                                    let roof = p.roof();
-                                    (0..roof.door_count()).any(|door| {
-                                        map::free(roof.door(door), &obstacles)
-                                            && map::shortest_path(
-                                                roof.door(door),
-                                                entrance,
-                                                &obstacles,
-                                            )
+    component.iter().filter(|p| !p.kind.is_wall()).any(|p| {
+        let roof = p.roof();
+        (0..roof.door_count()).any(|door| {
+            let entrance = roof.door(door);
+            map::free(entrance, &obstacles)
+                && actors.iter().any(|u| {
+                    let from = pieces.iter().find(|p| {
+                        p.roof().roof_contains((u.x, u.z))
+                            && (u.y - p.roof().roof_y() - map::building_roof::UNIT_CENTER_HEIGHT)
+                                .abs()
+                                < 0.2
+                    });
+                    if let Some(from) = from {
+                        map::walls::surface_component(from.id, &pieces)
+                            .iter()
+                            .filter(|p| !p.kind.is_wall())
+                            .any(|p| {
+                                let roof = p.roof();
+                                (0..roof.door_count()).any(|door| {
+                                    map::free(roof.door(door), &obstacles)
+                                        && map::shortest_path(roof.door(door), entrance, &obstacles)
                                             .is_some()
-                                    })
                                 })
-                        } else {
-                            map::shortest_path((u.x, u.z), entrance, &obstacles).is_some()
-                        }
-                    })
-            })
+                            })
+                    } else {
+                        map::shortest_path((u.x, u.z), entrance, &obstacles).is_some()
+                    }
+                })
         })
+    })
 }
 
 #[cfg(test)]

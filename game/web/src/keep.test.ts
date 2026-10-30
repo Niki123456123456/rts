@@ -72,6 +72,7 @@ try {
   assert.equal((await build('barracks',keep.x+40,keep.z-12)).tag,'Committed');
   const barracks=buildings().find(row=>row.kind==='barracks'&&row.owner.toHexString()===a.connectionId.toHexString())!;
   for(const kind of ['armed_peasant','archer']) {
+    await until(()=>a.db.keepPopulation.buildingId.find(keep.id)!.arrived>Array.from(a.db.worker.iter()).filter(w=>w.gameId===game).length,'a free peasant is available for recruitment',20000);
     assert.equal((await status(a,cb=>a.reducers.onRecruitUnit(cb),()=>a.reducers.recruitUnit(barracks.id,kind))).tag,'Committed');
     const profile=Array.from(a.db.unitProfile.iter()).find(p=>p.gameId===game&&p.kind===kind&&a.db.armyUnit.id.find(p.unitId)?.owner.toHexString()===a.connectionId.toHexString())!;
     const soldier=()=>a.db.armyUnit.id.find(profile.unitId)!;

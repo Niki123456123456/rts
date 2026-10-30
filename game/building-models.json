@@ -41,7 +41,7 @@
   {
     "variant": "GatehouseWooden",
     "id": "gatehouse_wooden",
-    "label": "HÃ¶lzernes Torhaus",
+    "label": "Hölzernes Torhaus",
     "category": "fortifications",
     "source": "gatehouse_wooden",
     "collision": "gatehouse_wooden_collision",
@@ -80,7 +80,7 @@
   {
     "variant": "GatehouseLarge",
     "id": "gatehouse_large",
-    "label": "GroÃŸes Torhaus",
+    "label": "Großes Torhaus",
     "category": "fortifications",
     "source": "gatehouse_large",
     "collision": "gatehouse_large_collision",
@@ -171,7 +171,7 @@
   {
     "variant": "TowerRoundShort",
     "id": "tower_round_short",
-    "label": "Niedriger Rundturm",
+    "label": "Kleiner Rundturm",
     "category": "fortifications",
     "source": "tower_round_short_closed",
     "collision": "tower_round_short_collision",
@@ -197,7 +197,7 @@
   {
     "variant": "TowerGreat",
     "id": "tower_great",
-    "label": "GroÃŸer Wehrturm",
+    "label": "Bergfried",
     "category": "fortifications",
     "source": "tower_great_closed",
     "collision": "tower_great_collision",
@@ -236,7 +236,7 @@
   {
     "variant": "BridgeEnd",
     "id": "bridge_end",
-    "label": "SteinbrÃ¼cke: Ende",
+    "label": "Steinbrücke: Ende",
     "category": "fortifications",
     "source": "bridge_end",
     "collision": null,
@@ -249,7 +249,7 @@
   {
     "variant": "BridgeMiddle",
     "id": "bridge_middle",
-    "label": "SteinbrÃ¼cke: Mitte",
+    "label": "Steinbrücke: Mitte",
     "category": "fortifications",
     "source": "bridge_middle",
     "collision": null,
@@ -262,7 +262,7 @@
   {
     "variant": "BridgeWooden",
     "id": "bridge_wooden",
-    "label": "HolzbrÃ¼cke",
+    "label": "Holzbrücke",
     "category": "fortifications",
     "source": "bridge_wooden",
     "collision": null,
@@ -315,7 +315,7 @@
   {
     "variant": "DairyFarm",
     "id": "dairy_farm",
-    "label": "KÃ¤serei",
+    "label": "Käserei",
     "category": "supply",
     "source": "farm_dairy",
     "collision": "farm_dairy_collision",
@@ -405,7 +405,7 @@
   {
     "variant": "HuntersPost",
     "id": "hunters_post",
-    "label": "JÃ¤gerstand",
+    "label": "Jägerhütte",
     "category": "supply",
     "source": "hunter_post",
     "collision": "hunter_post_collision",
@@ -418,7 +418,7 @@
   {
     "variant": "Fishpond",
     "id": "fishpond",
-    "label": "Fischteich",
+    "label": "Fischerei",
     "category": "supply",
     "source": "fishpond",
     "collision": null,
@@ -444,7 +444,7 @@
   {
     "variant": "GardenersHut",
     "id": "gardeners_hut",
-    "label": "GÃ¤rtnerhÃ¼tte",
+    "label": "Gärtnerhütte",
     "category": "supply",
     "source": "gardeners_hut",
     "collision": "gardeners_hut_collision",
@@ -457,7 +457,7 @@
   {
     "variant": "VegetableGarden",
     "id": "vegetable_garden",
-    "label": "GemÃ¼sebeet",
+    "label": "Gemüsebeet",
     "category": "supply",
     "source": "gardeners_garden",
     "collision": null,
@@ -483,7 +483,7 @@
   {
     "variant": "Windmill",
     "id": "windmill",
-    "label": "MÃ¼hle",
+    "label": "Mühle",
     "category": "supply",
     "source": "windmill_closed",
     "collision": "windmill_collision",
@@ -496,7 +496,7 @@
   {
     "variant": "Bakery",
     "id": "bakery",
-    "label": "BÃ¤ckerei",
+    "label": "Bäckerei",
     "category": "supply",
     "source": "workshop_bakery_closed",
     "collision": "workshop_bakery_collision",
@@ -535,7 +535,7 @@
   {
     "variant": "Kitchen",
     "id": "kitchen",
-    "label": "BurgkÃ¼che",
+    "label": "Burgküche",
     "category": "supply",
     "source": "kitchen_closed",
     "collision": "kitchen_collision",
@@ -587,7 +587,7 @@
   {
     "variant": "SawPit",
     "id": "saw_pit",
-    "label": "HolzfÃ¤llerhÃ¼tte",
+    "label": "Holzfällerhütte",
     "category": "supply",
     "source": "saw_pit",
     "collision": "saw_pit_collision",
@@ -639,7 +639,7 @@
   {
     "variant": "OxTether",
     "id": "ox_tether",
-    "label": "Ochsenjoch",
+    "label": "Ochsenplatz",
     "category": "supply",
     "source": "ox_tether",
     "collision": "ox_tether_collision",
@@ -678,7 +678,7 @@
   {
     "variant": "ChandlersWorkshop",
     "id": "chandlers_workshop",
-    "label": "KerzengieÃŸerei",
+    "label": "Kerzengießerei",
     "category": "supply",
     "source": "chandler_workshop",
     "collision": "chandler_workshop_collision",
@@ -786,7 +786,7 @@
   {
     "variant": "Keep",
     "id": "keep",
-    "label": "Bergfried",
+    "label": "Palast",
     "category": "fortifications",
     "folder": "keep",
     "grid": [
@@ -794,6 +794,62 @@
       14
     ],
     "procedural": "keep",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneWallLow",
+    "id": "stone_wall_low",
+    "label": "Niedrige Mauer (3 m)",
+    "grid": [
+      1,
+      1
+    ],
+    "category": "fortifications",
+    "folder": "stone_wall_low",
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneWallHigh",
+    "id": "stone_wall_high",
+    "label": "Hohe Mauer (10 m)",
+    "grid": [
+      1,
+      1
+    ],
+    "category": "fortifications",
+    "folder": "stone_wall_high",
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneWallCrenellated",
+    "id": "stone_wall_crenellated",
+    "label": "Zinnenmauer (7 m)",
+    "grid": [
+      1,
+      1
+    ],
+    "category": "fortifications",
+    "folder": "stone_wall_crenellated",
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "DrawbridgeGate",
+    "id": "drawbridge_gate",
+    "label": "Tor mit Zugbrücke",
+    "grid": [
+      8,
+      20
+    ],
+    "category": "fortifications",
+    "folder": "drawbridge_gate",
+    "procedural": "fortification",
     "source": null,
     "collision": null
   }

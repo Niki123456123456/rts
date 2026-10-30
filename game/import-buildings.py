@@ -112,6 +112,11 @@ def main():
             generator = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(generator)
             minimum, maximum = generator.generate()
+        elif item.get('procedural') == 'fortification':
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('fortifications', ROOT / 'create-fortifications.py')
+            generator = importlib.util.module_from_spec(spec); spec.loader.exec_module(generator)
+            minimum, maximum = generator.generate(item)
         elif item.get('procedural') == 'keep':
             import importlib.util
             spec = importlib.util.spec_from_file_location('keep', ROOT / 'create-keep.py')
@@ -187,7 +192,7 @@ impl BuildingKind {
         let d = &DEFINITIONS[self.index()];
         ((d.min[0] + d.max[0]) * 0.5, (d.min[2] + d.max[2]) * 0.5)
     }
-    pub fn height(self) -> f32 { let d = &DEFINITIONS[self.index()]; (d.max[1] - d.min[1]) * MODEL_SCALE }
+    pub fn height(self) -> f32 { let d = &DEFINITIONS[self.index()]; (d.max[1] - d.min[1]) * MODEL_SCALE * if self==Self::TowerLookout {1.4}else{1.} }
     pub fn ground_offset(self) -> f32 { -DEFINITIONS[self.index()].min[1] * MODEL_SCALE }
     pub fn obstacle(self, x: f32, z: f32) -> Obstacle {
         let d = &DEFINITIONS[self.index()];
@@ -196,8 +201,16 @@ impl BuildingKind {
     }
 }
 ''' % (variants, len(catalog), '\n'.join(definitions), len(catalog), all_kinds)
+    # Replace static gate leaves with the replicated, animated gates.
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('operable_gates',ROOT/'prepare-gates.py')
+    gates=importlib.util.module_from_spec(spec);spec.loader.exec_module(gates)
+    for item in catalog:
+        if item['id'] in ['gatehouse_small','gatehouse_medium','gatehouse_large']:
+            p=ROOT/'assets/models/buildings/fortifications'/item['folder']/'mesh.glb'
+            p.write_bytes(gates.prepare(p.read_bytes(),item['id']))
     generated = ROOT.parent / 'shared/src/building_catalog.rs'
-    generated.write_text(output)
+    generated.write_text(output,encoding='utf-8')
     subprocess.run(['rustfmt', '--edition', '2021', str(generated)], check=True)
 
 

@@ -47,6 +47,8 @@ pub enum Commodity {
     Iron = 2,
     Apples = 3,
     Cheese = 5,
+    Meat = 6,
+    Fish = 7,
 }
 impl Commodity {
     pub fn from_u8(value: u8) -> Option<Self> {
@@ -56,6 +58,8 @@ impl Commodity {
             2 => Some(Self::Iron),
             3 => Some(Self::Apples),
             5 => Some(Self::Cheese),
+            6 => Some(Self::Meat),
+            7 => Some(Self::Fish),
             _ => None,
         }
     }
@@ -64,11 +68,11 @@ impl Commodity {
             Self::Wood => 20,
             Self::Stone => 54,
             Self::Iron => 96,
-            Self::Apples | Self::Cheese => FOOD_CAPACITY_PER_KIND,
+            Self::Apples | Self::Cheese | Self::Meat | Self::Fish => FOOD_CAPACITY_PER_KIND,
         }
     }
     pub fn is_food(self) -> bool {
-        matches!(self, Self::Apples | Self::Cheese)
+        matches!(self, Self::Apples | Self::Cheese | Self::Meat | Self::Fish)
     }
 }
 impl BuildingKind {
@@ -79,6 +83,8 @@ impl BuildingKind {
             Self::IronMine => Some(Commodity::Iron),
             Self::DairyFarm => Some(Commodity::Cheese),
             Self::AppleFarm => Some(Commodity::Apples),
+            Self::Fishpond => Some(Commodity::Fish),
+            Self::HuntersPost => Some(Commodity::Meat),
             _ => None,
         }
     }
@@ -171,7 +177,7 @@ pub fn stock_visuals(stock: [u32; 3]) -> Vec<StockVisual> {
                         });
                     }
                 }
-                Commodity::Apples | Commodity::Cheese => {
+                Commodity::Apples | Commodity::Cheese | Commodity::Meat | Commodity::Fish => {
                     unreachable!("Food is stored in granaries")
                 }
             }

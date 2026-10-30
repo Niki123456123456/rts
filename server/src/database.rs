@@ -100,9 +100,15 @@ pub struct PlayerResources {
     pub iron: u32,
 }
 
-// Initialize missing balances only, including players present before this update.
+// One-time supplies migrate legacy players who had no stockpile or starting balance.
+#[spacetimedb::table(name=starting_supplies)]
+pub struct StartingSupplies {
+    #[primary_key]
+    pub connection_id: spacetimedb::ConnectionId,
+}
 fn ensure_resources(ctx: &ReducerContext, player: &Participant) -> PlayerResources {
-    ctx.db
+    let mut balance = ctx
+        .db
         .player_resources()
         .connection_id()
         .find(player.connection_id)
@@ -110,11 +116,41 @@ fn ensure_resources(ctx: &ReducerContext, player: &Participant) -> PlayerResourc
             ctx.db.player_resources().insert(PlayerResources {
                 connection_id: player.connection_id,
                 game_id: player.game_id,
-                wood: 0,
-                stone: 0,
-                iron: 0,
+                wood: map::STARTING_RESOURCE_AMOUNT,
+                stone: map::STARTING_RESOURCE_AMOUNT,
+                iron: map::STARTING_RESOURCE_AMOUNT,
             })
-        })
+        });
+    if ctx
+        .db
+        .starting_supplies()
+        .connection_id()
+        .find(player.connection_id)
+        .is_none()
+    {
+        ctx.db.starting_supplies().insert(StartingSupplies {
+            connection_id: player.connection_id,
+        });
+        if balance.wood == 0
+            && balance.stone == 0
+            && balance.iron == 0
+            && ctx
+                .db
+                .logistics_player()
+                .connection_id()
+                .find(player.connection_id)
+                .is_none()
+        {
+            balance.wood = map::STARTING_RESOURCE_AMOUNT;
+            balance.stone = map::STARTING_RESOURCE_AMOUNT;
+            balance.iron = map::STARTING_RESOURCE_AMOUNT;
+            ctx.db
+                .player_resources()
+                .connection_id()
+                .update(balance.clone());
+        }
+    }
+    balance
 }
 
 #[derive(Clone)]
@@ -234,6 +270,7 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
             return Ok(());
         }
     }
+    ensure_ecology(ctx, game_id);
     leave_game(ctx);
     let used_colors: std::collections::HashSet<_> = ctx
         .db
@@ -364,6 +401,10 @@ pub fn leave_game(ctx: &ReducerContext) {
             .delete(connection_id);
         ctx.db
             .granary_player()
+            .connection_id()
+            .delete(connection_id);
+        ctx.db
+            .starting_supplies()
             .connection_id()
             .delete(connection_id);
         ctx.db.player().connection_id().delete(connection_id);
@@ -615,7 +656,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             .filter(|u| u.id != unit.id && on_ground(ctx, u))
             .map(|u| (u.x, u.z))
             .collect::<Vec<_>>();
-        let obstacles = obstacles(ctx, unit.game_id);
+        let obstacles = worker_obstacles(ctx, &unit);
         let mut budget = UNIT_SPEED * TICK_SECONDS;
         while order.waypoints.len() >= 2 && budget > 0.00001 {
             while order.waypoints.len() >= 4
@@ -641,7 +682,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 break;
             }
         }
-        unit.y = terrain_height(unit.x, unit.z) + 0.75;
+        unit.y = ground_height(ctx, unit.game_id, unit.x, unit.z) + 0.75;
         if order.waypoints.is_empty() && order.attack_building.is_none() {
             stop_unit(ctx, unit);
         } else {
@@ -722,6 +763,8 @@ fn delete_building(ctx: &ReducerContext, building_id: u64) {
         .building_operation()
         .building_id()
         .delete(building_id);
+    remove_fort_building(ctx, building_id);
+    remove_ecology_building(ctx, building_id);
     remove_logistics_building(ctx, building_id);
     cancel_surface_routes_through(ctx, building_id);
     ctx.db.building_rotation().building_id().delete(building_id);
@@ -734,13 +777,7 @@ fn building_shape(ctx: &ReducerContext, building: &Building) -> Obstacle {
         .rotated_obstacle(building.x, building.z, rotation(ctx, building.id))
 }
 fn obstacles(ctx: &ReducerContext, game_id: u64) -> Vec<Obstacle> {
-    ctx.db
-        .building()
-        .game_id()
-        .filter(game_id)
-        .map(|b| building_shape(ctx, &b))
-        .chain(map::terrain::obstacles())
-        .collect()
+    fort_obstacles(ctx, game_id)
 }
 fn save_order(ctx: &ReducerContext, u: &ArmyUnit, attack: Option<u64>, path: Vec<map::Point>) {
     ctx.db.unit_order().unit_id().delete(u.id);
@@ -993,19 +1030,54 @@ fn place_building_for(
     if kind == map::BuildingKind::Keep
         && ctx
             .db
+            .player_keep_spawn()
+            .connection_id()
+            .find(player.connection_id)
+            .is_some()
+    {
+        return Err(
+            "Der Palast ist das einmalige Startgebäude und kann nicht gebaut werden.".into(),
+        );
+    }
+    if kind == map::BuildingKind::Keep
+        && ctx
+            .db
             .building()
             .owner()
             .filter(player.connection_id)
             .any(|b| b.kind == "keep")
     {
-        return Err("Jeder Spieler kann einen Bergfried bauen.".into());
+        return Err("Jeder Spieler erhält genau einen Startpalast.".into());
     }
     let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
-    let shape = kind.rotated_build_footprint(x, z, quarter_turns);
+    let shape = kind.construction_bounds(x, z, quarter_turns);
+    ensure_ecology(ctx, player.game_id);
+    let required = match kind {
+        map::BuildingKind::Quarry => Some(1),
+        map::BuildingKind::IronMine => Some(2),
+        map::BuildingKind::Fishpond => Some(7),
+        _ => None,
+    };
+    if let Some(resource) = required {
+        if !ctx
+            .db
+            .resource_node()
+            .game_id()
+            .filter(player.game_id)
+            .any(|n| {
+                n.kind == resource
+                    && n.remaining > 0
+                    && map::distance((x, z), (n.x, n.z)) < if resource == 7 { 34. } else { 17. }
+            })
+        {
+            return Err("Hier gibt es keinen verfügbaren Rohstoffbestand bzw. Fischgrund.".into());
+        }
+    }
+
     if !shape.in_build_area() {
         return Err("Place the building inside the map.".into());
     }
-    let wall = kind == map::BuildingKind::StoneWall;
+    let wall = kind.is_wall();
     let limit = if wall {
         map::walls::MAX_WALL_SEGMENTS
     } else {
@@ -1016,7 +1088,7 @@ fn place_building_for(
         .building()
         .game_id()
         .filter(player.game_id)
-        .filter(|b| (b.kind == "stone_wall") == wall)
+        .filter(|b| map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_wall()) == wall)
         .count()
         >= limit
     {
@@ -1029,7 +1101,7 @@ fn place_building_for(
         shape.overlaps(
             map::BuildingKind::from_name(&b.kind)
                 .unwrap_or_default()
-                .rotated_build_footprint(b.x, b.z, rotation(ctx, b.id)),
+                .construction_bounds(b.x, b.z, rotation(ctx, b.id)),
         )
     }) {
         return Err("Buildings cannot overlap.".into());
@@ -1046,19 +1118,37 @@ fn place_building_for(
     {
         return Err("Units are standing in the construction area.".into());
     }
+    if ctx
+        .db
+        .moat()
+        .game_id()
+        .filter(player.game_id)
+        .any(|m| moat_shape(&m).overlaps(shape))
+        && kind != map::BuildingKind::DrawbridgeGate
+    {
+        return Err("Hier liegt ein Graben.".into());
+    }
+    if ctx
+        .db
+        .wall_stair()
+        .game_id()
+        .filter(player.game_id)
+        .any(|s| stair_shape(&s).overlaps(shape))
+    {
+        return Err("Hier liegt eine Mauertreppe.".into());
+    }
     let y = map::terrain::construction_height(kind, x, z, quarter_turns).ok_or(
         "Unpassendes Gelände: Holzfäller brauchen Wald, Steinbrüche Stein und Eisenminen Erz. Normale Gebäude dürfen auf Land, aber nicht auf Fels oder Wasser stehen.")?;
-    let mut resources = ensure_resources(ctx, &player);
-    let cost = kind.stone_cost();
-    resources.stone = resources.stone.checked_sub(cost).ok_or_else(|| {
-        format!(
-            "Nicht genug Stein: {} benötigt, {} vorhanden.",
-            cost, resources.stone
-        )
-    })?;
-    if cost > 0 {
-        debit_stone_stock(ctx, &player, cost)?;
-        ctx.db.player_resources().connection_id().update(resources);
+    // Only the automatic one-time starting keep is free.
+    if !(kind == map::BuildingKind::Keep
+        && ctx
+            .db
+            .player_keep_spawn()
+            .connection_id()
+            .find(player.connection_id)
+            .is_none())
+    {
+        debit_cost(ctx, player, kind.cost())?;
     }
     let placed = ctx.db.building().insert(Building {
         id: 0,
@@ -1077,6 +1167,13 @@ fn place_building_for(
         quarter_turns,
     });
     register_logistics_building(ctx, &placed)?;
+    if kind.is_gate() {
+        ctx.db.gate_state().insert(GateState {
+            building_id: placed.id,
+            game_id: placed.game_id,
+            open: false,
+        });
+    }
     if kind == map::BuildingKind::Keep {
         register_keep(ctx, &placed);
     }
@@ -1089,6 +1186,7 @@ fn place_building_for(
         half_x: cleared.half_x,
         half_z: cleared.half_z,
     });
+    clear_resource_trees(ctx, player.game_id, cleared);
     auto_assign_peasants(ctx, player.connection_id);
     Ok(())
 }
@@ -1166,3 +1264,39 @@ include!("combat_surfaces.rs");
 include!("ranged.rs");
 include!("keep.rs");
 include!("settlement.rs");
+include!("ecology.rs");
+
+include!("fortifications.rs");
+
+#[spacetimedb::reducer]
+pub fn build_wall_kind(
+    ctx: &ReducerContext,
+    start_x: f32,
+    start_z: f32,
+    end_x: f32,
+    end_z: f32,
+    kind: String,
+) -> Result<(), String> {
+    let p = participant(ctx)?;
+    let k = map::BuildingKind::from_name(&kind)
+        .filter(|k| k.is_wall())
+        .ok_or("Ungültige Mauerart.")?;
+    let line = map::walls::wall_line((start_x, start_z), (end_x, end_z));
+    if line.is_empty() || line.len() > 512 {
+        return Err("Ungültige Mauerlinie.".into());
+    }
+    for (x, z) in line {
+        if ctx
+            .db
+            .building()
+            .game_id()
+            .filter(p.game_id)
+            .any(|b| b.kind == k.name() && b.owner == p.connection_id && b.x == x && b.z == z)
+        {
+            continue;
+        }
+        place_building(ctx, x, z, kind.clone(), 0)?;
+    }
+    replan(ctx, p.game_id);
+    Ok(())
+}

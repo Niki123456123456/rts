@@ -65,7 +65,13 @@ fn settlement_satisfaction(
                 n[0].saturating_add(s.apples),
                 n[1].saturating_add(s.bread),
                 n[2].saturating_add(s.cheese),
-                n[3].saturating_add(s.meat),
+                n[3].saturating_add(s.meat).saturating_add(
+                    ctx.db
+                        .fish_stock()
+                        .building_id()
+                        .find(s.building_id)
+                        .map_or(0, |f| f.amount),
+                ),
             ]
         });
     let stock = ctx.db.player_resources().connection_id().find(keep.owner);
@@ -128,6 +134,12 @@ fn feed_population(ctx: &ReducerContext, keep: &Building, population: u32, round
         .collect::<Vec<_>>();
     stores.sort_by_key(|s| s.building_id);
     for store in &mut stores {
+        if let Some(mut fish) = ctx.db.fish_stock().building_id().find(store.building_id) {
+            let take = remaining.min(fish.amount);
+            fish.amount -= take;
+            remaining -= take;
+            ctx.db.fish_stock().building_id().update(fish);
+        }
         for offset in 0..4 {
             let amount = match (round + offset) % 4 {
                 0 => &mut store.apples,

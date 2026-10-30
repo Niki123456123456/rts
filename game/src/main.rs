@@ -3,6 +3,8 @@
 mod buildings;
 mod combat_units;
 mod dairy;
+mod ecology;
+mod fortifications;
 mod keep;
 mod logistics;
 mod menu_ui;
@@ -56,12 +58,15 @@ fn main() {
         .init_resource::<MovementDrag>()
         .init_resource::<Multiplayer>()
         .init_resource::<BuildingInteraction>()
+        .init_resource::<ecology::EcologyInteraction>()
         .add_systems(
             Startup,
             (
                 setup,
                 terrain::setup,
                 keep::setup,
+                ecology::setup,
+                fortifications::setup,
                 buildings::setup_buildings,
                 resources::setup_resource_ui,
                 unit_ui::setup,
@@ -76,6 +81,17 @@ fn main() {
                 buildings::load_building_models,
                 buildings::sync_buildings,
                 terrain::sync_clearings,
+                (
+                    ecology::sync_terrain,
+                    ecology::sync_animals,
+                    ecology::sync_carts,
+                    ecology::sync_fish,
+                    ecology::animate_legs,
+                    fortifications::sync,
+                    fortifications::animate,
+                    terrain::sync_excavations,
+                )
+                    .chain(),
                 (
                     keep::focus_home,
                     keep::sync_camp,
@@ -96,13 +112,18 @@ fn main() {
                     dairy::animate,
                 )
                     .chain(),
-                buildings::building_input,
-                select_unit,
-                movement_input,
-                formation_preview,
-                buildings::roof_preview,
-                expire_destination_markers,
-                highlight_selection,
+                (
+                    buildings::building_input,
+                    fortifications::input,
+                    ecology::input,
+                    select_unit,
+                    movement_input,
+                    formation_preview,
+                    buildings::roof_preview,
+                    expire_destination_markers,
+                    highlight_selection,
+                )
+                    .chain(),
             )
                 .chain(),
         )
@@ -111,6 +132,7 @@ fn main() {
             (
                 lobby_ui,
                 resources::resource_ui,
+                ecology::animal_ui,
                 combat_units::unit_health_ui,
                 selection_ui,
                 minimap::minimap_ui,
@@ -861,7 +883,8 @@ fn selection_ui(
     );
     let response = egui::Panel::bottom("selected_units")
         .resizable(false)
-        .exact_size(110.0)
+        .exact_size(if building_interaction.selected.and_then(|id|multiplayer.snapshot.buildings.iter().find(|b|b.id==id))
+            .is_some_and(|b|matches!(b.kind.as_str(),"quarry"|"iron_mine"|"saw_pit"|"fishpond"|"hunters_post")){172.}else if building_interaction.category==Some("fortifications"){132.}else{110.})
         .show(&mut viewport_ui, |ui| {
             ui.add_space(8.0);
             ui.horizontal_top(|ui| {
@@ -880,6 +903,8 @@ fn selection_ui(
                 });
                 ui.vertical(|ui| {
                     let category = building_interaction.category.unwrap_or("supply");
+                    if category=="fortifications" {ui.horizontal(|ui|{for (tool,label)in [(0,"Graben ziehen"),(1,"Mauertreppe ziehen")] {if ui.selectable_label(building_interaction.fort_tool==Some(tool),label).clicked(){building_interaction.placing=None;building_interaction.fort_tool=Some(tool);building_interaction.fort_start=None;building_interaction.selected=None;}}});}
+
                     let buildings = menu_ui::BUILD_MENU.into_iter()
                         .filter(|kind| kind.category() == category)
                         .collect::<Vec<_>>();
@@ -893,6 +918,8 @@ fn selection_ui(
                                 if buildings::building_button(ui, menu_texture, kind, active) {
                                     building_interaction.placing = if active { None } else { Some(kind) };
                                     building_interaction.selected = None;
+                                    building_interaction.fort_tool=None;
+                                    building_interaction.fort_start=None;
                                     building_interaction.rotation = 0;
                                     building_interaction.wall_start = None;
                                     building_interaction.wall_cost = 0;
@@ -906,14 +933,14 @@ fn selection_ui(
                 ui.separator();
                 if let Some(kind) = building_interaction.placing {
                     let response = menu_ui::building_button(ui, menu_texture, kind, true);
-                    let hint = if kind == stronghold_map::BuildingKind::StoneWall {
+                    let hint = if kind.is_wall() {
                         if building_interaction.wall_start.is_some() {
                             format!("Steinmauer: Endpunkt anklicken. {} Stein. Rechtsklick / Esc bricht ab.", building_interaction.wall_cost)
                         } else {
-                            "Steinmauer: Startpunkt anklicken, dann Endpunkt wählen. 1 Stein je Segment.".into()
+                            format!("{}: Startpunkt und Endpunkt wählen. {} je Segment.",kind.label(),kind.cost().label())
                         }
                     } else {
-                        format!("{} ({}°), {} Stein. R: 90° drehen. Rechtsklick / Esc bricht ab.", kind.label(), building_interaction.rotation as u16 * 90, kind.stone_cost())
+                        format!("{} ({}°), {}. R: 90° drehen. Rechtsklick / Esc bricht ab.", kind.label(), building_interaction.rotation as u16 * 90, kind.cost().label())
                     };
                     if response.on_hover_text(hint).clicked() {
                         building_interaction.placing = None;
@@ -954,6 +981,7 @@ fn selection_ui(
                         if let Some(stock) = multiplayer.snapshot.granaries.iter().find(|s| s.building_id == building.id) {
                             ui.label(format!("Äpfel {} · Brot {} · Käse {} · Fleisch {}", stock.apples, stock.bread, stock.cheese, stock.meat));
                         }
+                        if let Some(stock)=multiplayer.snapshot.fish_stocks.iter().find(|s|s.building_id==building.id){ui.label(format!("Fisch {} / 24",stock.amount));}
                         if let Some(producer) = multiplayer
                             .snapshot
                             .producers
@@ -965,6 +993,8 @@ fn selection_ui(
                                 1 => "Stein",
                                 5 => "Käse",
                                 3 => "Äpfel",
+                                6 => "Wildfleisch",
+                                7 => "Fisch",
                                 _ => "Eisen",
                             };
                             let cargo: u32 = multiplayer
@@ -978,6 +1008,7 @@ fn selection_ui(
                             let closed=multiplayer.snapshot.building_operations.iter().any(|s|s.building_id==building.id&&s.closed);
                             ui.label(format!("{resource}: {} · Vorrat {} · Unterwegs {cargo}",
                                 if closed {"geschlossen"} else if staffed {"besetzt"} else {"wartet auf Bauern"},producer.buffer));
+                            ecology::production_details(ui,&building,&mut multiplayer);
                             if building.owned {
                                 if ui.button(if closed {"Gebäude öffnen"} else {"Gebäude schließen"})
                                     .on_hover_text(if closed {"Freie Bauern besetzen diesen Arbeitsplatz wieder automatisch."}
@@ -986,6 +1017,11 @@ fn selection_ui(
                                         else {Action::UnassignPeasant{building_id:building.id}});
                                 }
                             }
+                        }
+                        if building.kind=="ox_tether" {
+                            let assigned=multiplayer.snapshot.ox_carts.iter().find(|c|c.building_id==building.id).and_then(|c|c.source_building);
+                            ui.label(if assigned.is_some(){"Karren einem Betrieb zugeteilt"}else{"Freier Ochsenkarren · 20 Einheiten Ladung"});
+                            ui.small("Stein und Eisen benötigen einen Karren. Beim gewünschten Betrieb zuweisen.");
                         }
                         if building.kind == "keep" {
                             if let Some(state) = multiplayer.snapshot.keep_population.iter().find(|k| k.building_id == building.id) {
@@ -1016,6 +1052,7 @@ fn selection_ui(
                                 "Einheiten auswählen und mit rechts auf das Dach klicken.",
                             );
                         }
+                        if building.owned && kind.is_gate() {let open=multiplayer.snapshot.gates.iter().any(|g|g.building_id==building.id&&g.open);if ui.button(if open {"Tor schließen / Brücke heben"}else{"Tor öffnen / Brücke senken"}).clicked(){multiplayer.send(Action::SetGate{building_id:building.id,open:!open});}}
                         if building.owned && menu_ui::remove_button(ui, menu_texture) {
                             multiplayer.send(Action::RemoveBuilding {
                                 building_id: building.id,
@@ -1024,7 +1061,7 @@ fn selection_ui(
                     });
                     if building.owned && building.kind == "barracks" {
                         for kind in [stronghold_map::units::UnitKind::ArmedPeasant, stronghold_map::units::UnitKind::Archer] {
-                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).clicked() {
+                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).on_hover_text(format!("{} · {} · 1 freier Bauer",kind.label(),kind.cost().label())).clicked() {
                                 multiplayer.send(Action::RecruitUnit {building_id:building.id,kind:kind.name().into()});
                             }
                         }

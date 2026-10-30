@@ -44,7 +44,7 @@ try {
   for (const kind of ['saw_pit', 'quarry', 'iron_mine']) {
     const failed = await build(kind, 45, 25);
     assert.equal(failed.tag, 'Failed', `${kind} must reject ordinary grass`);
-    if (failed.tag === 'Failed') assert.match(failed.value, /Gelände/);
+    if (failed.tag === 'Failed') assert.match(failed.value, /Gelände|Rohstoffbestand/);
   }
   for (const point of [[-245, -139], [-155, -109], [-195, -275], [92, 0]]) {
     assert.equal((await build('granary', point[0], point[1])).tag, 'Failed', 'normal buildings reject rock, ore and water');

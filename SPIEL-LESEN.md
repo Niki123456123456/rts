@@ -24,13 +24,14 @@ gleicht ein Fundament die Bauhöhe aus. Bäume auf der Baufläche werden automat
 entfernt. Die Rodung wird pro Spielwelt gespeichert und bleibt auch nach Abriss
 und erneutem Verbinden erhalten. Fehlgeschlagene Bauversuche entfernen keine Bäume.
 
-## Bergfried und Zuwanderer
+## Palast und Zuwanderer
 
 Jeder Spieler erhält beim Erstellen oder Betreten eines Spiels automatisch
-genau einen Bergfried. Die Kamera zeigt beim Start die eigene Burg samt Vorplatz.
+genau einen Palast. Die Kamera zeigt beim Start die eigene Burg samt Vorplatz.
 Die Startplätze der Spieler überlappen sich nicht. Erneutes Beitreten während
-derselben Teilnahme erzeugt keine zweite Burg. Ein abgerissener Bergfried wird
-nicht automatisch erneut vergeben; ein Ersatz kann unter Befestigungen gebaut werden.
+derselben Teilnahme erzeugt keine zweite Burg. Der Palast ist das einmalige Startgebäude und kann nicht über das Baumenü gebaut
+werden. Nach Abriss wird kein zweiter Palast vergeben. Der runde Bergfried ist
+ein eigenes, baubares Verteidigungsgebäude unter „Befestigungen“.
 Er hat einzelne Steine und Dachziegel als 3D-Geometrie, eine begehbare Terrasse,
 eine Außentreppe und eine Feuerstelle mit Bänken. Der vorhandene Burgherr nimmt
 beim Start seinen Platz auf der Terrasse ein. Den Burgherrn auswählen und mit
@@ -40,7 +41,7 @@ ist direkt auf der Terrasse anklickbar. Bewaffnete Bauern und Bogenschützen
 benutzen dieselbe Außentreppe; auch auf dem Treppenabsatz kann ein neuer
 Befehl zum Boden erteilt werden.
 
-Der Bergfried bietet vier Wohnplätze, jede Unterkunft vier weitere. Freie Bauern
+Der Palast bietet vier Wohnplätze, jede Unterkunft vier weitere. Freie Bauern
 warten sichtbar am Lagerfeuer. Produktionsgebäude können zunächst leer gebaut
 werden. Freie Bauern werden automatisch offenen Betrieben zugeteilt und laufen
 vom Lagerfeuer zum Arbeitsplatz. Ein Produktionsgebäude anklicken und „Gebäude
@@ -67,6 +68,67 @@ wandert alle vierzehn Sekunden ein freier Bauer ab. Ohne freien Wohnraum ziehen
 keine weiteren Bauern zu. Beschäftigte Bauern bleiben an ihrem Arbeitsplatz.
 Bevölkerung, Vorräte, Zufriedenheit und Zuweisungen verwaltet der Spielserver.
 Die Darstellung zeigt bis zu 16 Wartende gleichzeitig als Figuren.
+
+
+## Rohstoffe, Karren und Wildtiere
+
+Ein neuer Spieler beginnt mit 120 Holz, 120 Stein und 120 Eisen. Die Bauleiste
+zeigt die Kosten für jedes Gebäude. Das erste Vorratslager übernimmt den noch
+verfügbaren Startvorrat; spätere Lager erzeugen keine neuen Rohstoffe.
+
+Bäume sind echte Holzbestände: Der Holzfäller fällt einen Baum, der sichtbar
+umkippt, und zerlegt anschließend den Stamm. Stein- und Eisenvorkommen werden
+beim Abbau kleiner und sind irgendwann erschöpft. Rodung beim Bauen liefert
+keine zusätzlichen Rohstoffe.
+
+Für Stein und Eisen ist ein Ochsenkarren erforderlich. Einen Ochsenplatz bauen,
+den Steinbruch oder die Eisenmine auswählen und „Karren zuweisen“ anklicken.
+Jeder Ochsenplatz stellt einen Karren für einen Betrieb bereit. Holzfäller können
+optional ebenfalls einen Karren erhalten: Er transportiert 20 statt 5 Einheiten.
+Ein beladener Karren muss erst entladen werden, bevor er neu zugeteilt wird.
+Ohne passenden Lagerplatz wartet der Arbeiter mit seiner Ladung.
+
+Fischschwärme liegen nur in bestimmten Flussabschnitten und erscheinen auf der
+Minimap. Eine Fischerei braucht einen passenden Fischgrund in Ufernähe. Ihr
+Fang verringert diesen Bestand; er erholt sich langsam. Fisch wird zum
+Kornspeicher gebracht. Jägerhütten jagen Wild in ihrer Umgebung und liefern
+Wildfleisch. Rehe, Hasen und Wildschweine leben in unterschiedlich großen Gruppen.
+Wölfe und Bären verteidigen ihr Revier; gelegentlich ziehen sie in erreichbare,
+offene Siedlungen und können dort Bauern angreifen. Ausgewählte Soldaten können
+über einen Rechtsklick auf ein Tier ebenfalls einen Jagdauftrag erhalten.
+
+## Mauern, Dächer und Tore
+
+Gebäude können nicht in bestehende Gebäude oder Mauertreppen gebaut werden.
+In „Befestigungen“ stehen niedrige, normale und hohe Mauern sowie Zinnenmauern
+zur Auswahl. Start- und Endpunkt anklicken, um eine zusammenhängende Mauer zu
+ziehen. Die Zinnen sind Hindernisse für die tatsächliche Flugbahn von Pfeilen.
+Mauerflächen gleicher Höhe verbinden sich; unterschiedliche Höhen brauchen
+geeignete Zugänge.
+
+Für „Mauertreppe ziehen“ zuerst den freien Fußpunkt und danach die Oberseite
+einer eigenen Mauer anklicken. Die Treppe kann von der Mauer weg oder mit etwas
+seitlichem Abstand parallel zur Mauer verlaufen. Ihr oberer Absatz verbindet
+sie mit dem Wehrgang. Höhere Mauern brauchen längere Treppen. Einheiten auswählen
+und mit rechts auf einen erreichbaren Wehrgang oder ein begehbares Gebäudedach
+klicken. Sie bleiben auch oben anklickbar und benutzen beim Abstieg den Zugang.
+
+Kleine und große Stadttore lassen sich über ihr Gebäudefenster öffnen und
+schließen. Das Tor mit Zugbrücke wird so ausgerichtet, dass seine Brücke vom
+Tor aus zum anderen Ufer reicht; R dreht die Vorschau. „Tor öffnen / Brücke
+senken“ macht den Übergang begehbar. Solange Einheiten im Durchgang stehen,
+lässt sich das Tor nicht schließen. „Graben ziehen“ gräbt einen vier Meter
+breiten Wassergraben zwischen zwei gewählten Punkten; eine Zugbrücke kann auch
+diesen überqueren.
+
+Der schmale Aussichtsturm ist der höchste Turm. Die Reichweite von Bogenschützen
+steigt mit der tatsächlichen Standhöhe aus Gelände und Gebäude. Die angezeigte
+Reichweite und der Server verwenden dieselbe Regel. Gebäude, Gelände und Zinnen
+können Pfeile auf ihrer Flugbahn abfangen.
+
+Soldaten brauchen die angezeigten Rohstoffe und jeweils einen freien Bauern.
+Die Rekrutierung an der eigenen Kaserne entnimmt ihn dem Bauernpool. Sind alle
+Bauern beschäftigt, einen Betrieb schließen oder auf weitere Zuwanderer warten.
 
 ## Minimap
 

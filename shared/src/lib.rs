@@ -7,6 +7,8 @@ pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
 pub mod building_roof;
 pub mod camp;
+pub mod ecology;
+pub mod fortifications;
 pub mod logistics;
 pub mod needs;
 pub mod population;
@@ -18,21 +20,89 @@ pub const MAP_SIZE: f32 = 800.0;
 pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
 /// Grid lines lie at multiples of two metres on both world axes.
 pub const BUILD_GRID_SIZE: f32 = 2.0;
-pub const STARTING_RESOURCE_AMOUNT: u32 = 20;
+pub const STARTING_RESOURCE_AMOUNT: u32 = 120;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cost {
+    pub wood: u32,
+    pub stone: u32,
+    pub iron: u32,
+}
+impl Cost {
+    pub const fn new(wood: u32, stone: u32, iron: u32) -> Self {
+        Self { wood, stone, iron }
+    }
+    pub fn affordable(self, wood: u32, stone: u32, iron: u32) -> bool {
+        wood >= self.wood && stone >= self.stone && iron >= self.iron
+    }
+    pub fn label(self) -> String {
+        format!(
+            "{} Holz · {} Stein · {} Eisen",
+            self.wood, self.stone, self.iron
+        )
+    }
+}
 impl BuildingKind {
+    pub fn cost(self) -> Cost {
+        use BuildingKind::*;
+        let (w, s, i) = match self {
+            StoneWallLow => (0, 1, 0),
+            StoneWall => (0, 2, 0),
+            StoneWallHigh => (0, 3, 0),
+            StoneWallCrenellated => (0, 3, 0),
+            GatehouseWooden => (14, 0, 2),
+            GatehouseSmall => (8, 18, 3),
+            GatehouseMedium => (12, 28, 4),
+            GatehouseLarge => (16, 40, 6),
+            DrawbridgeGate => (22, 30, 8),
+            Keep => (40, 60, 10),
+            Barracks => (15, 20, 5),
+            Stockpile => (4, 0, 0),
+            Granary => (8, 3, 0),
+            TowerWooden | Watchpost => (12, 0, 0),
+            TowerLookout | TowerStairwell => (5, 12, 0),
+            TowerSquare | TowerRoundShort | TowerRoundTall | TowerGreat => (8, 24, 2),
+            Quarry | IronMine => (12, 4, 2),
+            OxTether => (10, 2, 2),
+            SawPit => (6, 0, 0),
+            HuntersPost => (8, 0, 2),
+            Fishpond => (10, 0, 1),
+            Housing => (6, 2, 0),
+            Well => (4, 5, 0),
+            Inn | Apothecary => (12, 6, 0),
+            _ => (8, 3, 0),
+        };
+        Cost::new(w, s, i)
+    }
     pub fn stone_cost(self) -> u32 {
-        match self {
-            Self::StoneWall => 1,
-            Self::TowerWooden
-            | Self::TowerLookout
-            | Self::TowerStairwell
-            | Self::TowerSquare
-            | Self::TowerRoundShort
-            | Self::TowerRoundTall
-            | Self::TowerGreat => 5,
-            _ => 0,
+        self.cost().stone
+    }
+    pub fn is_wall(self) -> bool {
+        matches!(
+            self,
+            Self::StoneWall | Self::StoneWallLow | Self::StoneWallHigh | Self::StoneWallCrenellated
+        )
+    }
+    pub fn is_gate(self) -> bool {
+        matches!(
+            self,
+            Self::GatehouseWooden
+                | Self::GatehouseSmall
+                | Self::GatehouseMedium
+                | Self::GatehouseLarge
+                | Self::DrawbridgeGate
+        )
+    }
+    /// Reserve the visible mesh as well as the logical plot, including stair projections.
+    pub fn construction_bounds(self, x: f32, z: f32, rotation: u8) -> Obstacle {
+        let mut p = self.rotated_build_footprint(x, z, rotation);
+        if self.is_wall() {
+            return p;
         }
+        let mesh = self.rotated_obstacle(x, z, rotation);
+        p.half_x = p.half_x.max(mesh.half_x);
+        p.half_z = p.half_z.max(mesh.half_z);
+        p
     }
 }
 
@@ -537,7 +607,7 @@ mod tests {
                 .iter()
                 .filter(|kind| kind.category() == "fortifications")
                 .count(),
-            20
+            24
         );
         for (index, kind) in BuildingKind::ALL.into_iter().enumerate() {
             assert_eq!(kind.index(), index);

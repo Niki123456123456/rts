@@ -69,24 +69,45 @@ impl BowTarget {
     }
 }
 fn shot_blocks(ctx: &ReducerContext, game: u64) -> Vec<bow::ShotBlock> {
-    ctx.db
-        .building()
-        .game_id()
-        .filter(game)
-        .filter_map(|b| {
-            let kind = map::BuildingKind::from_name(&b.kind)?;
-            let height = kind
-                .roof_profile()
-                .map(|p| p.height)
-                .unwrap_or_else(|| kind.height());
-            Some(bow::ShotBlock {
+    let mut result = Vec::new();
+    for b in ctx.db.building().game_id().filter(game) {
+        let Some(kind) = map::BuildingKind::from_name(&b.kind) else {
+            continue;
+        };
+        let height = kind
+            .roof_profile()
+            .map(|p| p.height)
+            .unwrap_or_else(|| kind.height());
+        let shapes = if kind.is_gate() {
+            fort::gate_solids(
+                kind,
+                (b.x, b.z),
+                rotation(ctx, b.id),
+                gate_is_open(ctx, b.id),
+            )
+        } else {
+            vec![building_shape(ctx, &b)]
+        };
+        for shape in shapes {
+            result.push(bow::ShotBlock {
                 id: b.id,
-                shape: building_shape(ctx, &b),
+                shape,
                 base: b.y,
                 top: b.y + height,
-            })
-        })
-        .collect()
+            });
+        }
+        if kind == map::BuildingKind::StoneWallCrenellated {
+            for shape in fort::merlons((b.x, b.z), rotation(ctx, b.id)) {
+                result.push(bow::ShotBlock {
+                    id: b.id,
+                    shape,
+                    base: b.y + height,
+                    top: b.y + height + 1.3,
+                });
+            }
+        }
+    }
+    result
 }
 fn arrow_origin(u: &ArmyUnit, end: bow::Position) -> bow::Position {
     let length = map::distance((u.x, u.z), (end.0, end.2)).max(0.001);

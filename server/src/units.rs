@@ -140,6 +140,25 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
                     .all(|q| map::distance(*p, *q) >= map::UNIT_SPACING)
         })
         .ok_or("No free space in front of the barracks.")?;
+    let keep = ctx
+        .db
+        .building()
+        .owner()
+        .filter(player.connection_id)
+        .find(|b| b.kind == "keep")
+        .ok_or("Kein eigener Palast.")?;
+    let mut population = ctx
+        .db
+        .keep_population()
+        .building_id()
+        .find(keep.id)
+        .ok_or("Keine Bauern vorhanden.")?;
+    if population.arrived <= employed_peasants(ctx, player.connection_id) {
+        return Err("Kein freier Bauer für die Rekrutierung. Schließe einen Betrieb oder warte auf Zuwanderer.".into());
+    }
+    debit_cost(ctx, &player, kind.cost())?;
+    population.arrived -= 1;
+    ctx.db.keep_population().building_id().update(population);
     let u = ctx.db.army_unit().insert(ArmyUnit {
         id: 0,
         game_id: player.game_id,
