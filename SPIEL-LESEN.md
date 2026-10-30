@@ -188,8 +188,15 @@ kein zusätzliches freies Rasterfeld nötig. Überschneidungen bleiben gesperrt.
 Die Kaserne bildet außerdem leichte Schwertkämpfer (2 Holz, 3 Eisen) und leichte
 Reiter (8 Holz, 4 Eisen) aus. Beide benötigen je einen freien Bauern. Reiter
 bewegen sich auf dem Boden deutlich schneller. Neue Mauerbilder unterscheiden
-Holzpalisade, niedrige, normale, hohe und gezinnte Mauer. Überfahren zeigt Kosten
-und Steuerung. Neben der Münze steht die aktuelle Nettoänderung je 30 Sekunden:
+Holzpalisade, niedrige, normale, hohe und gezinnte Mauer. Überfahren zeigt den Gebäudenamen, Rohstoffsymbole mit Mengen und Steuerung. Neben der Münze steht die aktuelle Nettoänderung je 30 Sekunden:
 grün mit Plus bei Überschuss, rot mit Minus bei Verlust. Aktuell gibt es
 Steuereinnahmen und noch keine laufenden Grundausgaben; Käufe und Verkäufe sind
 separate einmalige Geschäfte.
+
+Beim Auswählen eines Gebäudes für den Bau erscheint rechts oberhalb der Minimap
+eine Übersicht mit Beschreibung, Bauplatz, Kosten und Steuerung. Lange Inhalte
+lassen sich scrollen. Die Baukosten verwenden dieselben Rohstoffsymbole wie die
+Vorratsleiste. Mauerenden schließen Restabstände zu Türmen und anderen eigenen
+Gebäuden mit festen Anschlussstücken. Verbundene Türme gleicher Höhe erhalten
+einen durchgehenden Dachübergang: Nur die Zinnen am Übergang verschwinden,
+äußere Zinnen bleiben erhalten. Nach Abriss des Nachbarturms kehren sie zurück.

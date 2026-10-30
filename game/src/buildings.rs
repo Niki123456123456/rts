@@ -249,7 +249,17 @@ pub(crate) fn sync_buildings(
                         )),
                     ));
                 }
-                parent.spawn((WorldAssetRoot(model.scene.clone()), model_transform(kind)));
+                if kind.is_tower() {
+                    parent
+                        .spawn((
+                            WorldAssetRoot(model.scene.clone()),
+                            model_transform(kind),
+                            crate::tower_mesh::TowerRoot(row.id),
+                        ))
+                        .observe(crate::tower_mesh::ready);
+                } else {
+                    parent.spawn((WorldAssetRoot(model.scene.clone()), model_transform(kind)));
+                }
                 parent.spawn((
                     BuildingCollider(row.id),
                     Mesh3d(model.collision.clone()),
@@ -321,6 +331,12 @@ fn placement_valid(
     let shape = kind.construction_bounds(x, z, rotation);
     let candidate = crate::fortifications::candidate(&multiplayer.snapshot, kind, x, z, rotation);
     let refund = crate::fortifications::refund(&multiplayer.snapshot, candidate);
+    let mut planned = crate::fortifications::pieces(&multiplayer.snapshot);
+    planned.push(candidate);
+    let extensions = map::fortifications::joins(&planned)
+        .into_iter()
+        .filter(|j| j.a == 0 || j.b == 0)
+        .collect::<Vec<_>>();
     shape.in_build_area()
         && (kind == BuildingKind::DrawbridgeGate
             || !multiplayer.snapshot.moats.iter().any(|m| {
@@ -360,7 +376,10 @@ fn placement_valid(
         })
         && !multiplayer.snapshot.units.iter().any(|u| {
             ((u.y - terrain_height(u.x, u.z) - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
-                && kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z)))
+                && (kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z))
+                    || extensions
+                        .iter()
+                        .any(|j| j.shape.contains((u.x, u.z), map::CLEARANCE))))
                 || multiplayer.snapshot.buildings.iter().any(|b| {
                     map::fortifications::replaced_wall(candidate, crate::fortifications::piece(b))
                         && BuildingKind::from_name(&b.kind)
@@ -1033,18 +1052,15 @@ pub(crate) fn building_button(
     kind: BuildingKind,
     active: bool,
 ) -> bool {
-    let response = menu_ui::building_button(ui, texture, kind, active);
-    response
-        .on_hover_text(if kind.is_wall() {
-            format!(
-                "{} je Abschnitt. Linksklick: Start und Ende. Rechtsklick / Esc: abbrechen.",
-                kind.cost().label()
-            )
-        } else {
-            format!(
-                "{}. Linksklick: bauen. R: drehen. Rechtsklick / Esc: abbrechen.",
-                kind.cost().label()
-            )
+    menu_ui::building_button(ui, texture, kind, active)
+        .on_hover_ui(|ui| {
+            ui.strong(kind.label());
+            resources::cost_icons(ui, texture, kind.cost());
+            ui.small(if kind.is_wall() {
+                "Linksklick: Start und Ende · Rechtsklick / Esc: abbrechen"
+            } else {
+                "Linksklick: bauen · R: drehen · Rechtsklick / Esc: abbrechen"
+            });
         })
         .clicked()
 }

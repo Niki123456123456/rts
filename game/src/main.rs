@@ -1,5 +1,6 @@
 //! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
 
+mod build_info;
 mod buildings;
 mod civic;
 mod combat_units;
@@ -18,6 +19,7 @@ mod resources;
 mod roman;
 mod storage_models;
 mod terrain;
+mod tower_mesh;
 mod unit_ui;
 use buildings::BuildingInteraction;
 
@@ -144,10 +146,15 @@ fn main() {
                 combat_units::unit_health_ui,
                 selection_ui,
                 minimap::minimap_ui,
+                build_info::ui,
                 selection_rectangle_ui,
                 buildings::attack_hover_ui,
             )
                 .chain(),
+        )
+        .add_systems(
+            PostUpdate,
+            tower_mesh::update.after(bevy::transform::TransformSystems::Propagate),
         )
         .run();
 }
@@ -959,16 +966,12 @@ fn selection_ui(
                 ui.separator();
                 if let Some(kind) = building_interaction.placing {
                     let response = menu_ui::building_button(ui, menu_texture, kind, true);
-                    let hint = if kind.is_wall() {
-                        if building_interaction.wall_start.is_some() {
-                            format!("{} Holz · {} Stein. Endpunkt anklicken. Rechtsklick / Esc: abbrechen.",building_interaction.wall_cost*kind.cost().wood,building_interaction.wall_cost*kind.cost().stone)
-                        } else {
-                            format!("{} je Abschnitt. Linksklick: Start und Ende. Rechtsklick / Esc: abbrechen.",kind.cost().label())
-                        }
-                    } else {
-                        format!("{}. Linksklick: bauen. R: drehen. Rechtsklick / Esc: abbrechen.",kind.cost().label())
-                    };
-                    if response.on_hover_text(hint).clicked() {
+                    let count=if kind.is_wall() && building_interaction.wall_start.is_some() {building_interaction.wall_cost}else{1};
+                    let cost=kind.cost();
+                    if response.on_hover_ui(|ui| {
+                        ui.strong(kind.label());resources::cost_icons(ui,menu_texture,stronghold_map::Cost::new(cost.wood*count,cost.stone*count,cost.iron*count));
+                        ui.small("Linksklick: bauen · R: drehen · Rechtsklick / Esc: abbrechen");
+                    }).clicked() {
                         building_interaction.placing = None;
                         building_interaction.wall_start = None;
                     }
@@ -1087,7 +1090,7 @@ fn selection_ui(
                     });
                     if building.owned && building.kind == "barracks" {
                         for kind in [stronghold_map::units::UnitKind::ArmedPeasant, stronghold_map::units::UnitKind::Archer,stronghold_map::units::UnitKind::LightSwordsman,stronghold_map::units::UnitKind::LightCavalry] {
-                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).on_hover_text(format!("{} · {} · 1 freier Bauer",kind.label(),kind.cost().label())).clicked() {
+                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).on_hover_ui(|ui|{ui.strong(kind.label());resources::cost_icons(ui,menu_texture,kind.cost());ui.small("1 freier Bauer · Linksklick: rekrutieren");}).clicked() {
                                 multiplayer.send(Action::RecruitUnit {building_id:building.id,kind:kind.name().into()});
                             }
                         }

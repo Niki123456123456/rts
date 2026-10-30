@@ -49,7 +49,7 @@ pub(crate) fn population(multiplayer: &Multiplayer) -> map::population::Populati
 }
 // One-based row 9, columns 6–8, on the original 1024 px atlas. Tile pitch 56;
 // the first icon row starts at y=44. Trim the surrounding gap by two pixels.
-fn resource_uv(index: usize) -> egui::Rect {
+pub(crate) fn resource_uv(index: usize) -> egui::Rect {
     // Food: row 10, columns 5–8 (apples, bread, cheese, meat).
     let (x, y) = if index < 3 {
         (280. + index as f32 * 56., 494.)
@@ -316,4 +316,22 @@ fn satisfaction_details(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
     ui.small(
         "Die Summe wird auf 0 bis 100% begrenzt. Versorgungsgebäude findest du unter Bedürfnisse.",
     );
+}
+
+/// One shared material-cost display for building hints, build details and recruits.
+pub(crate) fn cost_icons(ui: &mut egui::Ui, texture: egui::TextureId, cost: map::Cost) {
+    ui.horizontal(|ui| {
+        for (index, amount) in [cost.wood, cost.stone, cost.iron].into_iter().enumerate() {
+            ui.add(egui::Image::new((texture, egui::vec2(22., 22.))).uv(resource_uv(index)))
+                .on_hover_text(["Holz", "Stein", "Eisen"][index]);
+            ui.label(
+                egui::RichText::new(amount.to_string()).color(if amount > 0 {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::GRAY
+                }),
+            );
+            ui.add_space(7.);
+        }
+    });
 }

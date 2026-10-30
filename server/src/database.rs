@@ -1166,6 +1166,15 @@ fn place_building_for(
         return Err("Gebäude dürfen sich nicht überschneiden.".into());
     }
 
+    let mut planned = existing
+        .iter()
+        .map(|b| fort_piece(ctx, b))
+        .collect::<Vec<_>>();
+    planned.push(candidate);
+    let extensions = fort::joins(&planned)
+        .into_iter()
+        .filter(|j| j.a == 0 || j.b == 0)
+        .collect::<Vec<_>>();
     if ctx
         .db
         .army_unit()
@@ -1173,7 +1182,10 @@ fn place_building_for(
         .filter(player.game_id)
         .any(|u| {
             (on_ground(ctx, &u)
-                && kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z)))
+                && (kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z))
+                    || extensions
+                        .iter()
+                        .any(|j| j.shape.contains((u.x, u.z), map::CLEARANCE))))
                 || ctx
                     .db
                     .tower_occupant()

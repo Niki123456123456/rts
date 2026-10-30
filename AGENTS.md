@@ -184,6 +184,23 @@ UnitKind::speed and melee uses melee_dps. Packaged sword rig plus animated horse
 variants are reproducible with game/create-light-units.py. All five rigs must
 load, animate and retain hand-attached weapons. Wall menu icons are material and
 height silhouettes in menu_ui.rs, not the generic stone atlas tile. Building
-hover hints contain costs and controls only. Treasury HUD displays a coin and
+hover hints show the building name, material icons/counts and controls. Treasury HUD displays a coin and
 signed net per 30-second round; current recurring income is tax, with no base
 expenses yet. Shared civic::net_per_round is the displayed balance calculation.
+
+Build selection opens build_info.rs on the right, above the current minimap.
+Use resources::cost_icons for material prices instead of spelling out each material.
+Shared fortifications::joins fills roof-to-roof tower seams and raster remainders
+between wall ends and any nearby own building. Keep its continuous solid core,
+server/client collision, and occupied-extension construction rejection in sync.
+Tower battlements are baked into original GLBs: tower_mesh.rs clips only the
+facing region above the floor for same-level tower neighbours. Never mutate a
+shared source mesh or remove all parapets. Instance-local variants preserve
+float vertex attributes, restore originals on neighbour removal, and are cached
+until structures change. Visible battlements may extend higher than collision
+GLB bounds: do not cap trimming at BuildingKind::height alone. Test seams.test.ts
+on an isolated database, plus tower_mesh and fortifications attachment tests.
+
+Roof hatches must remain inside the walkable area with unit-radius clearance.
+BuildingRoof::hatch_for_door clamps the approach point; preserve both palace
+stairs and verify entry/exit routes for every roof profile, not only square towers.

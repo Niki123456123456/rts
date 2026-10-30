@@ -253,17 +253,17 @@ impl BuildingRoof {
         self.world(self.profile.doors[door as usize])
     }
     pub fn hatch_for_door(self, door: u8) -> Point {
-        let p = self.profile.hatch;
-        self.world(
-            if self.profile.height == 5.4 && self.profile.doors.len() == 2 && door == 1 {
-                (-p.0, p.1)
-            } else {
-                p
-            },
-        )
+        let mut p = self.profile.hatch;
+        if self.profile.height == 5.4 && self.profile.doors.len() == 2 && door == 1 {
+            p.0 = -p.0;
+        }
+        // Leave unit-radius clearance to the roof boundary, including round towers.
+        let hx = (self.profile.half_x - crate::CLEARANCE - 0.01).max(0.);
+        let hz = (self.profile.half_z - crate::CLEARANCE - 0.01).max(0.);
+        self.world((p.0.clamp(-hx, hx), p.1.clamp(-hz, hz)))
     }
     pub fn hatch(self) -> Point {
-        self.world(self.profile.hatch)
+        self.hatch_for_door(0)
     }
     pub fn roof_obstacles(self) -> Vec<Obstacle> {
         // The unchanged closed mesh supports the full roof, including the hatch.
@@ -400,6 +400,15 @@ mod tests {
                 for rotation in 0..4 {
                     let roof = BuildingRoof::new(kind, 0., 0., 0., rotation).unwrap();
                     for door in 0..roof.door_count() {
+                        assert!(roof.roof_path(roof.hatch_for_door(door),roof.slot(0)).is_some(),"{kind:?} entrance must connect to its walkable roof with unit clearance");
+                        assert!(
+                            roof.roof_path(
+                                roof.slot(roof.capacity() - 1),
+                                roof.hatch_for_door(door)
+                            )
+                            .is_some(),
+                            "{kind:?} roof occupants must be able to leave"
+                        );
                         assert!(
                             free(
                                 roof.door(door),

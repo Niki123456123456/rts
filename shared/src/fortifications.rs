@@ -244,65 +244,165 @@ pub struct FortJoin {
     pub top: f32,
     pub wood: bool,
 }
+fn connection_axis(a: Structure, b: Structure) -> Option<bool> {
+    if a.owner != b.owner {
+        return None;
+    }
+    let eligible = (a.kind.is_anchor() && b.kind.is_anchor())
+        || (a.kind.is_wall() && !b.kind.is_wall())
+        || (b.kind.is_wall() && !a.kind.is_wall());
+    if !eligible {
+        return None;
+    }
+    let (p, q) = (a.plot(), b.plot());
+    if side_contact(p, q) {
+        return Some(((p.x - q.x).abs() - p.half_x - q.half_x).abs() < 0.02);
+    }
+    let (p, q) = (a.body(), b.body());
+    let tolerance = if a.kind.is_wall() || b.kind.is_wall() {
+        2.05
+    } else {
+        0.12
+    };
+    let xgap = (p.x - q.x).abs() - p.half_x - q.half_x;
+    let zgap = (p.z - q.z).abs() - p.half_z - q.half_z;
+    let ox = (p.x + p.half_x).min(q.x + q.half_x) - (p.x - p.half_x).max(q.x - q.half_x);
+    let oz = (p.z + p.half_z).min(q.z + q.half_z) - (p.z - p.half_z).max(q.z - q.half_z);
+    if xgap >= -0.16 && xgap <= tolerance && oz >= 0.6 {
+        Some(true)
+    } else if zgap >= -0.16 && zgap <= tolerance && ox >= 0.6 {
+        Some(false)
+    } else {
+        None
+    }
+}
+fn join_bounds(piece: Structure) -> Obstacle {
+    if piece.kind.is_tower() {
+        if let Some(p) = piece.kind.roof_profile() {
+            return rect(
+                (piece.x, piece.z),
+                piece.rotation,
+                (0., 0.),
+                p.half_x,
+                p.half_z,
+            );
+        }
+    }
+    piece.body()
+}
 pub fn joins(pieces: &[Structure]) -> Vec<FortJoin> {
     let mut result = Vec::new();
     for (i, a) in pieces.iter().enumerate() {
-        if !a.kind.is_anchor() {
+        if a.kind.is_wall() {
             continue;
         }
         for (j, b) in pieces.iter().enumerate() {
-            if i == j || (b.kind.is_anchor() && j < i) || !may_join(*a, *b) {
+            if i == j
+                || (!b.kind.is_wall() && (j < i || !a.kind.is_anchor() || !b.kind.is_anchor()))
+            {
                 continue;
             }
-            let x = a.body();
-            let z = b.body();
-            let p = a.plot();
-            let q = b.plot();
-            let horizontal = ((p.x - q.x).abs() - p.half_x - q.half_x).abs() < 0.02;
-            let (left, right, low, high) = if horizontal {
-                let lo = (x.x + x.half_x).min(z.x + z.half_x);
-                let hi = (x.x - x.half_x).max(z.x - z.half_x);
-                let mid = ((p.z - p.half_z).max(q.z - q.half_z)
-                    + (p.z + p.half_z).min(q.z + q.half_z))
-                    * 0.5;
-                (lo, hi, mid - 0.7, mid + 0.7)
-            } else {
-                let lo = (x.z + x.half_z).min(z.z + z.half_z);
-                let hi = (x.z - x.half_z).max(z.z - z.half_z);
-                let mid = ((p.x - p.half_x).max(q.x - q.half_x)
-                    + (p.x + p.half_x).min(q.x + q.half_x))
-                    * 0.5;
-                (mid - 0.7, mid + 0.7, lo, hi)
+            let Some(horizontal) = connection_axis(*a, *b) else {
+                continue;
             };
-            if right - left < 0.01 || high - low < 0.01 {
+            let (p, q) = (join_bounds(*a), join_bounds(*b));
+            let (along0, along1, mut across0, mut across1) = if horizontal {
+                let (left, right) = if p.x < q.x { (p, q) } else { (q, p) };
+                (
+                    (p.z - p.half_z).max(q.z - q.half_z),
+                    (p.z + p.half_z).min(q.z + q.half_z),
+                    left.x + left.half_x - 0.16,
+                    right.x - right.half_x + 0.16,
+                )
+            } else {
+                let (low, high) = if p.z < q.z { (p, q) } else { (q, p) };
+                (
+                    (p.x - p.half_x).max(q.x - q.half_x),
+                    (p.x + p.half_x).min(q.x + q.half_x),
+                    low.z + low.half_z - 0.16,
+                    high.z - high.half_z + 0.16,
+                )
+            };
+            if along1 - along0 < 0.5 {
                 continue;
             }
+            if across1 - across0 < 0.1 {
+                let mid = (across0 + across1) * 0.5;
+                across0 = mid - 0.05;
+                across1 = mid + 0.05;
+            }
+            let shape = if horizontal {
+                Obstacle {
+                    x: (across0 + across1) * 0.5,
+                    z: (along0 + along1) * 0.5,
+                    half_x: (across1 - across0) * 0.5,
+                    half_z: (along1 - along0) * 0.5,
+                }
+            } else {
+                Obstacle {
+                    x: (along0 + along1) * 0.5,
+                    z: (across0 + across1) * 0.5,
+                    half_x: (along1 - along0) * 0.5,
+                    half_z: (across1 - across0) * 0.5,
+                }
+            };
+            let wooden = |k| {
+                matches!(
+                    k,
+                    BuildingKind::WoodenWall
+                        | BuildingKind::TowerWooden
+                        | BuildingKind::GatehouseWooden
+                )
+            };
             result.push(FortJoin {
                 a: a.id,
                 b: b.id,
-                shape: Obstacle {
-                    x: (left + right) * 0.5,
-                    z: (low + high) * 0.5,
-                    half_x: (right - left) * 0.5 + 0.07,
-                    half_z: (high - low) * 0.5 + 0.07,
-                },
+                shape,
                 base: a.y.min(b.y),
                 top: a.level().min(b.level()),
-                wood: matches!(
-                    a.kind,
-                    BuildingKind::WoodenWall
-                        | BuildingKind::TowerWooden
-                        | BuildingKind::GatehouseWooden
-                ) && matches!(
-                    b.kind,
-                    BuildingKind::WoodenWall
-                        | BuildingKind::TowerWooden
-                        | BuildingKind::GatehouseWooden
-                ),
+                wood: wooden(a.kind) && wooden(b.kind),
             });
         }
     }
     result
+}
+/// Only the facing parapet at a same-level tower transition is opened.
+/// The floor and all exterior faces stay intact; removing a neighbour restores them.
+pub fn tower_openings(piece: Structure, pieces: &[Structure]) -> Vec<ParapetBlock> {
+    tower_openings_from(piece, pieces, &joins(pieces))
+}
+pub fn tower_openings_from(
+    piece: Structure,
+    pieces: &[Structure],
+    connections: &[FortJoin],
+) -> Vec<ParapetBlock> {
+    if !piece.kind.is_tower() {
+        return Vec::new();
+    }
+    connections
+        .iter()
+        .filter_map(|j| {
+            let other_id = if j.a == piece.id {
+                j.b
+            } else if j.b == piece.id {
+                j.a
+            } else {
+                return None;
+            };
+            let other = pieces.iter().find(|p| p.id == other_id)?;
+            if !other.kind.is_tower() || (piece.level() - other.level()).abs() > 0.05 {
+                return None;
+            }
+            let mut shape = j.shape;
+            shape.half_x += 0.12;
+            shape.half_z += 0.12;
+            Some(ParapetBlock {
+                shape,
+                bottom: piece.level() + 0.035,
+                top: piece.level().max(piece.y + piece.kind.height()) + 6.,
+            })
+        })
+        .collect()
 }
 /// Exposed sides follow straight runs, corners and junctions, never the model's default rotation.
 pub fn exposed_edges(piece: Structure, pieces: &[Structure]) -> Vec<Point> {
@@ -426,6 +526,57 @@ mod attachment_tests {
         solids.extend(joins(&[a, b]).into_iter().map(|j| j.shape));
         let seam = a.plot().half_x;
         assert!(!crate::segment_clear((seam, -8.), (seam, 8.), &solids));
+    }
+    #[test]
+    fn wall_ends_seal_the_remaining_grid_distance_to_ordinary_buildings() {
+        let wall = s(1, BuildingKind::StoneWallLow, 1., 1.);
+        let mut house = s(2, BuildingKind::Housing, 0., 1.);
+        house.x = wall.x + wall.body().half_x + house.body().half_x + 1.1;
+        let connections = joins(&[wall, house]);
+        assert_eq!(connections.len(), 1);
+        let joint = connections[0];
+        assert_eq!(joint.top, wall.level());
+        let mid = (wall.body().x + wall.body().half_x + house.body().x - house.body().half_x) * 0.5;
+        assert!(!crate::segment_clear(
+            (mid, -4.),
+            (mid, 6.),
+            &[wall.body(), house.body(), joint.shape]
+        ));
+        house.owner = 1;
+        assert!(joins(&[wall, house]).is_empty());
+        house.owner = 0;
+        house.x += 2.;
+        assert!(joins(&[wall, house]).is_empty());
+    }
+    #[test]
+    fn round_towers_join_at_the_roof_and_open_only_the_shared_battlements() {
+        for rotation in 0..4 {
+            let mut a = s(1, BuildingKind::TowerRoundShort, 0., 0.);
+            a.rotation = rotation;
+            let b = s(
+                2,
+                a.kind,
+                a.body().half_x + a.kind.obstacle(0., 0.).half_x + 0.0002,
+                0.,
+            );
+            let connections = joins(&[a, b]);
+            assert_eq!(connections.len(), 1);
+            let floor = a.kind.roof_profile().unwrap();
+            assert!(connections[0].shape.x - connections[0].shape.half_x < floor.half_x);
+            let cuts = tower_openings(a, &[a, b]);
+            assert_eq!(cuts.len(), 1);
+            assert!(cuts[0].shape.contains((a.body().half_x - 0.2, 0.), 0.));
+            assert!(!cuts[0].shape.contains((-a.body().half_x + 0.2, 0.), 0.));
+            assert!(cuts[0].bottom > a.level());
+            assert!(
+                cuts[0].top > a.level() + 3.,
+                "visual battlements extend beyond the collision model height"
+            );
+            assert!(tower_openings(a, &[a]).is_empty());
+            let mut lower = b;
+            lower.y = -2.;
+            assert!(tower_openings(a, &[a, lower]).is_empty());
+        }
     }
     #[test]
     fn crenels_follow_run_and_corner() {

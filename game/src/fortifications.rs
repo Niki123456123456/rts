@@ -12,6 +12,7 @@ pub(crate) struct GateVisual {
 pub(crate) struct FortAssets {
     cube: Handle<Mesh>,
     stone: Handle<StandardMaterial>,
+    mortar: Handle<StandardMaterial>,
     wood: Handle<StandardMaterial>,
     water: Handle<StandardMaterial>,
     soil: Handle<StandardMaterial>,
@@ -23,6 +24,7 @@ pub(crate) fn setup(
 ) {
     let cube = meshes.add(Cuboid::new(1., 1., 1.));
     let stone = materials.add(Color::srgb(0.58, 0.54, 0.44));
+    let mortar = materials.add(Color::srgb(0.38, 0.35, 0.30));
     let wood = materials.add(Color::srgb(0.32, 0.18, 0.08));
     let water = materials.add(StandardMaterial {
         base_color: Color::srgb(0.13, 0.33, 0.35),
@@ -33,6 +35,7 @@ pub(crate) fn setup(
     commands.insert_resource(FortAssets {
         cube,
         stone,
+        mortar,
         wood,
         water,
         soil,
@@ -107,6 +110,23 @@ pub(crate) fn sync(
     let structures = pieces(s);
     for joint in fort::joins(&structures) {
         let h = (joint.top - joint.base).max(0.1);
+        commands.spawn((
+            FortVisual,
+            Mesh3d(assets.cube.clone()),
+            MeshMaterial3d(if joint.wood {
+                assets.wood.clone()
+            } else {
+                assets.mortar.clone()
+            }),
+            Transform::from_xyz(joint.shape.x, joint.base + h * 0.5, joint.shape.z).with_scale(
+                Vec3::new(
+                    (joint.shape.half_x * 2. - 0.025).max(0.02),
+                    h,
+                    (joint.shape.half_z * 2. - 0.025).max(0.02),
+                ),
+            ),
+            Ground,
+        ));
         let n = (h / 0.4).ceil() as usize;
         for row in 0..n {
             let height = h / n as f32;
