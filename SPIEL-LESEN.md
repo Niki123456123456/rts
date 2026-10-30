@@ -72,7 +72,7 @@ Die Darstellung zeigt bis zu 16 Wartende gleichzeitig als Figuren.
 
 ## Rohstoffe, Karren und Wildtiere
 
-Ein neuer Spieler beginnt mit 30 Holz, 30 Stein und 30 Eisen. Die Bauleiste
+Ein neuer Spieler beginnt mit 120 Holz, 120 Stein und 120 Eisen. Die Bauleiste
 zeigt die Kosten für jedes Gebäude. Das erste Vorratslager übernimmt den noch
 verfügbaren Startvorrat; spätere Lager erzeugen keine neuen Rohstoffe.
 
@@ -137,7 +137,7 @@ Bauern beschäftigt, einen Betrieb schließen oder auf weitere Zuwanderer warten
 Den eigenen Palast anklicken, um Rationen, Steuern und Sicherheit zu verwalten.
 Jeweils acht Stufen zeigen direkt den Lebensmittelverbrauch, Steuerertrag und
 Einfluss auf die Zufriedenheit. Steuern werden alle 30 Sekunden pro Bewohner
-in Sesterzen eingezogen. Neue Spieler erhalten 50 Sesterzen.
+in Sesterzen eingezogen. Neue Spieler erhalten 120 Sesterzen.
 
 „Alarm blasen“ lässt einen römisch angelehnten Hornruf erklingen. Bauern
 verlassen ihre Arbeit und laufen über die Treppen in den Palast. Sobald sie
@@ -179,3 +179,17 @@ zeigt weiterhin die ältere Version und wurde nicht aktualisiert.
 
 Für spätere Quellcodeänderungen ist Build-Spiel.ps1 vorhanden; bei Änderungen
 am Server oder am geteilten Gelände zusätzlich -ServerChanged übergeben.
+
+## Aktuelle Testphase
+
+Neue Spiele beginnen mit 120 Holz, Stein und Eisen sowie 120 Sesterzen.
+Gebäude rasten an ihren sichtbaren Außenkanten direkt aneinander ein; es ist
+kein zusätzliches freies Rasterfeld nötig. Überschneidungen bleiben gesperrt.
+Die Kaserne bildet außerdem leichte Schwertkämpfer (2 Holz, 3 Eisen) und leichte
+Reiter (8 Holz, 4 Eisen) aus. Beide benötigen je einen freien Bauern. Reiter
+bewegen sich auf dem Boden deutlich schneller. Neue Mauerbilder unterscheiden
+Holzpalisade, niedrige, normale, hohe und gezinnte Mauer. Überfahren zeigt Kosten
+und Steuerung. Neben der Münze steht die aktuelle Nettoänderung je 30 Sekunden:
+grün mit Plus bei Überschuss, rot mit Minus bei Verlust. Aktuell gibt es
+Steuereinnahmen und noch keine laufenden Grundausgaben; Käufe und Verkäufe sind
+separate einmalige Geschäfte.

@@ -302,7 +302,7 @@ mod extraction_tests {
         assert!(large > small * 2);
         assert!(deposit_capacity(IRON, 3) > deposit_capacity(IRON, 4));
         assert!(TREE_WOOD * production_seconds("saw_pit") >= 120);
-        assert_eq!(crate::STARTING_RESOURCE_AMOUNT, 30);
+        assert_eq!(crate::STARTING_RESOURCE_AMOUNT, 120);
     }
     #[test]
     fn cart_can_stand_on_both_resource_fields() {

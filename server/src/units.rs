@@ -84,7 +84,7 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
     let player = participant(ctx)?;
     let kind = map::units::UnitKind::from_name(&kind)
         .filter(|k| *k != map::units::UnitKind::Lord)
-        .ok_or("Recruit armed peasants or archers.")?;
+        .ok_or("Unbekannter Einheitentyp.")?;
     let b = ctx
         .db
         .building()
@@ -165,7 +165,7 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
         owner: player.connection_id,
         color: player.color,
         number: army.iter().map(|u| u.number).max().unwrap_or(0) + 1,
-        health: 1.,
+        health: kind.max_health(),
         x: p.0,
         y: terrain_height(p.0, p.1) + 0.75,
         z: p.1,
@@ -174,4 +174,13 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
     });
     register_combat_unit(ctx, &u, kind);
     Ok(())
+}
+
+fn unit_speed(ctx: &ReducerContext, u: &ArmyUnit) -> f32 {
+    ctx.db
+        .unit_profile()
+        .unit_id()
+        .find(u.id)
+        .and_then(|p| map::units::UnitKind::from_name(&p.kind))
+        .map_or(UNIT_SPEED, |k| k.speed())
 }

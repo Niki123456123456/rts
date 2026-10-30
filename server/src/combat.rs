@@ -498,7 +498,8 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
                 .unit_profile()
                 .unit_id()
                 .find(u.id)
-                .map(|p| if p.kind == "lord" { 0.22 } else { 0.14 })
+                .and_then(|p| map::units::UnitKind::from_name(&p.kind))
+                .map(|k| k.melee_dps())
                 .unwrap_or(0.);
             *damage.entry(enemy.id).or_default() += dps * melee::SCAN_SECONDS;
         } else if ctx.db.tower_travel().unit_id().find(u.id).is_none()

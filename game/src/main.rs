@@ -961,12 +961,12 @@ fn selection_ui(
                     let response = menu_ui::building_button(ui, menu_texture, kind, true);
                     let hint = if kind.is_wall() {
                         if building_interaction.wall_start.is_some() {
-                            format!("{}: Endpunkt anklicken. {} Holz · {} Stein. Rechtsklick / Esc bricht ab.",kind.label(),building_interaction.wall_cost*kind.cost().wood,building_interaction.wall_cost*kind.cost().stone)
+                            format!("{} Holz · {} Stein. Endpunkt anklicken. Rechtsklick / Esc: abbrechen.",building_interaction.wall_cost*kind.cost().wood,building_interaction.wall_cost*kind.cost().stone)
                         } else {
-                            format!("{}: Startpunkt und Endpunkt wählen. {} je Segment.",kind.label(),kind.cost().label())
+                            format!("{} je Abschnitt. Linksklick: Start und Ende. Rechtsklick / Esc: abbrechen.",kind.cost().label())
                         }
                     } else {
-                        format!("{} ({}°), {}. R: 90° drehen. Rechtsklick / Esc bricht ab.", kind.label(), building_interaction.rotation as u16 * 90, kind.cost().label())
+                        format!("{}. Linksklick: bauen. R: drehen. Rechtsklick / Esc: abbrechen.",kind.cost().label())
                     };
                     if response.on_hover_text(hint).clicked() {
                         building_interaction.placing = None;
@@ -1086,7 +1086,7 @@ fn selection_ui(
                         }
                     });
                     if building.owned && building.kind == "barracks" {
-                        for kind in [stronghold_map::units::UnitKind::ArmedPeasant, stronghold_map::units::UnitKind::Archer] {
+                        for kind in [stronghold_map::units::UnitKind::ArmedPeasant, stronghold_map::units::UnitKind::Archer,stronghold_map::units::UnitKind::LightSwordsman,stronghold_map::units::UnitKind::LightCavalry] {
                             if unit_ui::portrait(ui,portrait_texture,kind,None,true).on_hover_text(format!("{} · {} · 1 freier Bauer",kind.label(),kind.cost().label())).clicked() {
                                 multiplayer.send(Action::RecruitUnit {building_id:building.id,kind:kind.name().into()});
                             }
@@ -1101,6 +1101,8 @@ fn selection_ui(
                                     stronghold_map::units::UnitKind::Lord,
                                     stronghold_map::units::UnitKind::ArmedPeasant,
                                     stronghold_map::units::UnitKind::Archer,
+                                    stronghold_map::units::UnitKind::LightSwordsman,
+                                    stronghold_map::units::UnitKind::LightCavalry,
                                 ] {
                                     let count = selected
                                         .0

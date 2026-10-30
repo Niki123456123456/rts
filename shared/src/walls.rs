@@ -55,7 +55,20 @@ pub fn portal(a: RoofPiece, b: RoofPiece) -> Option<Point> {
     if (a.roof().roof_y() - b.roof().roof_y()).abs() > 0.05 {
         return None;
     }
-    let (a, b) = (a.plot(), b.plot());
+    let logical_a = a.plot();
+    let logical_b = b.plot();
+    let logical_contact = ((logical_a.x - logical_b.x).abs() - logical_a.half_x - logical_b.half_x)
+        .abs()
+        < 0.01
+        || ((logical_a.z - logical_b.z).abs() - logical_a.half_z - logical_b.half_z).abs() < 0.01;
+    let (a, b) = if logical_contact {
+        (logical_a, logical_b)
+    } else {
+        (
+            a.kind.construction_bounds(a.x, a.z, a.rotation),
+            b.kind.construction_bounds(b.x, b.z, b.rotation),
+        )
+    };
     let overlap_x = (a.x + a.half_x).min(b.x + b.half_x) - (a.x - a.half_x).max(b.x - b.half_x);
     let overlap_z = (a.z + a.half_z).min(b.z + b.half_z) - (a.z - a.half_z).max(b.z - b.half_z);
     if ((a.x - b.x).abs() - a.half_x - b.half_x).abs() < 0.01 && overlap_z >= 1.4 {

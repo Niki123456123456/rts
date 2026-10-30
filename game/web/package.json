@@ -32,7 +32,8 @@
     "test:cache": "tsx src/cache.test.ts",
     "test:balance": "tsx src/balance.test.ts",
     "test:civic": "tsx src/civic.test.ts",
-    "test:attachments": "tsx src/attachments.test.ts"
+    "test:attachments": "tsx src/attachments.test.ts",
+    "test:contact-units": "tsx src/contact-units.test.ts"
   },
   "dependencies": {
     "@clockworklabs/spacetimedb-sdk": "1.1.0"

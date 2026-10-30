@@ -625,7 +625,18 @@ pub(crate) fn building_input(
         let Some(model) = assets.models[kind.index()].as_ref() else {
             return;
         };
-        let (x, z) = kind.rotated_snap_position(hit.point.x, hit.point.z, state.rotation);
+        let neighbours = multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .filter_map(|b| Some((BuildingKind::from_name(&b.kind)?, b.x, b.z, b.rotation)))
+            .collect::<Vec<_>>();
+        let (x, z) = map::placement::snap(
+            kind,
+            (hit.point.x, hit.point.z),
+            state.rotation,
+            &neighbours,
+        );
         let y = map::terrain::construction_height(kind, x, z, state.rotation)
             .unwrap_or_else(|| terrain_height(x, z));
         let valid = placement_valid(kind, x, z, y, state.rotation, &multiplayer);
@@ -1023,21 +1034,18 @@ pub(crate) fn building_button(
     active: bool,
 ) -> bool {
     let response = menu_ui::building_button(ui, texture, kind, active);
-    if kind.is_wall() {
-        return response.on_hover_text(format!("{}: 2×2-m-Segmente, {} je Segment. Startpunkt und Endpunkt anklicken. Rechtsklick / Esc bricht ab.",kind.label(),kind.cost().label())).clicked();
-    }
-    let (width, depth) = kind.grid_size();
     response
-        .on_hover_text(format!(
-            "{}: {}×{} Felder ({}×{} m). Kosten: {}. {} R dreht um 90°. Linksklick platziert; Rechtsklick oder Esc bricht ab.",
-            kind.label(),
-            width,
-            depth,
-            width * 2,
-            depth * 2,
-            kind.cost().label(),
-            if kind == BuildingKind::Housing { "Bietet Platz für 4 Bauern." } else if kind.peasant_cost() > 0 { "1 Arbeitsplatz: wird automatisch besetzt." } else { "Kein Bauernbedarf." }
-        ))
+        .on_hover_text(if kind.is_wall() {
+            format!(
+                "{} je Abschnitt. Linksklick: Start und Ende. Rechtsklick / Esc: abbrechen.",
+                kind.cost().label()
+            )
+        } else {
+            format!(
+                "{}. Linksklick: bauen. R: drehen. Rechtsklick / Esc: abbrechen.",
+                kind.cost().label()
+            )
+        })
         .clicked()
 }
 

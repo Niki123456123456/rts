@@ -143,7 +143,7 @@ hatch_for_door selecting the matching landing. Keep model openings, banner
 clearance and traversal routes in agreement. Flags must stay above the main roof.
 Production/supply placement repeats until right click or Escape. Owned buildings
 can be demolished by the visible button or Delete outside text inputs.
-New games start with 30 of each material. Existing stock is preserved. Tree wood
+New test games start with 120 of each material and 120 sesterces. Existing stock is preserved. Tree wood
 is 24, harvesting intervals 6 seconds wood/stone and 7 iron. Deposit capacities
 come from actual terrain field area and density. resource_sizing_v2 migrates
 remaining deposits once without resurrecting exhausted trees or fields.
@@ -174,3 +174,16 @@ WoodenWall is appended to the catalog to preserve all existing wire IDs.
 Roman market comes from create-market.py. Test new logic using civic.test.ts,
 attachments.test.ts and balance.test.ts against isolated databases; test-world
 allows RTS_TEST_DATABASE (default stronghold-terrain-test). Never use player data.
+
+Direct building attachment uses shared placement::snap on client and server.
+Construction collision follows visible bounds rather than oversized grid plots;
+wall sections retain mortar joins. Do not reintroduce mandatory spacer cells.
+Ground units still cannot cross touching building bodies. New light_swordsman
+and light_cavalry kinds are appended string kinds; cavalry movement uses shared
+UnitKind::speed and melee uses melee_dps. Packaged sword rig plus animated horse
+variants are reproducible with game/create-light-units.py. All five rigs must
+load, animate and retain hand-attached weapons. Wall menu icons are material and
+height silhouettes in menu_ui.rs, not the generic stone atlas tile. Building
+hover hints contain costs and controls only. Treasury HUD displays a coin and
+signed net per 30-second round; current recurring income is tax, with no base
+expenses yet. Shared civic::net_per_round is the displayed balance calculation.

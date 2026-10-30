@@ -7,7 +7,7 @@ const stock=()=>db.db.playerResources.connectionId.find(db.connectionId)!;
 const keep=own().find(b=>b.kind==='keep')!;
 let other:Awaited<ReturnType<typeof connect>>|undefined;
 try {
- assert.equal(gold(),50n);assert.equal((await call('marketTrade',0,1,true)).tag,'Failed');
+ assert.equal(gold(),120n);assert.equal((await call('marketTrade',0,1,true)).tag,'Failed');
  assert.equal((await build('market',25,-15)).tag,'Committed');assert.equal((await build('granary',-9,-23)).tag,'Committed');
  assert.equal((await call('setCivicPolicy',4,0)).tag,'Committed');
  const before=gold(),wood=stock().wood;

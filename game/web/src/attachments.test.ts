@@ -4,9 +4,9 @@ const w=await world(),{db,own,build,lord}=w;
 const call=(name:string,...args:any[])=>status(db,c=>(db.reducers as any)[`on${name[0].toUpperCase()+name.slice(1)}`](c),()=>(db.reducers as any)[name](...args));
 const stock=()=>db.db.playerResources.connectionId.find(db.connectionId)!;
 try {
- assert.equal((await call('buildWallKind',19,-19,29,-19,'stone_wall_low')).tag,'Committed');assert.equal(stock().stone,24);
- assert.equal((await build('tower_stairwell',22,-18)).tag,'Committed','tower replaces two wall cells');assert.equal(stock().stone,14,'two replaced low walls refunded');
- assert.equal((await build('tower_stairwell',26,-18)).tag,'Committed','towers touch without a gap');assert.equal(stock().stone,4);
+ assert.equal((await call('buildWallKind',19,-19,29,-19,'stone_wall_low')).tag,'Committed');assert.equal(stock().stone,114);
+ assert.equal((await build('tower_stairwell',22,-18)).tag,'Committed','tower replaces two wall cells');assert.equal(stock().stone,104,'two replaced low walls refunded');
+ assert.equal((await build('tower_stairwell',26,-18)).tag,'Committed','towers touch without a gap');assert.equal(stock().stone,94);
  const before=stock().stone;assert.equal((await call('buildWallKind',17,-19,31,-19,'stone_wall_low')).tag,'Committed');assert.equal(before-stock().stone,2,'drag charges only uncovered new wall cells');
  assert.equal(own().filter(b=>b.kind==='stone_wall_low').length,4);
  const wood=stock().wood;assert.equal((await call('buildWallKind',19,-29,23,-29,'wooden_wall')).tag,'Committed');assert.equal(stock().wood,wood-6);

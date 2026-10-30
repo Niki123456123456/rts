@@ -137,6 +137,9 @@ pub(crate) fn building_button(
     kind: BuildingKind,
     active: bool,
 ) -> egui::Response {
+    if kind.is_wall() {
+        return wall_button(ui, kind, active);
+    }
     use BuildingKind::*;
     let (row, column) = match kind {
         Housing => (6, 5),
@@ -201,4 +204,124 @@ pub(crate) fn building_button(
         Treasury => (3, 8),
     };
     image_button(ui, texture, tile(row, column), egui::vec2(40., 40.), active)
+}
+
+/// Small material/height silhouettes stay readable at the actual forty-pixel menu size.
+fn wall_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(40., 40.), egui::Sense::click());
+    let p = ui.painter();
+    let point = |x: f32, y: f32| rect.min + egui::vec2(x, y);
+    p.rect_filled(rect, 3., egui::Color32::from_rgb(39, 33, 25));
+    let poly = |points: Vec<egui::Pos2>, color| {
+        p.add(egui::Shape::convex_polygon(
+            points,
+            color,
+            egui::Stroke::new(0.6, egui::Color32::from_black_alpha(140)),
+        ))
+    };
+    if kind == BuildingKind::WoodenWall {
+        for i in 0..6 {
+            let x = 4. + i as f32 * 5.;
+            let top = 11. + (i % 2) as f32 * 2.;
+            poly(
+                vec![
+                    point(x, 34.),
+                    point(x, top),
+                    point(x + 2., top - 5.),
+                    point(x + 4., top),
+                    point(x + 4., 34.),
+                ],
+                egui::Color32::from_rgb(151 + (i % 2) * 18, 92, 42),
+            );
+        }
+        for y in [22., 29.] {
+            p.line_segment(
+                [point(3., y), point(36., y)],
+                egui::Stroke::new(2., egui::Color32::from_rgb(85, 48, 22)),
+            );
+        }
+    } else {
+        let height = match kind {
+            BuildingKind::StoneWallLow => 10.,
+            BuildingKind::StoneWallHigh => 26.,
+            _ => 18.,
+        };
+        let top = 34. - height;
+        poly(
+            vec![
+                point(29., top),
+                point(36., top - 5.),
+                point(36., 29.),
+                point(29., 34.),
+            ],
+            egui::Color32::from_rgb(120, 116, 103),
+        );
+        p.rect_filled(
+            egui::Rect::from_min_max(point(4., top), point(29., 34.)),
+            0.,
+            egui::Color32::from_rgb(184, 179, 158),
+        );
+        poly(
+            vec![
+                point(4., top),
+                point(11., top - 5.),
+                point(36., top - 5.),
+                point(29., top),
+            ],
+            egui::Color32::from_rgb(218, 211, 185),
+        );
+        let mut y = 34. - 5.;
+        let mut row = 0;
+        while y > top {
+            p.line_segment(
+                [point(4., y), point(29., y)],
+                egui::Stroke::new(0.8, egui::Color32::from_rgb(102, 100, 90)),
+            );
+            for i in 0..4 {
+                let x = 6. + i as f32 * 8. + (row % 2) as f32 * 4.;
+                if x < 29. {
+                    p.line_segment(
+                        [point(x, y), point(x, (y + 5.).min(34.))],
+                        egui::Stroke::new(0.7, egui::Color32::from_rgb(102, 100, 90)),
+                    );
+                }
+            }
+            row += 1;
+            y -= 5.;
+        }
+        if kind == BuildingKind::StoneWallCrenellated {
+            for x in [4., 14., 24.] {
+                p.rect_filled(
+                    egui::Rect::from_min_max(point(x, top - 6.), point(x + 5., top + 1.)),
+                    0.,
+                    egui::Color32::from_rgb(210, 203, 177),
+                );
+                poly(
+                    vec![
+                        point(x, top - 6.),
+                        point(x + 5., top - 9.),
+                        point(x + 10., top - 9.),
+                        point(x + 5., top - 6.),
+                    ],
+                    egui::Color32::from_rgb(233, 225, 198),
+                );
+            }
+        }
+    }
+    p.rect_stroke(
+        rect.shrink(0.5),
+        3.,
+        egui::Stroke::new(
+            if active || response.hovered() { 2. } else { 1. },
+            if active {
+                egui::Color32::GOLD
+            } else if response.hovered() {
+                egui::Color32::WHITE
+            } else {
+                egui::Color32::from_rgb(102, 84, 51)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

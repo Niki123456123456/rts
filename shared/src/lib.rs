@@ -12,6 +12,7 @@ pub mod ecology;
 pub mod fortifications;
 pub mod logistics;
 pub mod needs;
+pub mod placement;
 pub mod population;
 pub mod terrain;
 pub mod walls;
@@ -21,7 +22,7 @@ pub const MAP_SIZE: f32 = 800.0;
 pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
 /// Grid lines lie at multiples of two metres on both world axes.
 pub const BUILD_GRID_SIZE: f32 = 2.0;
-pub const STARTING_RESOURCE_AMOUNT: u32 = 30;
+pub const STARTING_RESOURCE_AMOUNT: u32 = 120;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cost {
@@ -99,16 +100,14 @@ impl BuildingKind {
                 | Self::DrawbridgeGate
         )
     }
-    /// Reserve the visible mesh as well as the logical plot, including stair projections.
+    /// Reserve visible bounds, including stairs, without mandatory spacer plots.
+    /// Wall sections share their small mortar projections.
     pub fn construction_bounds(self, x: f32, z: f32, rotation: u8) -> Obstacle {
-        let mut p = self.rotated_build_footprint(x, z, rotation);
         if self.is_wall() {
-            return p;
+            self.rotated_build_footprint(x, z, rotation)
+        } else {
+            self.rotated_obstacle(x, z, rotation)
         }
-        let mesh = self.rotated_obstacle(x, z, rotation);
-        p.half_x = p.half_x.max(mesh.half_x);
-        p.half_z = p.half_z.max(mesh.half_z);
-        p
     }
 }
 
@@ -295,8 +294,8 @@ impl Obstacle {
         (p.0 - self.x).abs() < self.half_x + margin && (p.1 - self.z).abs() < self.half_z + margin
     }
     pub fn overlaps(self, other: Self) -> bool {
-        (self.x - other.x).abs() < self.half_x + other.half_x
-            && (self.z - other.z).abs() < self.half_z + other.half_z
+        (self.x - other.x).abs() < self.half_x + other.half_x - 0.0001
+            && (self.z - other.z).abs() < self.half_z + other.half_z - 0.0001
     }
     fn within(self, limit: f32) -> bool {
         self.x.is_finite()

@@ -27,7 +27,7 @@ pub const GOODS: [&str; 8] = [
     "Holz", "Stein", "Eisen", "Äpfel", "Brot", "Käse", "Fleisch", "Fisch",
 ];
 pub const BASE_PRICES: [i64; 8] = [3, 4, 6, 2, 3, 4, 5, 3];
-pub const STARTING_GOLD: u64 = 50;
+pub const STARTING_GOLD: u64 = 120;
 pub fn ration_use(population: u32, level: u8, remainder: u32) -> (u32, u32) {
     let quarters = population
         .saturating_mul(RATION_QUARTERS[level.min(7) as usize])
@@ -112,4 +112,9 @@ mod tests {
             }
         }
     }
+}
+
+/// Net recurring balance per 30-second round. Trading is a one-off transaction.
+pub fn net_per_round(residents: u32, taxes: u8) -> i64 {
+    i64::from(residents) * TAX_RATES[taxes.min(7) as usize] as i64
 }

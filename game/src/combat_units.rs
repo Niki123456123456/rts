@@ -23,15 +23,19 @@ pub(crate) struct RigPlayer {
     kind: usize,
     activity: u8,
 }
-const PATHS: [&str; 3] = [
+const PATHS: [&str; 5] = [
     "models/units/lord/mesh.glb",
     "models/units/armed_peasant/mesh.glb",
     "models/units/archer/mesh.glb",
+    "models/units/light_swordsman/mesh.glb",
+    "models/units/light_cavalry/mesh.glb",
 ];
 fn kind_index(kind: &str) -> usize {
     match kind {
         "armed_peasant" => 1,
         "archer" => 2,
+        "light_swordsman" => 3,
+        "light_cavalry" => 4,
         _ => 0,
     }
 }
@@ -95,6 +99,7 @@ pub(crate) fn sync_combat_visuals(
         let (scale, base) = match kind {
             0 => (0.007653524, -0.12237549),
             1 => (0.00802919, -1.5127563),
+            3 | 4 => (0.007653524, -0.12237549),
             _ => (0.008200814, -1.4188614),
         };
         commands.entity(owner).with_children(|parent| {
@@ -231,6 +236,28 @@ mod tests {
                 Transform::default(),
             ))
             .id();
+        let swordsman = app
+            .world_mut()
+            .spawn((
+                Unit {
+                    kind: "light_swordsman".into(),
+                    health: 1.,
+                    ..default()
+                },
+                Transform::default(),
+            ))
+            .id();
+        let cavalry = app
+            .world_mut()
+            .spawn((
+                Unit {
+                    kind: "light_cavalry".into(),
+                    health: 1.,
+                    ..default()
+                },
+                Transform::default(),
+            ))
+            .id();
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             app.update();
@@ -239,20 +266,25 @@ mod tests {
                 .query::<&RigPlayer>()
                 .iter(app.world())
                 .count()
-                == 3
+                == 5
             {
                 break;
             }
             assert!(
                 Instant::now() < deadline,
-                "All animated rig instances should load"
+                "All animated rig instances should load; models={}, players={}",
+                app.world().resource::<CombatAssets>().models.len(),
+                app.world_mut()
+                    .query::<&RigPlayer>()
+                    .iter(app.world())
+                    .count()
             );
             std::thread::sleep(Duration::from_millis(10));
         }
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
             Duration::from_secs_f64(1. / 60.),
         ));
-        for owner in [lord, peasant, archer] {
+        for owner in [lord, peasant, archer, swordsman, cavalry] {
             let mut descendants = vec![owner];
             let mut index = 0;
             while index < descendants.len() {

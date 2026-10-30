@@ -684,7 +684,7 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             .map(|u| (u.x, u.z))
             .collect::<Vec<_>>();
         let obstacles = worker_obstacles(ctx, &unit);
-        let mut budget = UNIT_SPEED * TICK_SECONDS;
+        let mut budget = unit_speed(ctx, &unit) * TICK_SECONDS;
         while order.waypoints.len() >= 2 && budget > 0.00001 {
             while order.waypoints.len() >= 4
                 && can_skip_corner(
@@ -1063,7 +1063,21 @@ fn place_building_for(
     {
         return Err("Jeder Spieler erhält genau einen Startpalast.".into());
     }
-    let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
+    let neighbours = ctx
+        .db
+        .building()
+        .game_id()
+        .filter(player.game_id)
+        .filter_map(|b| {
+            Some((
+                map::BuildingKind::from_name(&b.kind)?,
+                b.x,
+                b.z,
+                rotation(ctx, b.id),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let (x, z) = map::placement::snap(kind, (x, z), quarter_turns, &neighbours);
     let shape = kind.construction_bounds(x, z, quarter_turns);
     let candidate = fort::Structure {
         id: 0,

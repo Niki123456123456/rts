@@ -29,11 +29,19 @@ pub(crate) fn ui(
                 .inner_margin(6.)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        let (coin,_) = ui.allocate_exact_size(egui::vec2(24.,24.),egui::Sense::hover());
+                        ui.painter().circle_filled(coin.center(),10.,egui::Color32::from_rgb(196,145,36));
+                        ui.painter().circle_stroke(coin.center(),8.,egui::Stroke::new(1.3,egui::Color32::from_rgb(255,224,128)));
+                        ui.painter().text(coin.center(),egui::Align2::CENTER_CENTER,"S",egui::FontId::proportional(15.),egui::Color32::from_rgb(70,46,12));
                         ui.colored_label(
                             egui::Color32::GOLD,
                             format!("{} Sesterzen", net.snapshot.gold.unwrap_or(0)),
                         );
 
+                        let policy=net.snapshot.buildings.iter().find(|b|b.owned&&b.kind=="keep").and_then(|b| net.snapshot.policies.iter().find(|p|p.building_id==b.id));
+                        let residents=policy.and_then(|p|net.snapshot.keep_population.iter().find(|k|k.building_id==p.building_id)).map_or(0,|p|p.arrived);
+                        let balance=civic::net_per_round(residents,policy.map_or(3,|p|p.taxes));
+                        ui.colored_label(if balance>=0 {egui::Color32::LIGHT_GREEN}else{egui::Color32::LIGHT_RED},format!("{balance:+} / Runde")).on_hover_text("Netto je 30 Sekunden: Steuereinnahmen abzüglich laufender Ausgaben. Aktuell fallen keine Grundausgaben an.");
                         let pending = net
                             .snapshot
                             .requests
