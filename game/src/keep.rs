@@ -57,6 +57,9 @@ pub(crate) struct Citizen {
     building: u64,
     index: u32,
     age: f32,
+    sheltered: bool,
+    shelter_door: u8,
+    shelter_path: Vec<Vec3>,
     point: Option<stronghold_map::Point>,
     path: Vec<stronghold_map::Point>,
     revision: u64,
@@ -190,6 +193,9 @@ pub(crate) fn sync_camp(
                         building: keep.id,
                         index,
                         age,
+                        sheltered: false,
+                        shelter_door: 0,
+                        shelter_path: Vec::new(),
                         point: None,
                         path: Vec::new(),
                         revision: u64::MAX,
@@ -340,6 +346,121 @@ pub(crate) fn animate_citizens(
         let Some(keep) = buildings.iter().find(|b| b.id == citizen.building) else {
             continue;
         };
+        let alarm = multiplayer
+            .snapshot
+            .policies
+            .iter()
+            .any(|p| p.building_id == keep.id && p.alarm);
+        let roof =
+            BuildingRoof::new(BuildingKind::Keep, keep.x, keep.y, keep.z, keep.rotation).unwrap();
+        if alarm != citizen.sheltered {
+            let camp = cache
+                .spots
+                .get(&keep.id)
+                .and_then(|spots| spots.get(citizen.index as usize))
+                .copied()
+                .unwrap_or_else(|| roof.world((0., 13.)));
+            let start = citizen.point.unwrap_or(camp);
+            let mut path = Vec::new();
+            if alarm {
+                let entry = (0..roof.door_count())
+                    .filter_map(|door| {
+                        map::shortest_path(start, roof.door(door), &cache.obstacles)
+                            .map(|path| (map::path_length(start, &path), door, path))
+                    })
+                    .min_by(|a, b| a.0.total_cmp(&b.0));
+                if let Some((_, door, ground)) = entry {
+                    citizen.shelter_door = door;
+                    transform.translation =
+                        Vec3::new(start.0, map::terrain::height(start.0, start.1), start.1);
+                    path.extend(
+                        ground
+                            .into_iter()
+                            .map(|p| Vec3::new(p.0, map::terrain::height(p.0, p.1), p.1)),
+                    );
+                    let top = roof.world((if door == 1 { -6.5 } else { 6.5 }, 3.));
+                    let hatch = roof.hatch_for_door(door);
+                    path.push(Vec3::new(top.0, roof.roof_y(), top.1));
+                    path.push(Vec3::new(hatch.0, roof.roof_y(), hatch.1));
+                    let slot = roof.slot(
+                        roof.capacity() - 1 - (citizen.index as usize).min(roof.capacity() - 1),
+                    );
+                    if let Some(walk) = roof.roof_path(hatch, slot) {
+                        path.extend(walk.into_iter().map(|p| {
+                            Vec3::new(p.0, p.1 - map::building_roof::UNIT_CENTER_HEIGHT, p.2)
+                        }));
+                    }
+                    citizen.sheltered = true;
+                    citizen.shelter_path = path;
+                    *visibility = Visibility::Inherited;
+                }
+            } else {
+                let door = citizen.shelter_door;
+                let bottom = roof.door(door);
+                let hatch = roof.hatch_for_door(door);
+                let top = roof.world((if door == 1 { -6.5 } else { 6.5 }, 3.));
+                let raised = transform.translation.y > keep.y + 0.1;
+                if raised {
+                    if let Some(walk) =
+                        roof.roof_path((transform.translation.x, transform.translation.z), hatch)
+                    {
+                        path.extend(walk.into_iter().map(|p| {
+                            Vec3::new(p.0, p.1 - map::building_roof::UNIT_CENTER_HEIGHT, p.2)
+                        }));
+                    }
+                    if transform.translation.y >= roof.roof_y() - 0.1 {
+                        path.push(Vec3::new(top.0, roof.roof_y(), top.1));
+                    }
+                    path.push(Vec3::new(
+                        bottom.0,
+                        map::terrain::height(bottom.0, bottom.1),
+                        bottom.1,
+                    ));
+                }
+                let ground_start = if raised {
+                    bottom
+                } else {
+                    (transform.translation.x, transform.translation.z)
+                };
+                if let Some(walk) = map::shortest_path(ground_start, camp, &cache.obstacles) {
+                    path.extend(
+                        walk.into_iter()
+                            .map(|p| Vec3::new(p.0, map::terrain::height(p.0, p.1), p.1)),
+                    );
+                }
+                citizen.sheltered = false;
+                citizen.shelter_path = path;
+            }
+        }
+        if citizen.sheltered || !citizen.shelter_path.is_empty() {
+            let old = transform.translation;
+            let mut budget = time.delta_secs() * 3.;
+            while budget > 0.0001 {
+                let Some(next) = citizen.shelter_path.first().copied() else {
+                    break;
+                };
+                let d = transform.translation.distance(next);
+                if d <= budget {
+                    transform.translation = next;
+                    budget -= d;
+                    citizen.shelter_path.remove(0);
+                } else {
+                    let delta = next - transform.translation;
+                    transform.translation += delta * budget / d;
+                    break;
+                }
+            }
+            let delta = transform.translation - old;
+            if delta.x.abs() + delta.z.abs() > 0.0001 {
+                transform.rotation = Quat::from_rotation_y(delta.x.atan2(delta.z));
+            }
+            citizen.point = Some((transform.translation.x, transform.translation.z));
+            if !citizen.sheltered && citizen.shelter_path.is_empty() {
+                citizen.revision = u64::MAX;
+                citizen.age = 8.;
+            }
+            continue;
+        }
         if citizen.revision != revision {
             citizen.revision = revision;
             let Some(goal) = cache

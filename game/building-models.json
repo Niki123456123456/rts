@@ -575,15 +575,16 @@
   {
     "variant": "Market",
     "id": "market",
-    "label": "Markt",
+    "label": "Römischer Marktplatz",
     "category": "supply",
-    "source": "market_closed",
-    "collision": "market_collision",
+    "source": null,
+    "collision": null,
     "folder": "market",
     "grid": [
-      3,
+      4,
       3
-    ]
+    ],
+    "procedural": "roman_market"
   },
   {
     "variant": "SawPit",
@@ -850,6 +851,20 @@
     ],
     "category": "fortifications",
     "folder": "drawbridge_gate",
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "WoodenWall",
+    "id": "wooden_wall",
+    "label": "Holzwall (4 m)",
+    "grid": [
+      1,
+      1
+    ],
+    "category": "fortifications",
+    "folder": "wooden_wall",
     "procedural": "fortification",
     "source": null,
     "collision": null

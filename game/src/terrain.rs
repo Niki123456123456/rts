@@ -240,9 +240,9 @@ pub(crate) fn setup(
         ..default()
     });
     for (site, &(x, z)) in land::STONE.iter().enumerate() {
-        for index in 0..13 {
+        for index in 0..(13. * (land::STONE_RADII[site] / 16.).powi(2)).round() as usize {
             let angle = index as f32 * 2.4;
-            let radius = (index % 5) as f32 * 2.3;
+            let radius = (index % 5) as f32 * 2.3 * land::STONE_RADII[site] / 16.;
             let px = x + angle.cos() * radius;
             let pz = z + angle.sin() * radius;
             commands.spawn((
@@ -272,9 +272,9 @@ pub(crate) fn setup(
         ..default()
     });
     for (site, &(x, z)) in land::IRON.iter().enumerate() {
-        for index in 0..11 {
+        for index in 0..(11. * (land::IRON_RADII[site] / 13.).powi(2)).round() as usize {
             let angle = index as f32 * 2.4;
-            let radius = (index % 4) as f32 * 2.3;
+            let radius = (index % 4) as f32 * 2.3 * land::IRON_RADII[site] / 13.;
             let px = x + angle.cos() * radius;
             let pz = z + angle.sin() * radius;
             let y = land::height(px, pz);

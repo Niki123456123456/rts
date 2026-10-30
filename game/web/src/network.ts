@@ -2,6 +2,9 @@ import {prepareCaches} from './cache';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
 
 type Action =
+ | {action:'market_exchange';sell:number;amount:number;buy:number}
+ | {action:'set_civic_policy';rations:number;taxes:number}|{action:'palace_alarm';active:boolean}|{action:'close_all_gates'}
+ | {action:'market_trade';resource:number;amount:number;buy:boolean}|{action:'request_goods';target_color:number;resource:number;amount:number;offered_gold:number;note:string}|{action:'respond_request';request_id:string;accept:boolean}
  | {action:'save_game';title:string}
  | {action:'load_game';save_id:string}
   | { action: 'connect'; uri: string; database: string }
@@ -125,6 +128,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onHuntAnimal(result);
   connection.reducers.onCreateGame(result);
   connection.reducers.onSaveGame(result);
+  connection.reducers.onSetCivicPolicy(result);connection.reducers.onPalaceAlarm(result);connection.reducers.onCloseAllGates(result);connection.reducers.onMarketTrade(result);connection.reducers.onMarketExchange(result);connection.reducers.onRequestGoods(result);connection.reducers.onRespondRequest(result);
   connection.reducers.onLoadGame(result);
   connection.reducers.onJoinGame(result);
   connection.reducers.onLeaveGame(result);
@@ -156,6 +160,13 @@ export const strongholdNetwork = {
     if (action.action === 'connect') { connect(action.uri, action.database); return; }
     if (!conn || !ready || !connected) throw new Error('Connect to a server first.');
     switch (action.action) {
+      case 'set_civic_policy':conn.reducers.setCivicPolicy(action.rations,action.taxes);break;
+      case 'palace_alarm':conn.reducers.palaceAlarm(action.active);if(action.active)playCornu();break;
+      case 'close_all_gates':conn.reducers.closeAllGates();break;
+      case 'market_exchange':conn.reducers.marketExchange(action.sell,action.amount,action.buy);break;
+      case 'market_trade':conn.reducers.marketTrade(action.resource,action.amount,action.buy);break;
+      case 'request_goods':conn.reducers.requestGoods(action.target_color,action.resource,action.amount,BigInt(action.offered_gold),action.note);break;
+      case 'respond_request':conn.reducers.respondRequest(BigInt(action.request_id),action.accept);break;
       case 'save_game': conn.reducers.saveGame(action.title);break;
       case 'load_game': conn.reducers.loadGame(BigInt(action.save_id));break;
       case 'create': conn.reducers.createGame(action.title); break;
@@ -191,9 +202,14 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM civic_policy WHERE game_id = ${gameId}`,`SELECT * FROM treasury WHERE game_id = ${gameId}`,`SELECT * FROM market_pressure WHERE game_id = ${gameId}`,`SELECT * FROM diplomatic_request WHERE game_id = ${gameId}`,`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
+      policies:ready&&connected&&conn?Array.from(conn.db.civicPolicy.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),rations:r.rations,taxes:r.taxes,alarm:r.alarm,alarm_started:r.alarmStarted})):[],
+      gold:ready&&connected&&conn?Number(conn.db.treasury.connectionId.find(conn.connectionId)?.gold??0n):null,
+      prices:ready&&connected&&conn?Array.from(conn.db.marketPressure.iter()).filter(r=>r.gameId===gameId).map(r=>({resource:r.resource,pressure:r.pressure})):[],
+      players:ready&&connected&&conn?Array.from(conn.db.participant.iter()).filter(r=>r.gameId===gameId).map(r=>({color:r.color,owned:r.connectionId.toHexString()===conn!.connectionId.toHexString()})):[],
+      requests:ready&&connected&&conn?Array.from(conn.db.diplomaticRequest.iter()).filter(r=>r.gameId===gameId&&(r.from.toHexString()===conn!.connectionId.toHexString()||r.to.toHexString()===conn!.connectionId.toHexString())).map(r=>({id:r.id.toString(),from_color:r.fromColor,to_color:r.toColor,incoming:r.to.toHexString()===conn!.connectionId.toHexString(),outgoing:r.from.toHexString()===conn!.connectionId.toHexString(),resource:r.resource,amount:r.amount,offered_gold:Number(r.offeredGold),note:r.note,status:r.status})):[],
       saves: ready&&connected&&conn ? Array.from(conn.db.saveCatalog.iter()).filter(s=>s.owner.toHexString()===conn!.identity?.toHexString()).map(s=>({id:s.id.toString(),title:s.title,saved_at_micros:Number(s.savedAtMicros)})):[],
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
       resources: ready && connected && conn && gameId !== undefined ? (() => {
@@ -238,3 +254,6 @@ export const strongholdNetwork = {
 };
 
 Object.assign(globalThis, { strongholdNetwork });
+
+let hornContext:AudioContext|undefined;
+function playCornu(){try{const ctx=hornContext??=new AudioContext();void ctx.resume();for(const [delay,pitch,length] of [[0,110,0.55],[0.65,146.83,0.55],[1.3,110,1.25]]){const tone=ctx.createOscillator();const gain=ctx.createGain();const filter=ctx.createBiquadFilter();tone.type='sawtooth';tone.frequency.setValueAtTime(pitch*0.92,ctx.currentTime+delay);tone.frequency.exponentialRampToValueAtTime(pitch,ctx.currentTime+delay+0.12);filter.type='lowpass';filter.frequency.value=1100;gain.gain.setValueAtTime(0,ctx.currentTime+delay);gain.gain.linearRampToValueAtTime(0.12,ctx.currentTime+delay+0.08);gain.gain.linearRampToValueAtTime(0.09,ctx.currentTime+delay+length-0.1);gain.gain.linearRampToValueAtTime(0,ctx.currentTime+delay+length);tone.connect(filter);filter.connect(gain);gain.connect(ctx.destination);tone.start(ctx.currentTime+delay);tone.stop(ctx.currentTime+delay+length+0.02);}}catch{/* Audio may be unavailable; the authoritative alarm remains active. */}}

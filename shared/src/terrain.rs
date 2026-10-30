@@ -18,6 +18,8 @@ pub const IRON: [Point; 7] = [
     (35.0, 65.0),
     (-20.0, -80.0),
 ];
+pub const STONE_RADII: [f32; 5] = [22., 18., 25., 16., 17.];
+pub const IRON_RADII: [f32; 7] = [15., 17., 16., 19., 13., 14., 13.];
 pub const PEAKS: [(f32, f32, f32, f32); 7] = [
     (-275.0, -255.0, 78.0, 85.0),
     (-195.0, -275.0, 96.0, 76.0),
@@ -88,10 +90,18 @@ pub fn biome(x: f32, z: f32) -> Biome {
             Biome::River
         };
     }
-    if IRON.iter().any(|&(px, pz)| (x - px).hypot(z - pz) < 13.0) {
+    if IRON
+        .iter()
+        .enumerate()
+        .any(|(i, &(px, pz))| (x - px).hypot(z - pz) < IRON_RADII[i])
+    {
         return Biome::Iron;
     }
-    if STONE.iter().any(|&(px, pz)| (x - px).hypot(z - pz) < 16.0) {
+    if STONE
+        .iter()
+        .enumerate()
+        .any(|(i, &(px, pz))| (x - px).hypot(z - pz) < STONE_RADII[i])
+    {
         return Biome::Stone;
     }
     if mountain_height(x, z) > 3.0 {
@@ -167,6 +177,7 @@ pub fn buildable(kind: crate::BuildingKind, x: f32, z: f32) -> bool {
     match kind {
         crate::BuildingKind::Fishpond => terrain == Biome::River,
         crate::BuildingKind::SawPit => terrain == Biome::Forest,
+        crate::BuildingKind::OxTether => !matches!(terrain, Biome::River | Biome::Mountain),
         crate::BuildingKind::Quarry => terrain == Biome::Stone,
         crate::BuildingKind::IronMine => terrain == Biome::Iron,
         _ => !matches!(

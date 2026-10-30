@@ -1,7 +1,10 @@
 use crate::*;
 use stronghold_map::BuildingKind;
 
-pub(crate) const BUILD_MENU: [BuildingKind; 30] = [
+pub(crate) const BUILD_MENU: [BuildingKind; 33] = [
+    BuildingKind::WoodenWall,
+    BuildingKind::TowerWooden,
+    BuildingKind::Market,
     BuildingKind::AppleFarm,
     BuildingKind::DairyFarm,
     BuildingKind::Housing,
@@ -140,7 +143,7 @@ pub(crate) fn building_button(
         Barracks => (2, 7),
         Stockpile => (4, 5),
         Granary => (3, 6),
-        StoneWall | StoneWallLow | StoneWallHigh | StoneWallCrenellated => (1, 6),
+        WoodenWall | StoneWall | StoneWallLow | StoneWallHigh | StoneWallCrenellated => (1, 6),
         DrawbridgeGate => (1, 4),
         TowerLookout => (1, 11),
         TowerSquare => (1, 13),

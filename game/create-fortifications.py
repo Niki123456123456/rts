@@ -11,7 +11,7 @@ b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
 def generate(item):
     k.geometry[:]=[([],[],[]) for _ in k.materials]
     name=item['id']; k.rng.seed(841+sum(map(ord,name))); folder=ROOT/'assets/models/buildings/fortifications'/item['folder'];folder.mkdir(parents=True,exist_ok=True)
-    height={'stone_wall_low':3.3,'stone_wall_high':10.0,'stone_wall_crenellated':6.663}.get(name,8.0)
+    height={'wooden_wall':4.1,'stone_wall_low':3.3,'stone_wall_high':10.0,'stone_wall_crenellated':6.663}.get(name,8.0)
     if name=='drawbridge_gate':
         for x in [-3.5,3.5]:
             k.masonry(x,0,2.8,7.5,-1.5,9.5)
@@ -25,12 +25,15 @@ def generate(item):
         k.box(4.7,7.9,2.5,3.4,.2,1,k.trim)
         # The moving bridge and portcullis are client components driven by GateState.
         minimum,maximum=[-780,0,-3600],[780,900,3600]
+    elif name=='wooden_wall':
+        for x in [-.83,.83]:
+            for z in [-.75,-.25,.25,.75]:
+                k.box(x,2.1,z,.28,4.2,.48,k.wood)
+                k.cylinder(x,4.35,z,.22,.5,k.wood,4,top_radius=.01)
+        for y in [.8,2.0,3.3]:k.box(0,y,0,1.85,.17,1.9,k.wood)
+        minimum,maximum=[-107,0,-107],[107,480,107]
     else:
         k.masonry(0,0,2,2,0,height)
-        if name=='stone_wall_crenellated':
-            for x in [-.86,.86]:
-                k.box(x,height+.3,0,.28,.6,2,k.trim)
-                for z in [-.7,.7]:k.box(x,height+.95,z,.34,.7,.55,k.trim)
         minimum,maximum=[-107,0,-107],[107,(height+(1.3 if name=='stone_wall_crenellated' else .1))*100,107]
     # Dedicated first primitive is the walkable floor, independent of random stone courses.
     vertices,normals,indices=k.geometry[0];v1,n1,i1=k.geometry[1];offset=len(v1)

@@ -465,6 +465,7 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
     if ctx.sender != ctx.identity() {
         return Err("Production is server controlled.".into());
     }
+    reconcile_carts(ctx);
     for mut p in ctx.db.producer().iter().collect::<Vec<_>>() {
         if !building_open(ctx, p.building_id) {
             continue;
@@ -479,6 +480,9 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
             .find(building.owner)
             .is_none()
         {
+            continue;
+        }
+        if owner_alarm(ctx, building.owner) {
             continue;
         }
         let staffed = ctx
@@ -498,7 +502,7 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         }
         if p.buffer < economy::PRODUCTION_BUFFER {
             p.progress += 1;
-            if p.progress >= economy::PRODUCTION_SECONDS {
+            if p.progress >= nature::production_seconds(&building.kind) {
                 p.buffer += take_harvest(ctx, &building);
                 p.progress = 0;
             }
@@ -511,6 +515,12 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
             continue;
         };
         if ctx.db.participant().connection_id().find(u.owner).is_none() {
+            continue;
+        }
+        if owner_alarm(ctx, u.owner)
+            || ctx.db.tower_travel().unit_id().find(u.id).is_some()
+            || ctx.db.tower_occupant().unit_id().find(u.id).is_some()
+        {
             continue;
         }
         let Some(source) = ctx.db.building().id().find(w.source_building) else {

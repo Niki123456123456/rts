@@ -70,6 +70,15 @@ impl BowTarget {
 }
 fn shot_blocks(ctx: &ReducerContext, game: u64) -> Vec<bow::ShotBlock> {
     let mut result = Vec::new();
+    let structures = fort_pieces(ctx, game);
+    for j in fort::joins(&structures) {
+        result.push(bow::ShotBlock {
+            id: j.a,
+            shape: j.shape,
+            base: j.base,
+            top: j.top,
+        });
+    }
     for b in ctx.db.building().game_id().filter(game) {
         let Some(kind) = map::BuildingKind::from_name(&b.kind) else {
             continue;
@@ -96,13 +105,30 @@ fn shot_blocks(ctx: &ReducerContext, game: u64) -> Vec<bow::ShotBlock> {
                 top: b.y + height,
             });
         }
-        if kind == map::BuildingKind::StoneWallCrenellated {
-            for shape in fort::merlons((b.x, b.z), rotation(ctx, b.id)) {
+        if matches!(
+            kind,
+            map::BuildingKind::StoneWallCrenellated | map::BuildingKind::GatehouseSmall
+        ) {
+            let edges = if kind.is_wall() {
+                fort::exposed_edges(fort_piece(ctx, &b), &structures)
+            } else {
+                vec![(1., 0.), (-1., 0.), (0., 1.), (0., -1.)]
+            };
+            for block in fort::parapets(
+                kind,
+                (b.x, b.z),
+                if kind.is_wall() {
+                    0
+                } else {
+                    rotation(ctx, b.id)
+                },
+                &edges,
+            ) {
                 result.push(bow::ShotBlock {
                     id: b.id,
-                    shape,
-                    base: b.y + height,
-                    top: b.y + height + 1.3,
+                    shape: block.shape,
+                    base: b.y + block.bottom,
+                    top: b.y + block.top,
                 });
             }
         }

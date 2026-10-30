@@ -75,7 +75,7 @@ fn settlement_satisfaction(
             ]
         });
     let stock = ctx.db.player_resources().connection_id().find(keep.owner);
-    let value = map::needs::Satisfaction::calculate(map::needs::NeedsInput {
+    let mut value = map::needs::Satisfaction::calculate(map::needs::NeedsInput {
         food,
         goods: stock.map_or([0; 3], |s| [s.wood, s.stone, s.iron]),
         population,
@@ -95,6 +95,9 @@ fn settlement_satisfaction(
             .filter(|b| b.kind == "inn" || b.kind == "gardeners_hut")
             .count() as u32,
     });
+    value.happiness = (value.happiness as i32 + civic_happiness(ctx, keep, food.iter().sum()))
+        .clamp(0, 100) as u32;
+    value.immigration_seconds = civic::immigration(value.happiness);
     let row = SettlementNeeds {
         building_id: keep.id,
         game_id: keep.game_id,
@@ -124,7 +127,11 @@ fn settlement_satisfaction(
 }
 fn feed_population(ctx: &ReducerContext, keep: &Building, population: u32, round: u32) {
     // One ration per four peasants every thirty seconds, from real granary stock.
-    let mut remaining = population.div_ceil(4);
+    let mut policy = policy_for(ctx, keep);
+    let (mut remaining, remainder) =
+        civic::ration_use(population, policy.rations, policy.food_remainder);
+    policy.food_remainder = remainder;
+    ctx.db.civic_policy().building_id().update(policy);
     let mut stores = ctx
         .db
         .granary_stock()
@@ -195,6 +202,9 @@ fn production_building(ctx: &ReducerContext, id: u64) -> Result<Building, String
     Ok(b)
 }
 fn auto_assign_peasants(ctx: &ReducerContext, owner: spacetimedb::ConnectionId) {
+    if owner_alarm(ctx, owner) {
+        return;
+    }
     let Some(keep) = ctx
         .db
         .building()

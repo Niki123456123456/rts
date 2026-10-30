@@ -33,7 +33,7 @@ derselben Teilnahme erzeugt keine zweite Burg. Der Palast ist das einmalige Star
 werden. Nach Abriss wird kein zweiter Palast vergeben. Der runde Bergfried ist
 ein eigenes, baubares Verteidigungsgebäude unter „Befestigungen“.
 Er hat einzelne Steine und Dachziegel als 3D-Geometrie, eine begehbare Terrasse,
-eine Außentreppe und eine Feuerstelle mit Bänken. Der vorhandene Burgherr nimmt
+zwei Außentreppen und eine Feuerstelle mit Bänken. Der vorhandene Burgherr nimmt
 beim Start seinen Platz auf der Terrasse ein. Den Burgherrn auswählen und mit
 rechts auf freien Boden klicken: Er läuft über die Außentreppe hinunter.
 Mit Rechtsklick auf die eigene Terrasse kann er wieder hinaufsteigen. Der Burgherr
@@ -54,7 +54,7 @@ Ohne angekommenen Bauern am Arbeitsplatz gibt es keine Produktion.
 
 Das neue Gesicht-Symbol oben zeigt die Zufriedenheit. Ein Klick auf das Gesicht oder den Prozentwert öffnet die Übersicht mit allen
 Einflussfaktoren und den Bevölkerungsgrenzen für spätere Bedürfnisse. Die ersten
-vier Bauern bleiben auch ohne Nahrung bei mindestens 80% zufrieden, solange
+vier Bauern bleiben bei normalen Rationen und moderaten Steuern auch ohne Nahrung bei mindestens 80% zufrieden, solange
 Wohnraum vorhanden ist. Ab fünf Bewohnern zählt fehlende Nahrung, ab acht Wasser,
 ab 16 Nahrungsvielfalt und Arbeitsplätze, ab 24 Gesundheit, ab 32 Freizeit und
 ab 40 Warenbestände. Die Grundzufriedenheit sinkt dabei von 75 auf 65, 55 und
@@ -72,20 +72,20 @@ Die Darstellung zeigt bis zu 16 Wartende gleichzeitig als Figuren.
 
 ## Rohstoffe, Karren und Wildtiere
 
-Ein neuer Spieler beginnt mit 120 Holz, 120 Stein und 120 Eisen. Die Bauleiste
+Ein neuer Spieler beginnt mit 30 Holz, 30 Stein und 30 Eisen. Die Bauleiste
 zeigt die Kosten für jedes Gebäude. Das erste Vorratslager übernimmt den noch
 verfügbaren Startvorrat; spätere Lager erzeugen keine neuen Rohstoffe.
 
 Bäume sind echte Holzbestände: Der Holzfäller fällt einen Baum, der sichtbar
 umkippt, und zerlegt anschließend den Stamm. Stein- und Eisenvorkommen werden
 beim Abbau kleiner und sind irgendwann erschöpft. Rodung beim Bauen liefert
-keine zusätzlichen Rohstoffe.
+keine zusätzlichen Rohstoffe. Ein Baum enthält 24 Holz und wird über mehrere Minuten zerlegt. Stein- und Eisenfelder enthalten abhängig von ihrer Fläche und Dichte viele Tausend Einheiten.
 
 Für Stein und Eisen ist ein Ochsenkarren erforderlich. Einen Ochsenplatz bauen,
-den Steinbruch oder die Eisenmine auswählen und „Karren zuweisen“ anklicken.
-Jeder Ochsenplatz stellt einen Karren für einen Betrieb bereit. Holzfäller können
-optional ebenfalls einen Karren erhalten: Er transportiert 20 statt 5 Einheiten.
-Ein beladener Karren muss erst entladen werden, bevor er neu zugeteilt wird.
+in höchstens 80 Metern Entfernung von einem offenen, besetzten Betrieb.
+Er übernimmt automatisch einen passenden Betrieb; Stein und Eisen haben Vorrang.
+Ochsenplätze dürfen auch auf Stein- und Eisenfeldern stehen. Holzfäller profitieren ebenfalls: Er transportiert 20 statt 5 Einheiten.
+Ein beladener Karren liefert erst seine Ladung ab, bevor er automatisch den Betrieb wechselt.
 Ohne passenden Lagerplatz wartet der Arbeiter mit seiner Ladung.
 
 Fischschwärme liegen nur in bestimmten Flussabschnitten und erscheinen auf der
@@ -102,7 +102,9 @@ offene Siedlungen und können dort Bauern angreifen. Ausgewählte Soldaten könn
 Gebäude können nicht in bestehende Gebäude oder Mauertreppen gebaut werden.
 In „Befestigungen“ stehen niedrige, normale und hohe Mauern sowie Zinnenmauern
 zur Auswahl. Start- und Endpunkt anklicken, um eine zusammenhängende Mauer zu
-ziehen. Die Zinnen sind Hindernisse für die tatsächliche Flugbahn von Pfeilen.
+ziehen. Zinnen folgen dem Mauerverlauf, auch an Ecken; kleine Stadttore haben ebenfalls Zinnen. Ein Holzwall und kleinere Holztürme ergänzen die Steinbauten.
+Mauern schließen direkt an eigene Tore und Türme an. Beim Ziehen durch diese Gebäude werden verdeckte Abschnitte ausgelassen und nicht berechnet. Wer einen Turm oder ein Tor in eine vorhandene Mauer setzt, erhält die Kosten der ersetzten Stücke zurück. Benachbarte Türme sind ohne durchlässige Lücke verbunden und erlauben bei gleicher Dachhöhe einen direkten Übergang.
+Die Zinnen sind Hindernisse für die tatsächliche Flugbahn von Pfeilen.
 Mauerflächen gleicher Höhe verbinden sich; unterschiedliche Höhen brauchen
 geeignete Zugänge.
 
@@ -129,6 +131,34 @@ können Pfeile auf ihrer Flugbahn abfangen.
 Soldaten brauchen die angezeigten Rohstoffe und jeweils einen freien Bauern.
 Die Rekrutierung an der eigenen Kaserne entnimmt ihn dem Bauernpool. Sind alle
 Bauern beschäftigt, einen Betrieb schließen oder auf weitere Zuwanderer warten.
+
+## Palastverwaltung und Handel
+
+Den eigenen Palast anklicken, um Rationen, Steuern und Sicherheit zu verwalten.
+Jeweils acht Stufen zeigen direkt den Lebensmittelverbrauch, Steuerertrag und
+Einfluss auf die Zufriedenheit. Steuern werden alle 30 Sekunden pro Bewohner
+in Sesterzen eingezogen. Neue Spieler erhalten 50 Sesterzen.
+
+„Alarm blasen“ lässt einen römisch angelehnten Hornruf erklingen. Bauern
+verlassen ihre Arbeit und laufen über die Treppen in den Palast. Sobald sie
+oben sind, schließen alle eigenen Tore. Belegte Durchgänge warten, bis sie
+frei sind. „Alle Tore schließen“ ist auch ohne Alarm verfügbar. Mit
+„Entwarnung geben“ kehren die Bauern zur Arbeit zurück; die Tore bleiben geschlossen,
+bis du sie wieder öffnest.
+
+Den römischen Marktplatz unter Versorgung bauen und anklicken. Dort kannst du
+Rohstoffe und Lebensmittel kaufen, verkaufen oder direkt gegen andere Waren
+tauschen. Kleine Restbeträge beim Tausch werden in Sesterzen ausgezahlt. Alle
+Geschäfte nutzen tatsächliche Vorräte und Lagerplätze. Angebot und Nachfrage
+verändern den Kurs für alle Spieler dieser Welt. Über „Mitspieler“ oben rechts
+lassen sich Warenanfragen mit einem Geldangebot stellen, annehmen oder ablehnen.
+Erst die Annahme überträgt die Waren und das angebotene Geld.
+
+Versorgungsgebäude lassen sich mehrfach hintereinander setzen. Rechtsklick oder
+Escape beendet den Baumodus. Eigene Gebäude können über „Gebäude abreißen“
+oder die Entf-Taste gelöscht werden. WASD und der Bildschirmrand bewegen die
+Kamera schneller; Q dreht nach links, R oder E nach rechts. Im Baumodus dreht R
+weiterhin das ausgewählte Gebäude.
 
 ## Minimap
 

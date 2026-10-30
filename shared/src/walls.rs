@@ -352,3 +352,39 @@ mod additional_wall_tests {
         }
     }
 }
+/// A continuous path over touching roof plots, including joined towers.
+pub fn surface_route(start: u64, target: u64, pieces: &[RoofPiece]) -> Option<Vec<Point>> {
+    let mut queue = vec![start];
+    let mut parent = HashMap::from([(start, None)]);
+    let mut i = 0;
+    while i < queue.len() {
+        let a = *pieces.iter().find(|p| p.id == queue[i])?;
+        if a.id == target {
+            break;
+        }
+        for b in pieces {
+            if !parent.contains_key(&b.id) && portal(a, *b).is_some() {
+                parent.insert(b.id, Some(a.id));
+                queue.push(b.id);
+            }
+        }
+        i += 1;
+    }
+    if !parent.contains_key(&target) {
+        return None;
+    }
+    let mut ids = vec![target];
+    while let Some(prev) = *parent.get(ids.last()?)? {
+        ids.push(prev);
+    }
+    ids.reverse();
+    let first = pieces.iter().find(|p| p.id == start)?;
+    let mut points = vec![first.roof().hatch()];
+    for pair in ids.windows(2) {
+        let a = *pieces.iter().find(|p| p.id == pair[0])?;
+        let b = *pieces.iter().find(|p| p.id == pair[1])?;
+        points.push(portal(a, b)?);
+        points.push(b.roof().hatch());
+    }
+    Some(points)
+}

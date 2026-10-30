@@ -1,9 +1,9 @@
 //! Deterministic sites and bounded ecology/transport rules shared by client and server.
 use crate::{terrain, Point};
 pub const CART_CAPACITY: u32 = 20;
-pub const TREE_WOOD: u32 = 6;
-pub const STONE_AMOUNT: u32 = 180;
-pub const IRON_AMOUNT: u32 = 140;
+pub const TREE_WOOD: u32 = 24;
+pub const STONE_AMOUNT: u32 = 18000;
+pub const IRON_AMOUNT: u32 = 14000;
 pub const FISH_CAPACITY: u32 = 80;
 pub const FISH_REGEN_SECONDS: u32 = 12;
 pub const FISH_Z: [f32; 8] = [-320., -230., -120., -40., 75., 145., 280., 345.];
@@ -190,7 +190,54 @@ mod tests {
 }
 
 pub const PREDATOR_START_DISTANCE: f32 = 160.;
-pub const FIRST_RAID_SECONDS: u32 = 1200;
+pub const CART_RANGE: f32 = 80.;
+pub fn production_seconds(kind: &str) -> u32 {
+    match kind {
+        "saw_pit" => 6,
+        "quarry" => 6,
+        "iron_mine" => 7,
+        _ => crate::logistics::PRODUCTION_SECONDS,
+    }
+}
+pub fn deposit_capacity(kind: u8, index: usize) -> u32 {
+    let (sites, radii, biome, density) = if kind == STONE {
+        (
+            &terrain::STONE[..],
+            &terrain::STONE_RADII[..],
+            terrain::Biome::Stone,
+            18,
+        )
+    } else {
+        (
+            &terrain::IRON[..],
+            &terrain::IRON_RADII[..],
+            terrain::Biome::Iron,
+            26,
+        )
+    };
+    let centre = sites[index];
+    let r = radii[index].ceil() as i32;
+    let mut cells = 0;
+    for x in (-r..=r).step_by(2) {
+        for z in (-r..=r).step_by(2) {
+            let p = (centre.0 + x as f32, centre.1 + z as f32);
+            if crate::distance(p, centre) < radii[index] && terrain::biome(p.0, p.1) == biome {
+                cells += 1;
+            }
+        }
+    }
+    cells * 4 * density
+}
+pub fn raid_attempt(game: u64, second: u32, group: u32) -> bool {
+    let mut x = game.wrapping_mul(0x9e3779b97f4a7c15)
+        ^ (second as u64).wrapping_mul(0xbf58476d1ce4e5b9)
+        ^ (group as u64).wrapping_mul(0x94d049bb133111eb);
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xbf58476d1ce4e5b9);
+    x ^= x >> 27;
+    x % 1800 == 0
+}
+
 pub fn defence(job: &str) -> (f32, f32) {
     match job {
         "hunters_post" => (14., 0.7),
@@ -205,7 +252,7 @@ pub fn defence(job: &str) -> (f32, f32) {
 mod balance_tests {
     use super::*;
     #[test]
-    fn predators_are_sparse_remote_and_delayed() {
+    fn predators_are_sparse_remote_but_raids_have_no_minimum_age() {
         assert_eq!(
             HERDS
                 .iter()
@@ -217,7 +264,8 @@ mod balance_tests {
         for h in HERDS.iter().filter(|h| predator(h.0) && h.1 > 0) {
             assert!((h.2 * h.2 + h.3 * h.3).sqrt() > PREDATOR_START_DISTANCE);
         }
-        assert!(FIRST_RAID_SECONDS >= 1200);
+        assert!((1..12000).any(|game| raid_attempt(game, 1, 9)));
+        assert!((1..1200).any(|game| !raid_attempt(game, 1, 9)));
     }
     #[test]
     fn professions_defend_with_different_weapons() {
@@ -240,5 +288,27 @@ mod balance_tests {
         }
         assert!(n > 0);
         assert!(terrain::construction_height(k, 0., 0., 0).is_none());
+    }
+}
+
+#[cfg(test)]
+mod extraction_tests {
+    use super::*;
+    #[test]
+    fn deposits_scale_with_actual_field_area_and_take_hours_to_exhaust() {
+        let small = deposit_capacity(STONE, 3);
+        let large = deposit_capacity(STONE, 2);
+        assert!(small > 10000);
+        assert!(large > small * 2);
+        assert!(deposit_capacity(IRON, 3) > deposit_capacity(IRON, 4));
+        assert!(TREE_WOOD * production_seconds("saw_pit") >= 120);
+        assert_eq!(crate::STARTING_RESOURCE_AMOUNT, 30);
+    }
+    #[test]
+    fn cart_can_stand_on_both_resource_fields() {
+        for k in [crate::BuildingKind::OxTether] {
+            assert!(terrain::construction_height(k, -55., -35., 0).is_some());
+            assert!(terrain::construction_height(k, -77., 15., 0).is_some());
+        }
     }
 }

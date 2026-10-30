@@ -68,6 +68,7 @@ pub enum BuildingKind {
     StoneWallHigh,
     StoneWallCrenellated,
     DrawbridgeGate,
+    WoodenWall,
 }
 struct Definition {
     name: &'static str,
@@ -79,7 +80,7 @@ struct Definition {
     max: [f32; 3],
     grid: [u16; 2],
 }
-const DEFINITIONS: [Definition; 63] = [
+const DEFINITIONS: [Definition; 64] = [
     Definition {
         name: "granary",
         label: "Kornspeicher",
@@ -526,13 +527,13 @@ const DEFINITIONS: [Definition; 63] = [
     },
     Definition {
         name: "market",
-        label: "Markt",
+        label: "Römischer Marktplatz",
         category: "supply",
         scene: "models/buildings/supply/market/mesh.glb#Scene0",
         collision: "models/buildings/supply/market/collision.glb#Mesh0/Primitive0",
-        min: [4.5623779296875, -1.3071271496301051e-05, -606.4649658203125],
-        max: [615.831298828125, 786.8338012695312, -8.393310546875],
-        grid: [3, 3],
+        min: [-320., 0., -300.],
+        max: [320., 470., 300.],
+        grid: [4, 3],
     },
     Definition {
         name: "saw_pit",
@@ -739,9 +740,19 @@ const DEFINITIONS: [Definition; 63] = [
         max: [780.0, 900.0, 3600.0],
         grid: [8, 20],
     },
+    Definition {
+        name: "wooden_wall",
+        label: "Holzwall (4 m)",
+        category: "fortifications",
+        scene: "models/buildings/fortifications/wooden_wall/mesh.glb#Scene0",
+        collision: "models/buildings/fortifications/wooden_wall/collision.glb#Mesh0/Primitive0",
+        min: [-107., 0., -107.],
+        max: [107., 480., 107.],
+        grid: [1, 1],
+    },
 ];
 impl BuildingKind {
-    pub const ALL: [Self; 63] = [
+    pub const ALL: [Self; 64] = [
         Self::Granary,
         Self::Barracks,
         Self::Stockpile,
@@ -805,6 +816,7 @@ impl BuildingKind {
         Self::StoneWallHigh,
         Self::StoneWallCrenellated,
         Self::DrawbridgeGate,
+        Self::WoodenWall,
     ];
     pub fn index(self) -> usize {
         self as usize

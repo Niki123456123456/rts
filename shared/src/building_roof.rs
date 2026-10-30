@@ -74,9 +74,9 @@ impl BuildingKind {
             Self::Keep => RoofProfile {
                 height: 5.4,
                 half_x: 4.7,
-                half_z: 3.0,
+                half_z: 3.5,
                 hatch: (4.1, 2.7),
-                doors: &[(6.5, 10.6)],
+                doors: &[(6.5, 10.6), (-6.5, 10.6)],
             },
             Self::StoneWallLow | Self::StoneWallHigh | Self::StoneWallCrenellated => RoofProfile {
                 height: match self {
@@ -148,6 +148,13 @@ impl BuildingKind {
                 half_z: 4.5,
                 hatch: (0., 4.3),
                 doors: &[(0., 9.0)],
+            },
+            Self::WoodenWall => RoofProfile {
+                height: 4.1,
+                half_x: 0.65,
+                half_z: 0.65,
+                hatch: (0., 0.),
+                doors: &[],
             },
             Self::TowerWooden => RoofProfile {
                 height: 4.1,
@@ -245,6 +252,16 @@ impl BuildingRoof {
     pub fn door(self, door: u8) -> Point {
         self.world(self.profile.doors[door as usize])
     }
+    pub fn hatch_for_door(self, door: u8) -> Point {
+        let p = self.profile.hatch;
+        self.world(
+            if self.profile.height == 5.4 && self.profile.doors.len() == 2 && door == 1 {
+                (-p.0, p.1)
+            } else {
+                p
+            },
+        )
+    }
     pub fn hatch(self) -> Point {
         self.world(self.profile.hatch)
     }
@@ -331,7 +348,7 @@ mod tests {
                     match kind {
                         BuildingKind::TowerSquare => (8, 8),
                         BuildingKind::StoneWall => (3, 3),
-                        BuildingKind::Keep => (13, 8),
+                        BuildingKind::Keep => (13, 10),
                         _ => (5, 5),
                     }
                 );
@@ -401,6 +418,30 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod palace_stair_tests {
+    use super::*;
+    #[test]
+    fn both_staircases_have_their_own_connected_roof_landing() {
+        for rotation in 0..4 {
+            let roof = BuildingRoof::new(BuildingKind::Keep, 20., 0., 30., rotation).unwrap();
+            assert_eq!(roof.door_count(), 2);
+            for door in 0..2 {
+                let hatch = roof.hatch_for_door(door);
+                assert!(roof.roof_contains(hatch));
+                assert!(roof.roof_path(hatch, roof.slot(0)).is_some());
+                let d = roof.local(roof.door(door));
+                let h = roof.local(hatch);
+                assert_eq!(d.0.signum(), h.0.signum());
+                assert!(crate::free(
+                    roof.door(door),
+                    &[BuildingKind::Keep.rotated_obstacle(20., 30., rotation)]
+                ));
             }
         }
     }

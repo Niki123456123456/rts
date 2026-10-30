@@ -44,7 +44,7 @@ Mitte der gezogenen Linie zentriert; eine unvollständige letzte Reihe ist mitti
 Kleine Kreise zeigen während des Ziehens die Ziele aller ausgewählten Einheiten.
 Loslassen erteilt den Befehl; Escape bricht ab. Blockierte Formationen werden
 vom Server abgelehnt. WASD verschiebt
-die Kamera, Q/E dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
+die Kamera, Q/R (oder Q/E) dreht sie, das Mausrad zoomt, die mittlere Maustaste verschiebt
 die Kamera per Ziehen.
 
 Die Spielfläche ist 800×800 Welteinheiten groß (vorher 80×80). Einheiten bewegen sich innerhalb

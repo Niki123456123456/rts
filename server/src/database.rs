@@ -408,6 +408,7 @@ pub fn leave_game(ctx: &ReducerContext) {
             replan(ctx, player.game_id);
             ctx.db.participant().connection_id().delete(connection_id);
         }
+        ctx.db.treasury().connection_id().delete(connection_id);
         ctx.db
             .player_resources()
             .connection_id()
@@ -779,6 +780,8 @@ fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
         .map_or(0, |row| row.quarter_turns)
 }
 fn delete_building(ctx: &ReducerContext, building_id: u64) {
+    ctx.db.civic_policy().building_id().delete(building_id);
+    ctx.db.close_gate_order().building_id().delete(building_id);
     ctx.db.keep_population().building_id().delete(building_id);
     ctx.db.settlement_needs().building_id().delete(building_id);
     ctx.db
@@ -1013,22 +1016,7 @@ pub fn build_wall(
     end_x: f32,
     end_z: f32,
 ) -> Result<(), String> {
-    let player = participant(ctx)?;
-    ensure_resources(ctx, &player);
-    let line = map::walls::wall_line((start_x, start_z), (end_x, end_z));
-    if line.is_empty() {
-        return Err("Choose valid wall endpoints inside the map.".into());
-    }
-    for (x, z) in line {
-        if ctx.db.building().game_id().filter(player.game_id).any(|b| {
-            b.kind == "stone_wall" && b.owner == player.connection_id && b.x == x && b.z == z
-        }) {
-            continue;
-        }
-        place_building(ctx, x, z, "stone_wall".into(), 0)?;
-    }
-    replan(ctx, player.game_id);
-    Ok(())
+    build_wall_kind(ctx, start_x, start_z, end_x, end_z, "stone_wall".into())
 }
 
 fn place_building(
@@ -1077,6 +1065,35 @@ fn place_building_for(
     }
     let (x, z) = kind.rotated_snap_position(x, z, quarter_turns);
     let shape = kind.construction_bounds(x, z, quarter_turns);
+    let candidate = fort::Structure {
+        id: 0,
+        kind,
+        x,
+        y: 0.,
+        z,
+        rotation: quarter_turns,
+        owner: player.color,
+    };
+    let existing = ctx
+        .db
+        .building()
+        .game_id()
+        .filter(player.game_id)
+        .collect::<Vec<_>>();
+    if kind.is_wall()
+        && existing.iter().any(|b| {
+            b.owner == player.connection_id && fort::covered_wall((x, z), fort_piece(ctx, b))
+        })
+    {
+        return Ok(());
+    }
+    let replaced = existing
+        .iter()
+        .filter(|b| {
+            b.owner == player.connection_id && fort::replaced_wall(candidate, fort_piece(ctx, b))
+        })
+        .collect::<Vec<_>>();
+
     ensure_ecology(ctx, player.game_id);
     let required = match kind {
         map::BuildingKind::Quarry => Some(1),
@@ -1123,23 +1140,32 @@ fn place_building_for(
             if wall { "wall-segment" } else { "building" }
         ));
     }
-    if ctx.db.building().game_id().filter(player.game_id).any(|b| {
+    if existing.iter().any(|b| {
         shape.overlaps(
             map::BuildingKind::from_name(&b.kind)
                 .unwrap_or_default()
                 .construction_bounds(b.x, b.z, rotation(ctx, b.id)),
-        )
+        ) && !(b.owner == player.connection_id
+            && (fort::replaced_wall(candidate, fort_piece(ctx, b))
+                || fort::may_join(candidate, fort_piece(ctx, b))))
     }) {
-        return Err("Buildings cannot overlap.".into());
+        return Err("Gebäude dürfen sich nicht überschneiden.".into());
     }
+
     if ctx
         .db
         .army_unit()
         .game_id()
         .filter(player.game_id)
         .any(|u| {
-            on_ground(ctx, &u)
-                && kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z))
+            (on_ground(ctx, &u)
+                && kind.rotated_blocks_construction_unit(x, z, quarter_turns, (u.x, u.z)))
+                || ctx
+                    .db
+                    .tower_occupant()
+                    .unit_id()
+                    .find(u.id)
+                    .is_some_and(|o| replaced.iter().any(|b| b.id == o.building_id))
         })
     {
         return Err("Units are standing in the construction area.".into());
@@ -1165,16 +1191,48 @@ fn place_building_for(
     }
     let y = map::terrain::construction_height(kind, x, z, quarter_turns).ok_or(
         "Unpassendes Gelände: Holzfäller brauchen Wald, Steinbrüche Stein und Eisenminen Erz. Normale Gebäude dürfen auf Land, aber nicht auf Fels oder Wasser stehen.")?;
-    // Only the automatic one-time starting keep is free.
-    if !(kind == map::BuildingKind::Keep
+    let refund = replaced.iter().fold(map::Cost::new(0, 0, 0), |sum, old| {
+        let cost = map::BuildingKind::from_name(&old.kind).unwrap().cost();
+        map::Cost::new(
+            sum.wood + cost.wood,
+            sum.stone + cost.stone,
+            sum.iron + cost.iron,
+        )
+    });
+    // Settle only the net cost, so replacement also works when a warehouse is full.
+    // Only the automatic one-time starting palace is free.
+    let cost = if kind == map::BuildingKind::Keep
         && ctx
             .db
             .player_keep_spawn()
             .connection_id()
             .find(player.connection_id)
-            .is_none())
+            .is_none()
     {
-        debit_cost(ctx, player, kind.cost())?;
+        map::Cost::new(0, 0, 0)
+    } else {
+        kind.cost()
+    };
+    debit_cost(
+        ctx,
+        player,
+        map::Cost::new(
+            cost.wood.saturating_sub(refund.wood),
+            cost.stone.saturating_sub(refund.stone),
+            cost.iron.saturating_sub(refund.iron),
+        ),
+    )?;
+    exchange_goods(ctx, player, 0, refund.wood.saturating_sub(cost.wood), true)?;
+    exchange_goods(
+        ctx,
+        player,
+        1,
+        refund.stone.saturating_sub(cost.stone),
+        true,
+    )?;
+    exchange_goods(ctx, player, 2, refund.iron.saturating_sub(cost.iron), true)?;
+    for old in &replaced {
+        delete_building(ctx, old.id);
     }
     let placed = ctx.db.building().insert(Building {
         id: 0,
@@ -1328,3 +1386,5 @@ pub fn build_wall_kind(
 }
 
 include!("saves.rs");
+
+include!("civic.rs");

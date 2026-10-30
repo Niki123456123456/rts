@@ -218,6 +218,40 @@ fn satisfaction_details(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
     };
     ui.heading(format!("{}% · {} Bewohner", n.happiness, count));
     ui.label(format!("Grundzufriedenheit: {} Punkte", stage.base));
+    if let Some(p) = multiplayer.snapshot.policies.iter().find(|p| {
+        multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .any(|b| b.id == p.building_id && b.owned)
+    }) {
+        let food = multiplayer
+            .snapshot
+            .resources
+            .map_or(0, |s| s.apples + s.bread + s.cheese + s.meat)
+            + multiplayer
+                .snapshot
+                .fish_stocks
+                .iter()
+                .filter(|f| {
+                    multiplayer
+                        .snapshot
+                        .buildings
+                        .iter()
+                        .any(|b| b.id == f.building_id && b.owned)
+                })
+                .map(|f| f.amount)
+                .sum::<u32>();
+        let ration = if p.rations <= 4 || food > 0 {
+            map::civic::RATION_HAPPINESS[p.rations as usize]
+        } else {
+            0
+        };
+        ui.label(format!(
+            "Rationen: {ration:+} Punkte · Steuern: {:+} Punkte",
+            map::civic::TAX_HAPPINESS[p.taxes as usize]
+        ));
+    }
     ui.small("Mit wachsender Bevölkerung steigen die Ansprüche.");
     ui.separator();
     egui::Grid::new("needs_factors")

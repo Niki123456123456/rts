@@ -95,11 +95,11 @@ fn entry_plan(
     (0..tower.door_count())
         .filter_map(|door| {
             let path = map::shortest_path((u.x, u.z), tower.door(door), &obstacles)?;
-            let hatch = tower.hatch();
+            let hatch = tower.hatch_for_door(door);
             let cost = map::path_length((u.x, u.z), &path);
             let (points, modes) = if b.kind == "keep" || b.kind == "drawbridge_gate" {
                 let top = tower.world(if b.kind == "keep" {
-                    (6.5, 3.0)
+                    (if door == 1 { -6.5 } else { 6.5 }, 3.0)
                 } else {
                     (6.4, 2.5)
                 });
@@ -150,7 +150,7 @@ fn start_roof_entry_using(
         });
     } else {
         let roof = tower
-            .roof_path(tower.hatch(), tower.slot(slot as usize))
+            .roof_path(tower.hatch_for_door(door), tower.slot(slot as usize))
             .ok_or("Roof destination is unreachable.")?;
         points.extend(roof);
         modes.resize(points.len(), 0);
@@ -269,6 +269,40 @@ pub fn move_to_roof(
                 o.next_slot = slot as u8;
                 ctx.db.tower_occupant().unit_id().update(o);
                 ctx.db.army_unit().id().update(u);
+            } else if !on_ground(ctx, &u)
+                && ctx.db.tower_travel().unit_id().find(u.id).is_none()
+                && map::walls::surface_route(
+                    o.building_id,
+                    b.id,
+                    &roof_pieces(ctx, b.game_id, b.owner),
+                )
+                .is_some()
+            {
+                let structures = roof_pieces(ctx, b.game_id, b.owner);
+                let route = map::walls::surface_route(o.building_id, b.id, &structures).unwrap();
+                let current = ctx.db.building().id().find(o.building_id).unwrap();
+                let old_roof = tower_geometry(ctx, &current);
+                let mut points = old_roof
+                    .roof_path((u.x, u.z), route[0])
+                    .ok_or("Der Dachübergang ist blockiert.")?;
+                points.extend(
+                    route
+                        .iter()
+                        .skip(1)
+                        .map(|p| (p.0, tower.roof_y() + roof::UNIT_CENTER_HEIGHT, p.1)),
+                );
+                points.extend(
+                    tower
+                        .roof_path(*route.last().unwrap(), tower.slot(slot))
+                        .ok_or("Dach nicht erreichbar.")?,
+                );
+                let modes = vec![4; points.len()];
+                store_travel(ctx, &u, b.id, points, modes, false, false);
+                o.next_building = Some(b.id);
+                o.next_slot = slot as u8;
+                o.door = 0;
+                ctx.db.tower_occupant().unit_id().update(o);
+                ctx.db.unit_order().unit_id().delete(u.id);
             } else {
                 depart_tower(ctx, &u)?;
                 ctx.db.unit_order().unit_id().delete(u.id);
@@ -342,13 +376,13 @@ fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String
         Vec::new()
     } else {
         tower
-            .roof_path((u.x, u.z), tower.hatch())
+            .roof_path((u.x, u.z), tower.hatch_for_door(o.door))
             .ok_or("Cannot reach the hatch.")?
     };
     let mut modes = vec![0; points.len()];
     if b.kind == "keep" || b.kind == "drawbridge_gate" {
         let top = tower.world(if b.kind == "keep" {
-            (6.5, 3.0)
+            (if o.door == 1 { -6.5 } else { 6.5 }, 3.0)
         } else {
             (6.4, 2.5)
         });

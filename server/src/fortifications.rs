@@ -71,6 +71,11 @@ fn fort_obstacles(ctx: &ReducerContext, game: u64) -> Vec<Obstacle> {
             solids.push(building_shape(ctx, &b));
         }
     }
+    solids.extend(
+        fort::joins(&fort_pieces(ctx, game))
+            .into_iter()
+            .map(|j| j.shape),
+    );
     let mut water = map::terrain::obstacles();
     water.extend(ctx.db.moat().game_id().filter(game).map(|m| moat_shape(&m)));
     for deck in decks {
@@ -397,4 +402,24 @@ fn remove_fort_building(ctx: &ReducerContext, id: u64) {
     {
         ctx.db.wall_stair().id().delete(s.id);
     }
+}
+
+fn fort_piece(ctx: &ReducerContext, b: &Building) -> fort::Structure {
+    fort::Structure {
+        id: b.id,
+        kind: map::BuildingKind::from_name(&b.kind).unwrap_or_default(),
+        x: b.x,
+        y: b.y,
+        z: b.z,
+        rotation: rotation(ctx, b.id),
+        owner: b.color,
+    }
+}
+fn fort_pieces(ctx: &ReducerContext, game: u64) -> Vec<fort::Structure> {
+    ctx.db
+        .building()
+        .game_id()
+        .filter(game)
+        .map(|b| fort_piece(ctx, &b))
+        .collect()
 }

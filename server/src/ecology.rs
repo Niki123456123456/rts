@@ -128,7 +128,7 @@ fn ensure_ecology(ctx: &ReducerContext, game_id: u64) {
             phase_ticks: 0,
         });
     }
-    for (kind, sites, capacity, offset) in [
+    for (kind, sites, _capacity, offset) in [
         (
             1,
             map::terrain::STONE.as_slice(),
@@ -138,6 +138,7 @@ fn ensure_ecology(ctx: &ReducerContext, game_id: u64) {
         (2, map::terrain::IRON.as_slice(), nature::IRON_AMOUNT, 20000),
     ] {
         for (i, p) in sites.iter().enumerate() {
+            let capacity = nature::deposit_capacity(kind, i);
             ctx.db.resource_node().insert(ResourceNode {
                 id: 0,
                 game_id,
@@ -257,26 +258,15 @@ pub fn assign_ox_cart(ctx: &ReducerContext, building_id: u64) -> Result<(), Stri
     if cart_for(ctx, b.id).is_some() {
         return Ok(());
     }
-    let mut carts = ctx
-        .db
-        .ox_cart()
-        .game_id()
-        .filter(b.game_id)
-        .filter(|c| {
-            c.source_building.is_none()
-                && ctx
-                    .db
-                    .building()
-                    .id()
-                    .find(c.building_id)
-                    .is_some_and(|h| h.owner == b.owner)
-        })
-        .collect::<Vec<_>>();
-    carts.sort_by_key(|c| c.building_id);
-    let mut cart = carts
-        .into_iter()
-        .next()
-        .ok_or("Baue einen weiteren Ochsenplatz für einen freien Karren.")?;
+    reconcile_carts(ctx);
+    if cart_for(ctx, b.id).is_some() {
+        Ok(())
+    } else {
+        Err("Baue einen freien Ochsenplatz im Umkreis von 80 m.".into())
+    }
+}
+
+fn attach_cart(ctx: &ReducerContext, mut cart: OxCart, b: &Building) -> Result<(), String> {
     cart.source_building = Some(b.id);
     ctx.db.ox_cart().building_id().update(cart);
     for w in ctx.db.worker().source_building().filter(b.id) {
@@ -620,6 +610,7 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
         }
         let obs = obstacles(ctx, game);
         balance_predators(ctx, game);
+        upgrade_resource_sizes(ctx, game);
         let units = ctx
             .db
             .army_unit()
@@ -848,17 +839,7 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                 }
             }
             // Rare pack/bear excursions only enter a settlement if its camp is reachable.
-            if predator
-                && state.seconds
-                    >= ctx
-                        .db
-                        .predator_peace()
-                        .game_id()
-                        .find(game)
-                        .map_or(u32::MAX, |p| p.until_seconds)
-                && state.seconds % 600 == 0
-                && a.group_id == (9 + (state.seconds / 600) % 6)
-            {
+            if predator && nature::raid_attempt(game, state.seconds, a.group_id) {
                 if let Some(keep) = ctx
                     .db
                     .building()
@@ -871,7 +852,7 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                     })
                 {
                     let goal = tower_geometry(ctx, &keep).world((0., 11.));
-                    if map::distance((a.x, a.z), goal) < 260.
+                    if map::distance((a.x, a.z), goal) < 750.
                         && map::shortest_path((a.x, a.z), goal, &obs).is_some()
                     {
                         ctx.db.wildlife_order().animal_id().delete(a.id);
@@ -899,7 +880,9 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                             .filter(game)
                             .filter(|b| b.kind == "keep")
                             .find(|b| {
-                                map::distance(tower_geometry(ctx, b).world((0., 11.)), goal) < 1.
+                                !policy_for(ctx, b).alarm
+                                    && map::distance(tower_geometry(ctx, b).world((0., 11.)), goal)
+                                        < 1.
                             })
                         {
                             if let Some(mut pop) =
@@ -949,18 +932,6 @@ fn balance_predators(ctx: &ReducerContext, game: u64) {
         .filter(game)
         .filter(|b| b.kind == "keep")
         .collect::<Vec<_>>();
-    if ctx.db.predator_peace().game_id().find(game).is_none() {
-        let now = ctx
-            .db
-            .ecology_state()
-            .game_id()
-            .find(game)
-            .map_or(0, |s| s.seconds);
-        ctx.db.predator_peace().insert(PredatorPeace {
-            game_id: game,
-            until_seconds: now + nature::FIRST_RAID_SECONDS,
-        });
-    }
     let initial = ctx.db.predator_revision().game_id().find(game).is_none();
     for group in 9..15usize {
         let mut animals = ctx
@@ -1050,4 +1021,120 @@ fn fishing_bank(b: &Building, from: map::Point, obs: &[Obstacle]) -> Option<map:
     return points
         .into_iter()
         .find(|p| map::shortest_path(from, *p, obs).is_some());
+}
+
+fn reconcile_carts(ctx: &ReducerContext) {
+    let carts = ctx.db.ox_cart().iter().collect::<Vec<_>>();
+    for mut c in carts {
+        let Some(home) = ctx.db.building().id().find(c.building_id) else {
+            continue;
+        };
+        if ctx
+            .db
+            .participant()
+            .connection_id()
+            .find(home.owner)
+            .is_none()
+        {
+            continue;
+        }
+        if let Some(source) = c.source_building {
+            if ctx
+                .db
+                .worker()
+                .source_building()
+                .filter(source)
+                .any(|w| w.cargo > 0)
+            {
+                continue;
+            }
+            let valid = ctx.db.building().id().find(source).is_some_and(|b| {
+                b.owner == home.owner
+                    && map::distance((b.x, b.z), (home.x, home.z)) <= nature::CART_RANGE
+                    && building_open(ctx, b.id)
+                    && ctx
+                        .db
+                        .worker()
+                        .source_building()
+                        .filter(b.id)
+                        .next()
+                        .is_some()
+            });
+            if valid {
+                continue;
+            }
+            c.source_building = None;
+            ctx.db.ox_cart().building_id().update(c.clone());
+        }
+        let target = ctx
+            .db
+            .building()
+            .game_id()
+            .filter(home.game_id)
+            .filter(|b| {
+                b.owner == home.owner
+                    && matches!(b.kind.as_str(), "quarry" | "iron_mine" | "saw_pit")
+                    && building_open(ctx, b.id)
+                    && cart_for(ctx, b.id).is_none()
+                    && ctx
+                        .db
+                        .worker()
+                        .source_building()
+                        .filter(b.id)
+                        .next()
+                        .is_some()
+                    && map::distance((home.x, home.z), (b.x, b.z)) <= nature::CART_RANGE
+            })
+            .min_by(|a, b| {
+                let rank = |b: &Building| {
+                    (
+                        if b.kind == "saw_pit" { 1 } else { 0 },
+                        map::distance((home.x, home.z), (b.x, b.z)) as u32,
+                        b.id,
+                    )
+                };
+                rank(a).cmp(&rank(b))
+            });
+        if let Some(b) = target {
+            if attach_cart(ctx, c.clone(), &b).is_err() {
+                c.source_building = None;
+                ctx.db.ox_cart().building_id().update(c);
+            }
+        }
+    }
+}
+#[spacetimedb::table(name=resource_sizing_v2)]
+pub struct ResourceSizingV2 {
+    #[primary_key]
+    pub game_id: u64,
+}
+fn upgrade_resource_sizes(ctx: &ReducerContext, game: u64) {
+    if ctx.db.resource_sizing_v2().game_id().find(game).is_some() {
+        return;
+    }
+
+    for mut n in ctx
+        .db
+        .resource_node()
+        .game_id()
+        .filter(game)
+        .filter(|n| n.kind <= 2)
+        .collect::<Vec<_>>()
+    {
+        let target = match n.kind {
+            0 => nature::TREE_WOOD,
+            1 => nature::deposit_capacity(1, n.site.saturating_sub(10000) as usize),
+            _ => nature::deposit_capacity(2, n.site.saturating_sub(20000) as usize),
+        };
+        if n.capacity != target {
+            if n.remaining > 0 {
+                n.remaining = target.saturating_sub(n.capacity.saturating_sub(n.remaining));
+            }
+            n.capacity = target;
+            ctx.db.resource_node().id().update(n);
+        }
+    }
+    ctx.db
+        .resource_sizing_v2()
+        .insert(ResourceSizingV2 { game_id: game });
 }

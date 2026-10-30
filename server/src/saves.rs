@@ -350,6 +350,7 @@ pub fn save_game(ctx: &ReducerContext, title: String) -> Result<(), String> {
             })
             .id
     };
+    save_civic_world(ctx, id, p.game_id);
     let catalog = SaveCatalog {
         id,
         owner: ctx.sender,
@@ -654,6 +655,7 @@ pub fn load_game(ctx: &ReducerContext, save_id: u64) -> Result<(), String> {
     ctx.db
         .predator_revision()
         .insert(PredatorRevision { game_id: game.id });
+    restore_civic_world(ctx, save_id, game.id, &bids, &owners);
     claim_restored_player(ctx, game.id, connection)?;
     for u in ctx
         .db
@@ -791,6 +793,7 @@ fn claim_restored_player(
         identity: ctx.sender,
         game_id: game,
     });
+    claim_civic_owner(ctx, old.connection_id, connection);
     ctx.db.restored_player().id().delete(old.id);
     Ok(true)
 }

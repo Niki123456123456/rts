@@ -74,6 +74,7 @@ pub struct MigrationTick {
     pub scheduled_at: ScheduleAt,
 }
 fn register_keep(ctx: &ReducerContext, b: &Building) {
+    ensure_civic(ctx, b);
     let existing_jobs = employed_peasants(ctx, b.owner);
     ctx.db.keep_population().insert(KeepPopulation {
         building_id: b.id,
@@ -155,6 +156,7 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
                 .filter_map(|b| map::BuildingKind::from_name(&b.kind)),
         );
         state.seconds = state.seconds.saturating_add(1);
+        civic_tick(ctx, &keep, state.seconds);
         let employed = employed_peasants(ctx, keep.owner);
         state.arrived = state.arrived.max(employed);
         if state.seconds % 30 == 0 {

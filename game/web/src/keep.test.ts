@@ -1,3 +1,4 @@
+import {prepareCaches} from './cache';
 // Uses an isolated local database, never an existing player's world.
 import assert from 'node:assert/strict';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
@@ -12,9 +13,10 @@ async function connect() {
     DbConnection.builder().withUri(process.env.SPACETIMEDB_URI ?? 'http://127.0.0.1:18766')
       .withModuleName(process.env.SPACETIMEDB_DATABASE ?? 'stronghold-terrain-test')
       .onConnect(db => {
+        prepareCaches(db.db);
         clients.push(db);
         db.subscriptionBuilder().onApplied(() => resolve(db)).onError(ctx => reject(ctx.event))
-          .subscribe(['SELECT * FROM game','SELECT * FROM participant','SELECT * FROM building',
+          .subscribe(['SELECT * FROM game','SELECT * FROM player_resources','SELECT * FROM participant','SELECT * FROM building',
             'SELECT * FROM keep_population','SELECT * FROM army_unit','SELECT * FROM unit_profile',
             'SELECT * FROM tower_occupant','SELECT * FROM worker']);
       }).onConnectError((_ctx, error) => reject(error)).build();
@@ -37,7 +39,7 @@ try {
   const membership=Array.from(a.db.participant.iter()).find(p=>p.connectionId.toHexString()===a.connectionId.toHexString())!;
   const game=membership.gameId;
   const buildings=()=>Array.from(a.db.building.iter()).filter(row=>row.gameId===game);
-  const build=(kind:string,x:number,z:number,rotation=0)=>status(a,cb=>a.reducers.onBuildRotated(cb),()=>a.reducers.buildRotated(x,z,kind,rotation));
+  const build=async(kind:string,x:number,z:number,rotation=0)=>{const wood=({stockpile:4,saw_pit:6,apple_farm:8,granary:8,housing:6,barracks:15} as Record<string,number>)[kind]??0;await until(()=>a.db.playerResources.connectionId.find(a.connectionId)!.wood>=wood,`wood economy funds ${kind}`,240000);return status(a,cb=>a.reducers.onBuildRotated(cb),()=>a.reducers.buildRotated(x,z,kind,rotation));};
   const lord=()=>Array.from(a.db.armyUnit.iter()).find(u=>u.gameId===game && u.owner.toHexString()===a.connectionId.toHexString() && u.number===1)!;
   await until(()=>buildings().some(b=>b.kind==='keep'),'keep generated when game is created');
   const keep=buildings().find(b=>b.kind==='keep')!;
@@ -47,6 +49,8 @@ try {
   await until(()=>!!a.db.towerOccupant.unitId.find(lord().id),'lord starts on terrace');
   assert.ok(Math.abs(lord().y-6.15)<.02,'lord stands at 5.4 m terrace height');
   assert.equal((await build('keep',-60,0)).tag,'Failed','one keep per player');
+  assert.equal((await build('stockpile',-9,-43)).tag,'Committed');
+  assert.equal((await build('saw_pit',40,-43)).tag,'Committed');
   assert.equal((await build('apple_farm',0,24)).tag,'Committed','empty workplaces can be built before immigration');
   assert.equal((await build('granary',-9,-23)).tag,'Committed','food attracts new peasants');
   assert.equal((await status(b,cb=>b.reducers.onJoinGame(cb),()=>b.reducers.joinGame(game))).tag,'Committed');
@@ -73,6 +77,7 @@ try {
   const barracks=buildings().find(row=>row.kind==='barracks'&&row.owner.toHexString()===a.connectionId.toHexString())!;
   for(const kind of ['armed_peasant','archer']) {
     await until(()=>a.db.keepPopulation.buildingId.find(keep.id)!.arrived>Array.from(a.db.worker.iter()).filter(w=>w.gameId===game).length,'a free peasant is available for recruitment',20000);
+    await until(()=>a.db.playerResources.connectionId.find(a.connectionId)!.wood>=(kind==='archer'?6:1),'wood for recruit',90000);
     assert.equal((await status(a,cb=>a.reducers.onRecruitUnit(cb),()=>a.reducers.recruitUnit(barracks.id,kind))).tag,'Committed');
     const profile=Array.from(a.db.unitProfile.iter()).find(p=>p.gameId===game&&p.kind===kind&&a.db.armyUnit.id.find(p.unitId)?.owner.toHexString()===a.connectionId.toHexString())!;
     const soldier=()=>a.db.armyUnit.id.find(profile.unitId)!;

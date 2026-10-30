@@ -147,21 +147,21 @@ def generate():
     for x in [-4,0,4]:
         box(x,7.3,-3.93,1.1,2.4,.08,black)
         arch(x,-3.77,7.95,.57)
-    for x in [-5.5,5.5]: banner(x,5.55,2.9)
-    for x in [-3.0,3.0]: banner(x,-3.79,8.15)
+    for x in [-2.0,2.0]: banner(x,-3.79,8.15)
     # Terrace balustrade, open on the east for the staircase.
     for x in [-5.9,5.9]:
-        box(x,6.25,.0,.35,.18,8.7,trim)
-        for z in range(-3,5): cylinder(x,5.87,z,.095,.7,trim,8)
-    box(-.8,6.25,4.75,10.1,.18,.38,trim)
-    for i in range(17): cylinder(-5.6+i*.58,5.87,4.75,.095,.7,trim,8)
+        box(x,6.25,-.9,.35,.18,6.8,trim)
+        for z in range(-3,3): cylinder(x,5.87,z,.095,.7,trim,8)
+    box(0,6.25,4.75,11.7,.18,.38,trim)
+    for i in range(20): cylinder(-5.6+i*.58,5.87,4.75,.095,.7,trim,8)
     # Real outside staircase. Shared navigation uses its centreline.
-    for step in range(27):
-        h=5.4*(27-step)/27; z=3.0+(step+.5)*7.4/27
-        box(6.5,h/2,z,2.8,h,7.4/27-.008,rng.choice(stone))
-    box(5.25,5.30,3.0,2.6,.22,1.0,trim)
+    for sign in [-1,1]:
+        for step in range(27):
+            h=5.4*(27-step)/27; z=3.0+(step+.5)*7.4/27
+            box(sign*6.5,h/2,z,2.8,h,7.4/27-.008,rng.choice(stone))
+        box(sign*5.25,5.30,3.0,2.6,.22,1.0,trim)
     # Low stone cheeks follow the stair incline.
-    for side in [5.0,8.0]:
+    for side in [-8.0,-5.0,5.0,8.0]:
         for step in range(27):
             h=5.4*(27-step)/27
             box(side,h/2+.34,3.0+(step+.5)*7.4/27,.26,h+.68,7.4/27,trim)
@@ -177,9 +177,9 @@ def generate():
             dx=math.sin(angle)*sign*.6; dz=math.cos(angle)*sign*.6
             box(x+dx,.28,z+dz,.28,.55,.25,wood)
     # Terracotta pots and cypresses at the entrance.
-    for x in [-7.3,7.3]:
-        cylinder(x,.38,5.9,.46,.7,roof[2],12,top_radius=.57)
-        cylinder(x,1.70,5.9,.48,2.0,leaf,10,top_radius=.06)
+    for x in [-3.,3.]:
+        cylinder(x,.38,6.3,.46,.7,roof[2],12,top_radius=.57)
+        cylinder(x,1.70,6.3,.48,2.0,leaf,10,top_radius=.06)
     write_model()
     minimum, maximum = [-800.,0.,-800.],[800.,1300.,800.]
     # A single collision box, separate from the detailed render mesh.

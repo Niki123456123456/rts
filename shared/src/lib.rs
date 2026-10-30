@@ -7,6 +7,7 @@ pub const HALF_Z: f32 = (567.28033 - 60.11186) * MODEL_SCALE / 2.0;
 mod building_catalog;
 pub mod building_roof;
 pub mod camp;
+pub mod civic;
 pub mod ecology;
 pub mod fortifications;
 pub mod logistics;
@@ -20,7 +21,7 @@ pub const MAP_SIZE: f32 = 800.0;
 pub const MAP_LIMIT: f32 = MAP_SIZE * 0.5 - 1.0;
 /// Grid lines lie at multiples of two metres on both world axes.
 pub const BUILD_GRID_SIZE: f32 = 2.0;
-pub const STARTING_RESOURCE_AMOUNT: u32 = 120;
+pub const STARTING_RESOURCE_AMOUNT: u32 = 30;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cost {
@@ -46,6 +47,7 @@ impl BuildingKind {
     pub fn cost(self) -> Cost {
         use BuildingKind::*;
         let (w, s, i) = match self {
+            WoodenWall => (2, 0, 0),
             StoneWallLow => (0, 1, 0),
             StoneWall => (0, 2, 0),
             StoneWallHigh => (0, 3, 0),
@@ -63,7 +65,7 @@ impl BuildingKind {
             TowerLookout | TowerStairwell => (5, 12, 0),
             TowerSquare | TowerRoundShort | TowerRoundTall | TowerGreat => (8, 24, 2),
             Quarry | IronMine => (12, 4, 2),
-            OxTether => (10, 2, 2),
+            OxTether => (8, 2, 2),
             SawPit => (6, 0, 0),
             HuntersPost => (8, 0, 2),
             Fishpond => (10, 0, 1),
@@ -80,7 +82,11 @@ impl BuildingKind {
     pub fn is_wall(self) -> bool {
         matches!(
             self,
-            Self::StoneWall | Self::StoneWallLow | Self::StoneWallHigh | Self::StoneWallCrenellated
+            Self::StoneWall
+                | Self::StoneWallLow
+                | Self::StoneWallHigh
+                | Self::StoneWallCrenellated
+                | Self::WoodenWall
         )
     }
     pub fn is_gate(self) -> bool {
@@ -607,7 +613,7 @@ mod tests {
                 .iter()
                 .filter(|kind| kind.category() == "fortifications")
                 .count(),
-            24
+            25
         );
         for (index, kind) in BuildingKind::ALL.into_iter().enumerate() {
             assert_eq!(kind.index(), index);
@@ -748,3 +754,24 @@ pub mod units;
 
 pub mod combat;
 pub mod ranged;
+
+impl BuildingKind {
+    pub fn is_tower(self) -> bool {
+        matches!(
+            self,
+            Self::TowerWooden
+                | Self::TowerLookout
+                | Self::TowerStairwell
+                | Self::TowerSquare
+                | Self::TowerRoundShort
+                | Self::TowerRoundTall
+                | Self::TowerGreat
+                | Self::Watchpost
+                | Self::FlagTower
+                | Self::TowerWalk
+        )
+    }
+    pub fn is_anchor(self) -> bool {
+        self.is_tower() || self.is_gate()
+    }
+}

@@ -1,6 +1,7 @@
 //! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
 
 mod buildings;
+mod civic;
 mod combat_units;
 mod dairy;
 mod ecology;
@@ -60,6 +61,7 @@ fn main() {
         .init_resource::<Multiplayer>()
         .init_resource::<BuildingInteraction>()
         .init_resource::<ecology::EcologyInteraction>()
+        .add_systems(PreUpdate, camera_shortcuts.after(bevy::input::InputSystems))
         .add_systems(
             Startup,
             (
@@ -136,6 +138,7 @@ fn main() {
             (
                 lobby_ui,
                 roman::save_ui,
+                civic::ui,
                 resources::resource_ui,
                 ecology::animal_ui,
                 combat_units::unit_health_ui,
@@ -322,7 +325,8 @@ fn setup(
             // Change the width of the area that triggers edge pan. 0.1 is 10% of the window height.
             edge_pan_width: 0.1,
             // Increase pan speed
-            pan_speed: 25.0,
+            pan_speed: 75.0,
+            key_rotate_speed: 40.0,
             ..default()
         },
     ));
@@ -957,7 +961,7 @@ fn selection_ui(
                     let response = menu_ui::building_button(ui, menu_texture, kind, true);
                     let hint = if kind.is_wall() {
                         if building_interaction.wall_start.is_some() {
-                            format!("Steinmauer: Endpunkt anklicken. {} Stein. Rechtsklick / Esc bricht ab.", building_interaction.wall_cost)
+                            format!("{}: Endpunkt anklicken. {} Holz · {} Stein. Rechtsklick / Esc bricht ab.",kind.label(),building_interaction.wall_cost*kind.cost().wood,building_interaction.wall_cost*kind.cost().stone)
                         } else {
                             format!("{}: Startpunkt und Endpunkt wählen. {} je Segment.",kind.label(),kind.cost().label())
                         }
@@ -1042,8 +1046,8 @@ fn selection_ui(
                         }
                         if building.kind=="ox_tether" {
                             let assigned=multiplayer.snapshot.ox_carts.iter().find(|c|c.building_id==building.id).and_then(|c|c.source_building);
-                            ui.label(if assigned.is_some(){"Karren einem Betrieb zugeteilt"}else{"Freier Ochsenkarren · 20 Einheiten Ladung"});
-                            ui.small("Stein und Eisen benötigen einen Karren. Beim gewünschten Betrieb zuweisen.");
+                            ui.label(if assigned.is_some(){"Karren versorgt automatisch einen nahen Betrieb"}else{"Freier Ochsenkarren · 20 Einheiten Ladung"});
+                            ui.small("Sucht automatisch einen offenen Rohstoffbetrieb im Umkreis von 80 m.");
                         }
                         if building.kind == "keep" {
                             if let Some(state) = multiplayer.snapshot.keep_population.iter().find(|k| k.building_id == building.id) {
@@ -1075,7 +1079,7 @@ fn selection_ui(
                             );
                         }
                         if building.owned && kind.is_gate() {let open=multiplayer.snapshot.gates.iter().any(|g|g.building_id==building.id&&g.open);if ui.button(if open {"Tor schließen / Brücke heben"}else{"Tor öffnen / Brücke senken"}).clicked(){multiplayer.send(Action::SetGate{building_id:building.id,open:!open});}}
-                        if building.owned && menu_ui::remove_button(ui, menu_texture) {
+                        if building.owned && (ui.button("Gebäude abreißen").clicked() || menu_ui::remove_button(ui, menu_texture)) {
                             multiplayer.send(Action::RemoveBuilding {
                                 building_id: building.id,
                             });
@@ -1314,5 +1318,19 @@ mod tests {
         assert_eq!(selected.0, vec![previous, inside]);
         selected.select_rectangle(Vec2::ZERO, Vec2::splat(10.0), false, []);
         assert!(selected.0.is_empty());
+    }
+}
+
+fn camera_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    state: Res<BuildingInteraction>,
+    mut cameras: Query<&mut RtsCameraControls>,
+) {
+    for mut c in &mut cameras {
+        c.key_rotate_right = if state.placing.is_none() && keys.pressed(KeyCode::KeyR) {
+            KeyCode::KeyR
+        } else {
+            KeyCode::KeyE
+        };
     }
 }

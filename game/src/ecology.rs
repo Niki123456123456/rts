@@ -673,17 +673,7 @@ pub(crate) fn production_details(
         } else {
             "Transport benötigt einen Ochsenkarren"
         });
-        if b.owned {
-            let available = network.snapshot.ox_carts.iter().any(|c| {
-                c.source_building.is_none()
-                    && network
-                        .snapshot
-                        .buildings
-                        .iter()
-                        .any(|h| h.id == c.building_id && h.owned)
-            });
-            if ui.add_enabled(cart||available,egui::Button::new(if cart{"Karren freigeben"}else{"Karren zuweisen"})).on_hover_text("Jeder Ochsenplatz stellt einen Karren. Ein Karren kann genau einen Betrieb versorgen.").clicked(){network.send(if cart{Action::ReleaseOxCart{building_id:b.id}}else{Action::AssignOxCart{building_id:b.id}});}
-        }
+        ui.small("Nahe Ochsenkarren übernehmen den Transport automatisch (80 m).");
     }
     if b.kind == "hunters_post" {
         ui.small("Jagt Wild im Umkreis von 80 m. Auch Raubtiere können gejagt werden.");

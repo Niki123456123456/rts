@@ -1,3 +1,4 @@
+import {prepareCaches} from './cache';
 // Real-server needs/workforce test in an isolated database.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -10,8 +11,8 @@ async function until(test:()=>boolean,label:string,timeout=15000){
 }
 async function connect(){return new Promise<DbConnection>((resolve,reject)=>{
   DbConnection.builder().withUri('http://127.0.0.1:18766').withModuleName('stronghold-terrain-test')
-    .onConnect(db=>{clients.push(db);db.subscriptionBuilder().onApplied(()=>resolve(db)).onError(ctx=>reject(ctx.event))
-      .subscribe(['SELECT * FROM participant','SELECT * FROM building','SELECT * FROM army_unit',
+    .onConnect(db=>{prepareCaches(db.db);clients.push(db);db.subscriptionBuilder().onApplied(()=>resolve(db)).onError(ctx=>reject(ctx.event))
+      .subscribe(['SELECT * FROM player_resources','SELECT * FROM participant','SELECT * FROM building','SELECT * FROM army_unit',
         'SELECT * FROM worker','SELECT * FROM producer','SELECT * FROM granary_stock',
         'SELECT * FROM keep_population','SELECT * FROM settlement_needs','SELECT * FROM building_operation']);})
     .onConnectError((_ctx,error)=>reject(error)).build();
@@ -31,7 +32,7 @@ try{
   const keep=ownBuildings().find(row=>row.kind==='keep')!;
   const needs=()=>a.db.settlementNeeds.buildingId.find(keep.id)!;
   const population=()=>a.db.keepPopulation.buildingId.find(keep.id)!;
-  const build=(kind:string,x:number,z:number)=>status(a,cb=>a.reducers.onBuildRotated(cb),()=>a.reducers.buildRotated(x,z,kind,0));
+  const build=async(kind:string,x:number,z:number)=>{const wood=({stockpile:4,saw_pit:6,apple_farm:8,housing:6,granary:8,well:4,quarry:12,iron_mine:12} as Record<string,number>)[kind]??0;await until(()=>a.db.playerResources.connectionId.find(a.connectionId)!.wood>=wood,`wood economy funds ${kind}`,240000);return status(a,cb=>a.reducers.onBuildRotated(cb),()=>a.reducers.buildRotated(x,z,kind,0));};
   const remove=(id:bigint)=>status(a,cb=>a.reducers.onRemoveBuilding(cb),()=>a.reducers.removeBuilding(id));
   await until(()=>!!needs(),'initial satisfaction published');
   const startingScore=needs().happiness;
@@ -39,6 +40,8 @@ try{
   assert.equal(needs().immigrationSeconds,4);
   assert.equal(needs().water,0);
   assert.equal(needs().variety,0);
+  assert.equal((await build('stockpile',-9,-43)).tag,'Committed');
+  assert.equal((await build('saw_pit',40,-43)).tag,'Committed');
   assert.equal((await build('apple_farm',0,24)).tag,'Committed','empty workplaces can be constructed before peasants arrive');
   const farm=ownBuildings().find(row=>row.kind==='apple_farm')!;
   const workers=()=>Array.from(a.db.worker.iter()).filter(w=>w.sourceBuilding===farm.id);
@@ -96,10 +99,10 @@ try{
   assert.equal(workers().length,0,'automatic assignment never reopens a closed building');
   await until(()=>population().arrived>=8 && needs().water>0,'water becomes relevant at eight settlers',45000);
   assert.equal(needs().variety,0);
-  assert.ok(needs().happiness>startingScore);
+  assert.ok(needs().happiness>=80,'food and water sustain high happiness at eight settlers');
   await until(()=>b.db.buildingOperation.buildingId.find(farm.id)?.closed===true,'closed state replicates');
   for(const [kind,x,z] of [['saw_pit',40,-43],['quarry',-65,-35],['iron_mine',-80,15]] as const) {
-    assert.equal((await build(kind,x,z)).tag,'Committed',`${kind} can be built on a nearby resource`);
+    if(kind!=='saw_pit') assert.equal((await build(kind,x,z)).tag,'Committed',`${kind} can be built on a nearby resource`);
     const building=ownBuildings().find(row=>row.kind===kind)!;
     await until(()=>Array.from(a.db.worker.iter()).some(w=>w.sourceBuilding===building.id),`${kind} automatically receives a free peasant`);
   }

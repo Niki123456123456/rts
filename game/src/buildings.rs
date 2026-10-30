@@ -319,6 +319,8 @@ fn placement_valid(
         return false;
     }
     let shape = kind.construction_bounds(x, z, rotation);
+    let candidate = crate::fortifications::candidate(&multiplayer.snapshot, kind, x, z, rotation);
+    let refund = crate::fortifications::refund(&multiplayer.snapshot, candidate);
     shape.in_build_area()
         && (kind == BuildingKind::DrawbridgeGate
             || !multiplayer.snapshot.moats.iter().any(|m| {
@@ -340,20 +342,39 @@ fn placement_valid(
                 .buildings
                 .iter()
                 .any(|b| b.owned && b.kind == "keep"))
-        && multiplayer
-            .snapshot
-            .resources
-            .is_some_and(|s| kind.cost().affordable(s.wood, s.stone, s.iron))
+        && multiplayer.snapshot.resources.is_some_and(|s| {
+            kind.cost().affordable(
+                s.wood.saturating_add(refund.wood),
+                s.stone.saturating_add(refund.stone),
+                s.iron.saturating_add(refund.iron),
+            )
+        })
         && !multiplayer.snapshot.buildings.iter().any(|b| {
             shape.overlaps(
                 BuildingKind::from_name(&b.kind)
                     .unwrap_or_default()
                     .construction_bounds(b.x, b.z, b.rotation),
-            )
+            ) && !(b.owned
+                && (map::fortifications::replaced_wall(candidate, crate::fortifications::piece(b))
+                    || map::fortifications::may_join(candidate, crate::fortifications::piece(b))))
         })
         && !multiplayer.snapshot.units.iter().any(|u| {
-            (u.y - terrain_height(u.x, u.z) - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
-                && kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z))
+            ((u.y - terrain_height(u.x, u.z) - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
+                && kind.rotated_blocks_construction_unit(x, z, rotation, (u.x, u.z)))
+                || multiplayer.snapshot.buildings.iter().any(|b| {
+                    map::fortifications::replaced_wall(candidate, crate::fortifications::piece(b))
+                        && BuildingKind::from_name(&b.kind)
+                            .and_then(|k| k.roof_profile())
+                            .is_some_and(|p| {
+                                (u.y - b.y - p.height - map::building_roof::UNIT_CENTER_HEIGHT)
+                                    .abs()
+                                    < 0.12
+                                    && BuildingKind::from_name(&b.kind)
+                                        .unwrap()
+                                        .rotated_build_footprint(b.x, b.z, b.rotation)
+                                        .contains((u.x, u.z), 0.)
+                            })
+                })
         })
         && map::terrain::construction_height(kind, x, z, rotation).is_some()
 }
@@ -404,8 +425,34 @@ pub(crate) fn building_input(
         *drag = default();
         return;
     }
+    if state.placing.is_some() && mouse.just_pressed(MouseButton::Right) {
+        state.placing = None;
+        state.wall_start = None;
+        state.consumed = true;
+        *drag = default();
+        return;
+    }
     if !window.focused {
         return;
+    }
+    if keys.just_pressed(KeyCode::Delete)
+        && state.placing.is_none()
+        && !contexts
+            .ctx_mut()
+            .is_ok_and(|ctx| ctx.egui_wants_keyboard_input())
+    {
+        if let Some(id) = state.selected.filter(|id| {
+            multiplayer
+                .snapshot
+                .buildings
+                .iter()
+                .any(|b| b.id == *id && b.owned)
+        }) {
+            multiplayer.send(Action::RemoveBuilding { building_id: id });
+            state.selected = None;
+            state.consumed = true;
+            return;
+        }
     }
     if state.placing.is_some() {
         *drag = default();
@@ -477,11 +524,13 @@ pub(crate) fn building_input(
             let start = state.wall_start.unwrap_or(end);
             let line = map::walls::wall_line(start, end);
             let existing = |x: f32, z: f32| {
-                multiplayer
-                    .snapshot
-                    .buildings
-                    .iter()
-                    .any(|b| b.owned && b.kind == kind.name() && b.x == x && b.z == z)
+                multiplayer.snapshot.buildings.iter().any(|b| {
+                    b.owned
+                        && map::fortifications::covered_wall(
+                            (x, z),
+                            crate::fortifications::piece(b),
+                        )
+                })
             };
             let wall_count = multiplayer
                 .snapshot
@@ -489,17 +538,21 @@ pub(crate) fn building_input(
                 .iter()
                 .filter(|b| BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_wall()))
                 .count();
-            state.wall_cost =
-                line.iter().filter(|p| !existing(p.0, p.1)).count() as u32 * kind.stone_cost();
+            state.wall_cost = line.iter().filter(|p| !existing(p.0, p.1)).count() as u32;
             let valid = !line.is_empty()
                 && resources::population(&multiplayer).can_build(
                     kind,
                     line.iter().filter(|p| !existing(p.0, p.1)).count() as u32,
                 )
-                && multiplayer
-                    .snapshot
-                    .resources
-                    .is_some_and(|s| s.stone >= state.wall_cost)
+                && multiplayer.snapshot.resources.is_some_and(|s| {
+                    let c = kind.cost();
+                    state.wall_cost == 0
+                        || c.affordable(
+                            s.wood / state.wall_cost.max(1),
+                            s.stone / state.wall_cost.max(1),
+                            s.iron / state.wall_cost.max(1),
+                        )
+                })
                 && wall_count + line.iter().filter(|p| !existing(p.0, p.1)).count()
                     <= map::walls::MAX_WALL_SEGMENTS
                 && line.iter().all(|&(x, z)| {
@@ -515,7 +568,7 @@ pub(crate) fn building_input(
                 return;
             };
             let collision = model.collision.clone();
-            for (index, &(x, z)) in line.iter().enumerate() {
+            for (index, &(x, z)) in line.iter().filter(|p| !existing(p.0, p.1)).enumerate() {
                 state.overlaps.extend(overlap_regions(
                     kind,
                     x,
@@ -598,7 +651,11 @@ pub(crate) fn building_input(
                 building: kind.name().into(),
                 rotation: state.rotation,
             };
-            if valid && multiplayer.send(action) {
+            if valid
+                && multiplayer.send(action)
+                && kind.category() != "supply"
+                && kind != BuildingKind::OxTether
+            {
                 state.placing = None;
             }
         }
@@ -1509,7 +1566,13 @@ fn overlap_regions(
         .iter()
         .filter_map(|b| {
             let k = BuildingKind::from_name(&b.kind)?;
-            if kind.is_wall() && k.is_wall() {
+            let candidate = crate::fortifications::candidate(&net.snapshot, kind, x, z, rotation);
+            let other_piece = crate::fortifications::piece(b);
+            if b.owned
+                && (map::fortifications::replaced_wall(candidate, other_piece)
+                    || map::fortifications::may_join(candidate, other_piece)
+                    || (kind.is_wall() && map::fortifications::covered_wall((x, z), other_piece)))
+            {
                 return None;
             }
             let other = k.construction_bounds(b.x, b.z, b.rotation);

@@ -4,6 +4,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Deserialize)]
 pub struct Snapshot {
     #[serde(default)]
+    pub policies: Vec<PolicyView>,
+    #[serde(default)]
+    pub gold: Option<u64>,
+    #[serde(default)]
+    pub prices: Vec<PriceView>,
+    #[serde(default)]
+    pub players: Vec<PlayerView>,
+    #[serde(default)]
+    pub requests: Vec<RequestView>,
+    #[serde(default)]
     pub saves: Vec<SaveView>,
     pub connected: bool,
     pub ready: bool,
@@ -52,6 +62,39 @@ pub struct Snapshot {
     pub arrows: Vec<Arrow>,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct PolicyView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub rations: u8,
+    pub taxes: u8,
+    pub alarm: bool,
+    pub alarm_started: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct PriceView {
+    pub resource: u8,
+    pub pressure: i32,
+}
+#[derive(Clone, Deserialize)]
+pub struct PlayerView {
+    pub color: u32,
+    pub owned: bool,
+}
+#[derive(Clone, Deserialize)]
+pub struct RequestView {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub from_color: u32,
+    pub to_color: u32,
+    pub incoming: bool,
+    pub outgoing: bool,
+    pub resource: u8,
+    pub amount: u32,
+    pub offered_gold: u64,
+    pub note: String,
+    pub status: u8,
+}
 #[derive(Clone, Deserialize)]
 pub struct SaveView {
     #[serde(deserialize_with = "id")]
@@ -314,6 +357,36 @@ fn serialize_ids<S: serde::Serializer>(values: &[u64], serializer: S) -> Result<
 #[derive(Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
+    SetCivicPolicy {
+        rations: u8,
+        taxes: u8,
+    },
+    PalaceAlarm {
+        active: bool,
+    },
+    CloseAllGates,
+    MarketExchange {
+        sell: u8,
+        amount: u32,
+        buy: u8,
+    },
+    MarketTrade {
+        resource: u8,
+        amount: u32,
+        buy: bool,
+    },
+    RequestGoods {
+        target_color: u32,
+        resource: u8,
+        amount: u32,
+        offered_gold: u64,
+        note: String,
+    },
+    RespondRequest {
+        #[serde(serialize_with = "serialize_id")]
+        request_id: u64,
+        accept: bool,
+    },
     SaveGame {
         title: String,
     },
@@ -608,6 +681,27 @@ mod backend {
                     .map_err(|e| e.to_string())?;
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_set_civic_policy(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_palace_alarm(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_close_all_gates(move |ctx| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_market_trade(move |ctx, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_market_exchange(move |ctx, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_request_goods(move |ctx, _, _, _, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_respond_request(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_save_game(move |ctx, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -718,6 +812,32 @@ mod backend {
                 } => conn
                     .reducers
                     .build_wall_kind(start_x, start_z, end_x, end_z, kind),
+                Action::SetCivicPolicy { rations, taxes } => {
+                    conn.reducers.set_civic_policy(rations, taxes)
+                }
+                Action::PalaceAlarm { active } => conn.reducers.palace_alarm(active),
+                Action::CloseAllGates => conn.reducers.close_all_gates(),
+                Action::MarketExchange { sell, amount, buy } => {
+                    conn.reducers.market_exchange(sell, amount, buy)
+                }
+                Action::MarketTrade {
+                    resource,
+                    amount,
+                    buy,
+                } => conn.reducers.market_trade(resource, amount, buy),
+                Action::RequestGoods {
+                    target_color,
+                    resource,
+                    amount,
+                    offered_gold,
+                    note,
+                } => {
+                    conn.reducers
+                        .request_goods(target_color, resource, amount, offered_gold, note)
+                }
+                Action::RespondRequest { request_id, accept } => {
+                    conn.reducers.respond_request(request_id, accept)
+                }
                 Action::SaveGame { title } => conn.reducers.save_game(title),
                 Action::LoadGame { save_id } => conn.reducers.load_game(save_id),
                 Action::Create { title } => conn.reducers.create_game(title),
@@ -841,6 +961,10 @@ mod backend {
                                 errors.lock().unwrap().error = Some(error.to_string())
                             })
                             .subscribe([
+                                format!("SELECT * FROM civic_policy WHERE game_id = {id}"),
+                                format!("SELECT * FROM treasury WHERE game_id = {id}"),
+                                format!("SELECT * FROM market_pressure WHERE game_id = {id}"),
+                                format!("SELECT * FROM diplomatic_request WHERE game_id = {id}"),
                                 format!("SELECT * FROM army_unit WHERE game_id = {id}"),
                                 format!("SELECT * FROM building WHERE game_id = {id}"),
                                 format!("SELECT * FROM terrain_clearing WHERE game_id = {id}"),
@@ -867,6 +991,67 @@ mod backend {
                     );
                 }
             }
+            snapshot.policies = conn
+                .db
+                .civic_policy()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::PolicyView {
+                    building_id: r.building_id,
+                    rations: r.rations,
+                    taxes: r.taxes,
+                    alarm: r.alarm,
+                    alarm_started: r.alarm_started,
+                })
+                .collect();
+            snapshot.gold = conn
+                .db
+                .treasury()
+                .connection_id()
+                .find(&conn.connection_id())
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| r.gold);
+            snapshot.prices = conn
+                .db
+                .market_pressure()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::PriceView {
+                    resource: r.resource,
+                    pressure: r.pressure,
+                })
+                .collect();
+            snapshot.players = conn
+                .db
+                .participant()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::PlayerView {
+                    color: r.color,
+                    owned: r.connection_id == conn.connection_id(),
+                })
+                .collect();
+            snapshot.requests = conn
+                .db
+                .diplomatic_request()
+                .iter()
+                .filter(|r| {
+                    Some(r.game_id) == snapshot.game_id
+                        && (r.from == conn.connection_id() || r.to == conn.connection_id())
+                })
+                .map(|r| super::RequestView {
+                    id: r.id,
+                    from_color: r.from_color,
+                    to_color: r.to_color,
+                    incoming: r.to == conn.connection_id(),
+                    outgoing: r.from == conn.connection_id(),
+                    resource: r.resource,
+                    amount: r.amount,
+                    offered_gold: r.offered_gold,
+                    note: r.note,
+                    status: r.status,
+                })
+                .collect();
             let food = conn
                 .db
                 .granary_stock()

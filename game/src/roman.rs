@@ -44,11 +44,18 @@ pub(crate) fn visuals(
         };
         *t = flag_transform(b, f.side, f.strip, time.elapsed_secs());
     }
-    for b in net.snapshot.buildings.iter().filter(|b| b.kind == "keep") {
+    for b in net.snapshot.buildings.iter().filter(|b| {
+        b.kind == "keep"
+            || stronghold_map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_anchor())
+    }) {
         if flags.iter().any(|(_, f, _)| f.keep == b.id) {
             continue;
         }
-        for side in [-1., 1.] {
+        for &side in if b.kind == "keep" {
+            &[-1., 1.][..]
+        } else {
+            &[0.][..]
+        } {
             for strip in -1..24 {
                 commands.spawn((
                     RomanFlag {
@@ -146,10 +153,37 @@ pub(crate) fn visuals(
 fn flag_transform(b: &network::Building, side: f32, strip: i32, t: f32) -> Transform {
     let a = b.rotation as f32 * std::f32::consts::FRAC_PI_2;
     let rot = Quat::from_rotation_y(a);
+    if b.kind != "keep" {
+        let k = stronghold_map::BuildingKind::from_name(&b.kind).unwrap_or_default();
+        let height = k
+            .height()
+            .max(k.roof_profile().map_or(0., |p| p.height + 1.2));
+        let offset = k.roof_profile().map_or(Vec3::ZERO, |p| {
+            Vec3::new(-p.half_x * 0.5, 0., -p.half_z * 0.5)
+        });
+        let (pos, scale, turn) = if strip < 0 {
+            (
+                offset + Vec3::new(0., height + 1.75, 0.),
+                Vec3::new(0.07, 3.5, 0.07),
+                0.,
+            )
+        } else {
+            let x = (strip as f32 + 0.5) * 0.07;
+            let phase = t * 3.4 - x * 2.6;
+            (
+                offset + Vec3::new(x, height + 2.8, x / 1.7 * phase.sin() * 0.25),
+                Vec3::new(0.075, 1.1, 0.03),
+                -x / 1.7 * phase.cos() * 0.6,
+            )
+        };
+        return Transform::from_translation(Vec3::new(b.x, b.y, b.z) + rot * pos)
+            .with_rotation(rot * Quat::from_rotation_y(turn))
+            .with_scale(scale);
+    }
     let (p, s, r) = if strip < 0 {
         (
-            Vec3::new(side * 6.1, 11.1, -4.8),
-            Vec3::new(0.08, 3.4, 0.08),
+            Vec3::new(side * 6.1, 12.1, -4.8),
+            Vec3::new(0.08, 5.8, 0.08),
             Quat::IDENTITY,
         )
     } else {
@@ -157,7 +191,7 @@ fn flag_transform(b: &network::Building, side: f32, strip: i32, t: f32) -> Trans
         let phase = t * 3.4 - x * 2.6 + side;
         let z = x / 2.5 * phase.sin() * 0.32;
         (
-            Vec3::new(side * 6.1 + x, 12.0, -4.8 + z),
+            Vec3::new(side * 6.1 + x, 14.8, -4.8 + z),
             Vec3::new(0.11, 1.5, 0.035),
             Quat::from_rotation_y(-x / 2.5 * phase.cos() * 0.7),
         )
@@ -218,4 +252,36 @@ pub(crate) fn save_ui(
             });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod flag_tests {
+    use super::*;
+    #[test]
+    fn waving_cloth_clears_the_entire_palace_roof() {
+        for rotation in 0..4 {
+            let b = network::Building {
+                kind: "keep".into(),
+                rotation,
+                id: 1,
+                color: 0,
+                health: 1.,
+                owned: true,
+                x: 12.,
+                y: 3.,
+                z: 24.,
+            };
+            for side in [-1., 1.] {
+                for strip in 0..24 {
+                    for time in 0..100 {
+                        let t = flag_transform(&b, side, strip, time as f32 * 0.1);
+                        assert!(
+                            t.translation.y - t.scale.y * 0.5 > b.y + 13.,
+                            "cloth must stay above every roof stone"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

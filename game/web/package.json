@@ -29,7 +29,10 @@
     "test:fortifications": "tsx src/fortifications.test.ts",
     "test:saves": "tsx src/saves.test.ts",
     "test:wildlife-combat": "tsx src/wildlife-combat.test.ts",
-    "test:cache": "tsx src/cache.test.ts"
+    "test:cache": "tsx src/cache.test.ts",
+    "test:balance": "tsx src/balance.test.ts",
+    "test:civic": "tsx src/civic.test.ts",
+    "test:attachments": "tsx src/attachments.test.ts"
   },
   "dependencies": {
     "@clockworklabs/spacetimedb-sdk": "1.1.0"

@@ -54,6 +54,7 @@ pub(crate) fn obstacles(s: &network::Snapshot) -> Vec<map::Obstacle> {
             result.push(k.rotated_obstacle(b.x, b.z, b.rotation));
         }
     }
+    result.extend(fort::joins(&pieces(s)).into_iter().map(|j| j.shape));
     let mut water = map::terrain::obstacles();
     water.extend(s.moats.iter().map(|m| map::Obstacle {
         x: m.x,
@@ -93,8 +94,7 @@ pub(crate) fn sync(
         s.stairs.iter().map(|s| s.id).collect::<Vec<_>>(),
         s.buildings
             .iter()
-            .filter(|b| BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_gate()))
-            .map(|b| b.id)
+            .map(|b| (b.id, b.rotation, b.x.to_bits(), b.z.to_bits()))
             .collect::<Vec<_>>()
     );
     if *previous == revision {
@@ -103,6 +103,70 @@ pub(crate) fn sync(
     *previous = revision;
     for e in &old {
         commands.entity(e).despawn();
+    }
+    let structures = pieces(s);
+    for joint in fort::joins(&structures) {
+        let h = (joint.top - joint.base).max(0.1);
+        let n = (h / 0.4).ceil() as usize;
+        for row in 0..n {
+            let height = h / n as f32;
+            commands.spawn((
+                FortVisual,
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(if joint.wood {
+                    assets.wood.clone()
+                } else {
+                    assets.stone.clone()
+                }),
+                Transform::from_xyz(
+                    joint.shape.x,
+                    joint.base + (row as f32 + 0.5) * height,
+                    joint.shape.z,
+                )
+                .with_scale(Vec3::new(
+                    joint.shape.half_x * 2.,
+                    height - 0.018,
+                    joint.shape.half_z * 2.,
+                )),
+                Ground,
+            ));
+        }
+    }
+    for b in &s.buildings {
+        let k = BuildingKind::from_name(&b.kind).unwrap_or_default();
+        if !matches!(
+            k,
+            BuildingKind::StoneWallCrenellated | BuildingKind::GatehouseSmall
+        ) {
+            continue;
+        }
+        let edges = if k.is_wall() {
+            fort::exposed_edges(piece(b), &structures)
+        } else {
+            vec![(1., 0.), (-1., 0.), (0., 1.), (0., -1.)]
+        };
+        for block in fort::parapets(
+            k,
+            (b.x, b.z),
+            if k.is_wall() { 0 } else { b.rotation },
+            &edges,
+        ) {
+            commands.spawn((
+                FortVisual,
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(assets.stone.clone()),
+                Transform::from_xyz(
+                    block.shape.x,
+                    b.y + (block.bottom + block.top) * 0.5,
+                    block.shape.z,
+                )
+                .with_scale(Vec3::new(
+                    block.shape.half_x * 2.,
+                    block.top - block.bottom,
+                    block.shape.half_z * 2.,
+                )),
+            ));
+        }
     }
     for m in &s.moats {
         let y = terrain_height(m.x, m.z);
@@ -348,4 +412,51 @@ pub(crate) fn input(
             state.fort_start = Some(a);
         }
     }
+}
+
+pub(crate) fn piece(b: &network::Building) -> fort::Structure {
+    fort::Structure {
+        id: b.id,
+        kind: BuildingKind::from_name(&b.kind).unwrap_or_default(),
+        x: b.x,
+        y: b.y,
+        z: b.z,
+        rotation: b.rotation,
+        owner: b.color,
+    }
+}
+pub(crate) fn pieces(s: &network::Snapshot) -> Vec<fort::Structure> {
+    s.buildings.iter().map(piece).collect()
+}
+pub(crate) fn candidate(
+    s: &network::Snapshot,
+    kind: BuildingKind,
+    x: f32,
+    z: f32,
+    rotation: u8,
+) -> fort::Structure {
+    fort::Structure {
+        id: 0,
+        kind,
+        x,
+        y: 0.,
+        z,
+        rotation,
+        owner: s
+            .buildings
+            .iter()
+            .find(|b| b.owned)
+            .map(|b| b.color)
+            .or_else(|| s.units.iter().find(|u| u.owned).map(|u| u.color))
+            .unwrap_or(0),
+    }
+}
+pub(crate) fn refund(s: &network::Snapshot, a: fort::Structure) -> map::Cost {
+    s.buildings
+        .iter()
+        .filter(|b| b.owned && fort::replaced_wall(a, piece(b)))
+        .fold(map::Cost::new(0, 0, 0), |n, b| {
+            let c = piece(b).kind.cost();
+            map::Cost::new(n.wood + c.wood, n.stone + c.stone, n.iron + c.iron)
+        })
 }
