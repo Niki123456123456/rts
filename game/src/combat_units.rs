@@ -337,7 +337,9 @@ pub(crate) fn unit_health_ui(
     ));
     let (camera, transform) = *camera;
     for (unit, position) in &units {
-        if unit.worker || (unit.health >= 0.999 && unit.activity != 2) {
+        let health = unit.health
+            / stronghold_map::units::UnitKind::from_name(&unit.kind).map_or(1., |k| k.max_health());
+        if health >= 0.999 && unit.activity != 2 {
             continue;
         }
         let Ok(p) = camera.world_to_viewport(transform, position.translation + Vec3::Y * 1.25)
@@ -348,7 +350,7 @@ pub(crate) fn unit_health_ui(
             egui::Rect::from_center_size(egui::pos2(p.x * scale, p.y * scale), egui::vec2(34., 5.));
         painter.rect_filled(rect, 1., egui::Color32::from_black_alpha(220));
         let mut fill = rect.shrink(1.);
-        fill.max.x = fill.min.x + fill.width() * unit.health.clamp(0., 1.);
+        fill.max.x = fill.min.x + fill.width() * health.clamp(0., 1.);
         painter.rect_filled(
             fill,
             0.,

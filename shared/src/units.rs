@@ -35,8 +35,18 @@ impl UnitKind {
     pub fn cost(self) -> crate::Cost {
         match self {
             Self::Lord => crate::Cost::new(0, 0, 0),
-            Self::ArmedPeasant => crate::Cost::new(2, 0, 2),
+            Self::ArmedPeasant => crate::Cost::new(1, 0, 0),
             Self::Archer => crate::Cost::new(6, 0, 1),
+        }
+    }
+}
+
+impl UnitKind {
+    pub fn max_health(self) -> f32 {
+        if self == Self::Lord {
+            5.0
+        } else {
+            1.0
         }
     }
 }

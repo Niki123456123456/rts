@@ -420,13 +420,14 @@
     "id": "fishpond",
     "label": "Fischerei",
     "category": "supply",
-    "source": "fishpond",
+    "source": null,
     "collision": null,
     "folder": "fishpond",
     "grid": [
-      7,
-      6
-    ]
+      3,
+      3
+    ],
+    "procedural": "roman_fishery"
   },
   {
     "variant": "Dovecote",

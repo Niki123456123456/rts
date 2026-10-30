@@ -96,15 +96,15 @@ def arch(x,z,bottom,radius):
         for t in [a,b]: face([(x+radius*math.cos(t),bottom+radius*math.sin(t),z-.1),(x+(radius+.32)*math.cos(t),bottom+(radius+.32)*math.sin(t),z-.1),(x+(radius+.32)*math.cos(t),bottom+(radius+.32)*math.sin(t),z+.16),(x+radius*math.cos(t),bottom+radius*math.sin(t),z+.16)],rng.choice(stone))
 
 def banner(x,z,y):
-    box(x,y,z,.95,3.15,.055,red)
-    for dx in [-.43,.43]: box(x+dx,y,z+.04,.045,3.12,.025,gold)
-    box(x,y+1.58,z,.13,.12,.28,gold)
+    box(x,y,z,1.3,3.7,.055,red)
+    for dx in [-.60,.60]: box(x+dx,y,z+.04,.055,3.68,.025,gold)
+    box(x,y+1.85,z,.13,.12,.28,gold)
     # Stylised gold laurel/sun emblem, not a copied crest.
     for i in range(12):
         a=i*math.tau/12
         box(x+.22*math.cos(a),y+.32*math.sin(a),z+.05,.075,.12,.028,gold,-a)
     box(x,y,z+.06,.08,.42,.03,gold)
-    face([(x-.475,y-1.57,z),(x+.475,y-1.57,z),(x,y-1.92,z)],red)
+    face([(x-.65,y-1.85,z),(x+.65,y-1.85,z),(x,y-2.12,z)],red)
 
 def tiled_roof(x,z,w,d,y,rise):
     for sign in [-1,1]:

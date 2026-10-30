@@ -405,6 +405,9 @@ fn hunt_target(ctx: &ReducerContext, b: &Building) -> Option<Wildlife> {
 }
 fn work_site(ctx: &ReducerContext, b: &Building, u: &ArmyUnit) -> Option<map::Point> {
     let obs = worker_obstacles(ctx, u);
+    if b.kind == "fishpond" {
+        return fishing_bank(b, (u.x, u.z), &obs);
+    }
     let target = if b.kind == "hunters_post" {
         let a = hunt_target(ctx, b)?;
         if a.health > 0.
@@ -438,6 +441,9 @@ fn work_site(ctx: &ReducerContext, b: &Building, u: &ArmyUnit) -> Option<map::Po
         .min_by(|a, c| map::distance((u.x, u.z), *a).total_cmp(&map::distance((u.x, u.z), *c)))
 }
 fn at_work_site(ctx: &ReducerContext, b: &Building, u: &ArmyUnit) -> bool {
+    if b.kind == "fishpond" {
+        return map::distance((b.x, b.z), (u.x, u.z)) <= 43. && river_bank((u.x, u.z));
+    }
     if b.kind == "saw_pit" {
         return node_for(ctx, b).is_some_and(|n| map::distance((u.x, u.z), (n.x, n.z)) < 1.9);
     }
@@ -613,14 +619,33 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
             ctx.db.resource_node().id().update(n);
         }
         let obs = obstacles(ctx, game);
+        balance_predators(ctx, game);
         let units = ctx
             .db
             .army_unit()
             .game_id()
             .filter(game)
+            .filter(|u| ctx.db.participant().connection_id().find(u.owner).is_some())
             .collect::<Vec<_>>();
         // Explicit hunts and automatic defence use the same bounded damage and routes.
         for u in &units {
+            if ctx
+                .db
+                .unit_profile()
+                .unit_id()
+                .find(u.id)
+                .is_some_and(|p| p.kind == "lord")
+                && ctx.db.lord_vitality().unit_id().find(u.id).is_none()
+            {
+                if u.health <= 1. {
+                    let mut lord = u.clone();
+                    lord.health *= 5.;
+                    ctx.db.army_unit().id().update(lord);
+                }
+                ctx.db
+                    .lord_vitality()
+                    .insert(LordVitality { unit_id: u.id });
+            }
             let requested = ctx
                 .db
                 .hunt_order()
@@ -628,7 +653,9 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                 .find(u.id)
                 .and_then(|h| ctx.db.wildlife().id().find(h.animal_id))
                 .filter(|a| a.health > 0.);
-            let defensive = ctx.db.unit_profile().unit_id().find(u.id).and_then(|_| {
+            let defensive = (ctx.db.unit_profile().unit_id().find(u.id).is_some()
+                || ctx.db.worker().unit_id().find(u.id).is_some())
+            .then(|| {
                 ctx.db
                     .wildlife()
                     .game_id()
@@ -640,14 +667,34 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                         map::distance((u.x, u.z), (a.x, a.z))
                             .total_cmp(&map::distance((u.x, u.z), (b.x, b.z)))
                     })
-            });
+            })
+            .flatten();
             if let Some(a) = requested.or(defensive) {
-                let archer = is_archer(ctx, u);
-                let range = if archer {
-                    map::ranged::bow_range(u.y)
-                } else {
-                    1.8
-                };
+                let job = ctx
+                    .db
+                    .worker()
+                    .unit_id()
+                    .find(u.id)
+                    .and_then(|w| ctx.db.building().id().find(w.source_building))
+                    .map(|b| b.kind);
+                let archer = is_archer(ctx, u) || job.as_deref() == Some("hunters_post");
+                let defence = job.as_deref().map(nature::defence);
+                let lord = ctx
+                    .db
+                    .unit_profile()
+                    .unit_id()
+                    .find(u.id)
+                    .is_some_and(|p| p.kind == "lord");
+                let range = defence.map_or_else(
+                    || {
+                        if archer {
+                            map::ranged::bow_range(u.y)
+                        } else {
+                            2.4
+                        }
+                    },
+                    |d| d.0,
+                );
                 let d = map::distance((u.x, u.z), (a.x, a.z));
                 if d <= range
                     && (archer || on_ground(ctx, u))
@@ -663,10 +710,21 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                         on_ground(ctx, u) && map::segment_clear((u.x, u.z), (a.x, a.z), &obs)
                     })
                 {
-                    animal_damaged(ctx, a, if archer { 0.45 } else { 0.65 });
-                } else if ctx.db.hunt_order().unit_id().find(u.id).is_some()
-                    && ctx.db.unit_order().unit_id().find(u.id).is_none()
-                {
+                    animal_damaged(
+                        ctx,
+                        a,
+                        defence.map_or(
+                            if lord {
+                                1.3
+                            } else if archer {
+                                0.7
+                            } else {
+                                0.65
+                            },
+                            |d| d.1,
+                        ),
+                    );
+                } else if ctx.db.hunt_order().unit_id().find(u.id).is_some() && job.is_none() {
                     if let Ok(start) = depart_tower(ctx, u) {
                         let mut unit = u.clone();
                         if let Some(path) = map::shortest_path(start, (a.x, a.z), &obs) {
@@ -697,6 +755,33 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
             .map(|a| a.group_id)
             .collect::<std::collections::HashSet<_>>();
         for mut a in animals {
+            if a.health > 0. && nature::predator(a.species) && a.state == 2 {
+                let defenders = ctx
+                    .db
+                    .building()
+                    .game_id()
+                    .filter(game)
+                    .filter(|b| b.kind == "keep")
+                    .filter_map(|b| {
+                        let fire = tower_geometry(ctx, &b).world((0., 11.));
+                        if map::distance((a.x, a.z), fire) < 8.
+                            && map::segment_clear((a.x, a.z), fire, &obs)
+                        {
+                            ctx.db.keep_population().building_id().find(b.id).map(|p| {
+                                p.arrived
+                                    .saturating_sub(employed_peasants(ctx, b.owner))
+                                    .min(6)
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .sum::<u32>();
+                if defenders > 0 {
+                    animal_damaged(ctx, a.clone(), defenders as f32 * 0.14);
+                    a = ctx.db.wildlife().id().find(a.id).unwrap();
+                }
+            }
             if a.health <= 0. {
                 a.dead_ticks += 1;
                 if a.dead_ticks > 180 {
@@ -742,7 +827,7 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                 let dx = a.x - u.x;
                 let dz = a.z - u.z;
                 let d = dx.hypot(dz).max(0.1);
-                let goal = (a.x + dx / d * 3., a.z + dz / d * 3.);
+                let goal = (a.x + dx / d * 1.8, a.z + dz / d * 1.8);
                 if map::free(goal, &obs) && map::segment_clear((a.x, a.z), goal, &obs) {
                     a.x = goal.0;
                     a.z = goal.1;
@@ -763,7 +848,16 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                 }
             }
             // Rare pack/bear excursions only enter a settlement if its camp is reachable.
-            if predator && state.seconds % 240 == 0 && a.group_id == (9 + (state.seconds / 240) % 6)
+            if predator
+                && state.seconds
+                    >= ctx
+                        .db
+                        .predator_peace()
+                        .game_id()
+                        .find(game)
+                        .map_or(u32::MAX, |p| p.until_seconds)
+                && state.seconds % 600 == 0
+                && a.group_id == (9 + (state.seconds / 600) % 6)
             {
                 if let Some(keep) = ctx
                     .db
@@ -835,4 +929,125 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
         ctx.db.ecology_state().game_id().update(state);
     }
     Ok(())
+}
+
+#[spacetimedb::table(name=predator_revision)]
+pub struct PredatorRevision {
+    #[primary_key]
+    pub game_id: u64,
+}
+#[spacetimedb::table(name=ecology_balance)]
+pub struct EcologyBalance {
+    #[primary_key]
+    pub game_id: u64,
+}
+fn balance_predators(ctx: &ReducerContext, game: u64) {
+    let keeps = ctx
+        .db
+        .building()
+        .game_id()
+        .filter(game)
+        .filter(|b| b.kind == "keep")
+        .collect::<Vec<_>>();
+    if ctx.db.predator_peace().game_id().find(game).is_none() {
+        let now = ctx
+            .db
+            .ecology_state()
+            .game_id()
+            .find(game)
+            .map_or(0, |s| s.seconds);
+        ctx.db.predator_peace().insert(PredatorPeace {
+            game_id: game,
+            until_seconds: now + nature::FIRST_RAID_SECONDS,
+        });
+    }
+    let initial = ctx.db.predator_revision().game_id().find(game).is_none();
+    for group in 9..15usize {
+        let mut animals = ctx
+            .db
+            .wildlife()
+            .game_id()
+            .filter(game)
+            .filter(|a| a.group_id == group as u32)
+            .collect::<Vec<_>>();
+        animals.sort_by_key(|a| a.id);
+        let (_, count, hx, hz) = nature::HERDS[group];
+        for (i, mut a) in animals.into_iter().enumerate() {
+            if initial && i >= count as usize {
+                ctx.db.wildlife_order().animal_id().delete(a.id);
+                ctx.db.wildlife().id().delete(a.id);
+                continue;
+            }
+            if a.health <= 0. {
+                continue;
+            }
+            if initial
+                || keeps.iter().any(|b| {
+                    map::distance((a.home_x, a.home_z), (b.x, b.z))
+                        < nature::PREDATOR_START_DISTANCE
+                })
+            {
+                let obs = obstacles(ctx, game);
+                let point = [
+                    (hx, hz),
+                    (-340., 300.),
+                    (340., -320.),
+                    (-340., -330.),
+                    (340., 330.),
+                ]
+                .into_iter()
+                .find(|p| {
+                    map::free(*p, &obs)
+                        && keeps.iter().all(|b| {
+                            map::distance(*p, (b.x, b.z)) >= nature::PREDATOR_START_DISTANCE
+                        })
+                });
+                if let Some(p) = point {
+                    a.x = p.0 + i as f32 * 1.3;
+                    a.z = p.1;
+                    a.home_x = p.0;
+                    a.home_z = p.1;
+                    a.state = 0;
+                    ctx.db.wildlife_order().animal_id().delete(a.id);
+                    ctx.db.wildlife().id().update(a);
+                }
+            }
+        }
+    }
+    if initial {
+        ctx.db
+            .predator_revision()
+            .insert(PredatorRevision { game_id: game });
+    }
+}
+
+#[spacetimedb::table(name=lord_vitality)]
+pub struct LordVitality {
+    #[primary_key]
+    pub unit_id: u64,
+}
+
+#[spacetimedb::table(name=predator_peace)]
+pub struct PredatorPeace {
+    #[primary_key]
+    pub game_id: u64,
+    pub until_seconds: u32,
+}
+
+fn river_bank(p: map::Point) -> bool {
+    map::terrain::buildable(map::BuildingKind::Housing, p.0, p.1)
+        && [(2.8, 0.), (-2.8, 0.), (0., 2.8), (0., -2.8)]
+            .iter()
+            .any(|d| map::terrain::biome(p.0 + d.0, p.1 + d.1) == map::terrain::Biome::River)
+}
+
+fn fishing_bank(b: &Building, from: map::Point, obs: &[Obstacle]) -> Option<map::Point> {
+    let mut points = (-15..=15)
+        .flat_map(|i| (-15..=15).map(move |j| (b.x + i as f32 * 2., b.z + j as f32 * 2.)))
+        .filter(|p| river_bank(*p) && map::free(*p, obs))
+        .collect::<Vec<_>>();
+    points.sort_by(|a, b| map::distance(from, *a).total_cmp(&map::distance(from, *b)));
+    return points
+        .into_iter()
+        .find(|p| map::shortest_path(from, *p, obs).is_some());
 }

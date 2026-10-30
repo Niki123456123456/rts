@@ -137,6 +137,15 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
                 .delete(state.building_id);
             continue;
         };
+        if ctx
+            .db
+            .participant()
+            .connection_id()
+            .find(keep.owner)
+            .is_none()
+        {
+            continue;
+        }
         ensure_ecology(ctx, keep.game_id);
         let population = map::population::Population::from_buildings(
             ctx.db

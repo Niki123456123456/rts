@@ -472,6 +472,15 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         let Some(building) = ctx.db.building().id().find(p.building_id) else {
             continue;
         };
+        if ctx
+            .db
+            .participant()
+            .connection_id()
+            .find(building.owner)
+            .is_none()
+        {
+            continue;
+        }
         let staffed = ctx
             .db
             .worker()
@@ -501,6 +510,9 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
             ctx.db.worker().unit_id().delete(w.unit_id);
             continue;
         };
+        if ctx.db.participant().connection_id().find(u.owner).is_none() {
+            continue;
+        }
         let Some(source) = ctx.db.building().id().find(w.source_building) else {
             continue;
         };

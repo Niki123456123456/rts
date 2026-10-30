@@ -14,6 +14,7 @@ mod module_bindings;
 mod network;
 mod projectiles;
 mod resources;
+mod roman;
 mod storage_models;
 mod terrain;
 mod unit_ui;
@@ -66,6 +67,7 @@ fn main() {
                 terrain::setup,
                 keep::setup,
                 ecology::setup,
+                roman::setup,
                 fortifications::setup,
                 buildings::setup_buildings,
                 resources::setup_resource_ui,
@@ -87,6 +89,7 @@ fn main() {
                     ecology::sync_carts,
                     ecology::sync_fish,
                     ecology::animate_legs,
+                    roman::visuals,
                     fortifications::sync,
                     fortifications::animate,
                     terrain::sync_excavations,
@@ -120,6 +123,7 @@ fn main() {
                     movement_input,
                     formation_preview,
                     buildings::roof_preview,
+                    buildings::overlap_preview,
                     expire_destination_markers,
                     highlight_selection,
                 )
@@ -131,6 +135,7 @@ fn main() {
             EguiPrimaryContextPass,
             (
                 lobby_ui,
+                roman::save_ui,
                 resources::resource_ui,
                 ecology::animal_ui,
                 combat_units::unit_health_ui,
@@ -740,6 +745,23 @@ fn lobby_ui(
                         multiplayer.send(Action::Connect { uri, database });
                     }
                 });
+            if !multiplayer.snapshot.saves.is_empty() {
+                ui.heading("Spielstände");
+                for save in multiplayer.snapshot.saves.clone() {
+                    ui.horizontal(|ui| {
+                        ui.label(&save.title);
+                        if ui
+                            .add_enabled(
+                                connected && !multiplayer.pending,
+                                egui::Button::new("Laden"),
+                            )
+                            .clicked()
+                        {
+                            multiplayer.send(Action::LoadGame { save_id: save.id });
+                        }
+                    });
+                }
+            }
             ui.heading("Games");
             if let Some(error) = &multiplayer.snapshot.error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);

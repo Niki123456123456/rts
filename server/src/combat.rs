@@ -24,7 +24,11 @@ fn combatants(ctx: &ReducerContext) -> Vec<ArmyUnit> {
     ctx.db
         .army_unit()
         .iter()
-        .filter(|u| u.health > 0. && ctx.db.unit_profile().unit_id().find(u.id).is_some())
+        .filter(|u| {
+            u.health > 0.
+                && ctx.db.unit_profile().unit_id().find(u.id).is_some()
+                && ctx.db.participant().connection_id().find(u.owner).is_some()
+        })
         .collect()
 }
 fn hostile_pair(units: &[ArmyUnit]) -> bool {
@@ -65,6 +69,7 @@ fn valid_enemy(ctx: &ReducerContext, u: &ArmyUnit, id: u64) -> Option<ArmyUnit> 
         v.game_id == u.game_id
             && v.owner != u.owner
             && v.health > 0.
+            && ctx.db.participant().connection_id().find(v.owner).is_some()
             && ctx.db.unit_profile().unit_id().find(v.id).is_some()
     })
 }
@@ -254,6 +259,7 @@ fn return_from_combat(ctx: &ReducerContext, u: &mut ArmyUnit, e: &UnitEngagement
     }
 }
 fn kill_combat_unit(ctx: &ReducerContext, id: u64) {
+    ctx.db.lord_vitality().unit_id().delete(id);
     ctx.db.hunt_order().unit_id().delete(id);
     if let Some(w) = ctx.db.worker().unit_id().find(id) {
         if let Some(b) = ctx.db.building().id().find(w.source_building) {

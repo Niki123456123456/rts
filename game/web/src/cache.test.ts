@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {TableCache,type EventContextInterface} from '@clockworklabs/spacetimedb-sdk';
+import {netOperations} from './cache';
+type Op=Parameters<TableCache['applyOperations']>[0][number];
+const op=(type:'insert'|'delete',value:number):Op=>({type,rowId:JSON.stringify({id:1,value}),row:{id:1,value}});
+const table=new TableCache({tableName:'sample',primaryKey:'id'} as ConstructorParameters<typeof TableCache>[0]);
+const ctx={} as EventContextInterface;
+const apply=(ops:Op[])=>table.applyOperations(netOperations(ops,table.iter()),ctx);
+apply([op('insert',1)]);
+apply([op('delete',1),op('insert',2),op('delete',2),op('insert',3)]);
+assert.deepEqual(table.iter(),[{id:1,value:3}]);assert.equal(table.count(),1);
+apply([op('delete',3)]);assert.equal(table.count(),0,'death must remove the unit without ghost rows');
+apply([op('insert',4),op('delete',4),op('insert',5)]);assert.deepEqual(table.iter(),[{id:1,value:5}]);
+apply([op('insert',5)]);apply([op('delete',5)]);assert.equal(table.count(),1,'overlapping subscription keeps its reference');
+apply([op('delete',5)]);assert.equal(table.count(),0);
+assert.deepEqual(netOperations([op('delete',8),op('insert',8)]),[]);
+apply([op('insert',10)]);apply([op('delete',9),op('insert',11)]);assert.deepEqual(table.iter(),[{id:1,value:11}]);apply([op('delete',10)]);assert.equal(table.count(),0,'primary-key removal clears a stale serialized value');
+console.log('PASS: atomic repeated updates, insert/update, deletion and overlapping subscription reference counts.');

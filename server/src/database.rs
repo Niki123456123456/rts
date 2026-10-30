@@ -272,12 +272,27 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
     }
     ensure_ecology(ctx, game_id);
     leave_game(ctx);
+    if claim_restored_player(ctx, game_id, connection_id)? {
+        start_tick(ctx);
+        start_migration(ctx);
+        start_production(ctx);
+        start_ecology(ctx);
+        start_combat_scan(ctx);
+        return Ok(());
+    }
     let used_colors: std::collections::HashSet<_> = ctx
         .db
         .participant()
         .game_id()
         .filter(game_id)
         .map(|player| player.color)
+        .chain(
+            ctx.db
+                .restored_player()
+                .game_id()
+                .filter(game_id)
+                .map(|p| p.color),
+        )
         .collect();
     let color = (0..u32::MAX)
         .find(|color| !used_colors.contains(color))
@@ -338,7 +353,7 @@ pub fn join_game(ctx: &ReducerContext, game_id: u64) -> Result<(), String> {
         owner: connection_id,
         color,
         number: 1,
-        health: 1.0,
+        health: map::units::UnitKind::Lord.max_health(),
         x,
         y: terrain_height(x, z) + 0.75,
         z,
@@ -369,6 +384,8 @@ pub fn leave_game(ctx: &ReducerContext) {
             }
             let units: Vec<_> = ctx.db.army_unit().owner().filter(connection_id).collect();
             for unit in units {
+                ctx.db.lord_vitality().unit_id().delete(unit.id);
+                ctx.db.hunt_order().unit_id().delete(unit.id);
                 ctx.db.archer_cooldown().unit_id().delete(unit.id);
                 ctx.db.ranged_building_order().unit_id().delete(unit.id);
                 ctx.db.worker().unit_id().delete(unit.id);
@@ -609,6 +626,15 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             ctx.db.unit_order().unit_id().delete(order.unit_id);
             continue;
         };
+        if ctx
+            .db
+            .participant()
+            .connection_id()
+            .find(unit.owner)
+            .is_none()
+        {
+            continue;
+        }
         if tower_moved.contains(&unit.id) {
             continue;
         }
@@ -1300,3 +1326,5 @@ pub fn build_wall_kind(
     replan(ctx, p.game_id);
     Ok(())
 }
+
+include!("saves.rs");

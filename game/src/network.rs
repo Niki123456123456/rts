@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Deserialize)]
 pub struct Snapshot {
+    #[serde(default)]
+    pub saves: Vec<SaveView>,
     pub connected: bool,
     pub ready: bool,
     pub error: Option<String>,
@@ -50,6 +52,13 @@ pub struct Snapshot {
     pub arrows: Vec<Arrow>,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct SaveView {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub title: String,
+    pub saved_at_micros: i64,
+}
 #[derive(Clone, Deserialize)]
 pub struct GateStatus {
     #[serde(deserialize_with = "id")]
@@ -305,6 +314,13 @@ fn serialize_ids<S: serde::Serializer>(values: &[u64], serializer: S) -> Result<
 #[derive(Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
+    SaveGame {
+        title: String,
+    },
+    LoadGame {
+        #[serde(serialize_with = "serialize_id")]
+        save_id: u64,
+    },
     Connect {
         uri: String,
         database: String,
@@ -459,7 +475,10 @@ impl Multiplayer {
     pub fn send(&mut self, action: Action) -> bool {
         self.snapshot.error = None;
         self.local_error = None;
-        let awaiting_game = matches!(&action, Action::Create { .. } | Action::Join { .. });
+        let awaiting_game = matches!(
+            &action,
+            Action::Create { .. } | Action::Join { .. } | Action::LoadGame { .. }
+        );
         match self.backend.send(action) {
             Ok(()) => {
                 self.pending = awaiting_game;
@@ -566,7 +585,11 @@ mod backend {
                             .on_error(move |_, error| {
                                 sub_error.lock().unwrap().error = Some(error.to_string())
                             })
-                            .subscribe(["SELECT * FROM game", "SELECT * FROM participant"]);
+                            .subscribe([
+                                "SELECT * FROM game",
+                                "SELECT * FROM participant",
+                                "SELECT * FROM save_catalog",
+                            ]);
                     })
                     .on_connect_error(move |_, error| {
                         connect_error.lock().unwrap().error = Some(error.to_string());
@@ -583,6 +606,12 @@ mod backend {
                     })
                     .build()
                     .map_err(|e| e.to_string())?;
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_save_game(move |ctx, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_load_game(move |ctx, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
                     .on_create_game(move |ctx, _| record_status(&errors, ctx));
@@ -689,6 +718,8 @@ mod backend {
                 } => conn
                     .reducers
                     .build_wall_kind(start_x, start_z, end_x, end_z, kind),
+                Action::SaveGame { title } => conn.reducers.save_game(title),
+                Action::LoadGame { save_id } => conn.reducers.load_game(save_id),
                 Action::Create { title } => conn.reducers.create_game(title),
                 Action::Join { game_id } => conn.reducers.join_game(game_id),
                 Action::Leave => conn.reducers.leave_game(),
@@ -780,6 +811,17 @@ mod backend {
                 })
                 .collect();
             snapshot.games.sort_by_key(|g| g.id);
+            snapshot.saves = conn
+                .db
+                .save_catalog()
+                .iter()
+                .filter(|s| s.owner == conn.identity())
+                .map(|s| super::SaveView {
+                    id: s.id,
+                    title: s.title,
+                    saved_at_micros: s.saved_at_micros,
+                })
+                .collect();
             snapshot.game_id = conn
                 .db
                 .participant()

@@ -1,6 +1,9 @@
+import {prepareCaches} from './cache';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
 
 type Action =
+ | {action:'save_game';title:string}
+ | {action:'load_game';save_id:string}
   | { action: 'connect'; uri: string; database: string }
   | { action: 'create'; title: string }
   | { action: 'join'; game_id: string }
@@ -77,11 +80,16 @@ function connect(uri: string, database: string) {
   ready = false;
   activeGame = undefined;
   unitSubscription = undefined;
+  const tokenKey = `stronghold-auth:${socketUri.origin}:${database}`;
+  let token: string | undefined; try { token=localStorage.getItem(tokenKey)??undefined; } catch {}
   const connection = DbConnection.builder()
+    .withToken(token)
     .withUri(socketUri.toString())
     .withModuleName(database)
-    .onConnect((db) => {
+    .onConnect((db, _identity, token) => {
+      try { localStorage.setItem(tokenKey,token); } catch {}
       if (conn !== db) return;
+      prepareCaches(db.db);
       connected = true;
       error = null;
       reconnectDelay = 1000;
@@ -93,7 +101,7 @@ function connect(uri: string, database: string) {
           error = connectionError(ctx.event);
           reconnectLater(uri, database, db);
         })
-        .subscribe(['SELECT * FROM game', 'SELECT * FROM participant']);
+        .subscribe(['SELECT * FROM game', 'SELECT * FROM participant', 'SELECT * FROM save_catalog']);
     })
     .onConnectError((_ctx, err) => {
       if (conn !== connection) return;
@@ -116,6 +124,8 @@ function connect(uri: string, database: string) {
   connection.reducers.onSetGate(result);connection.reducers.onDigMoat(result);connection.reducers.onFillMoat(result);connection.reducers.onBuildWallStair(result);connection.reducers.onBuildWallKind(result);
   connection.reducers.onHuntAnimal(result);
   connection.reducers.onCreateGame(result);
+  connection.reducers.onSaveGame(result);
+  connection.reducers.onLoadGame(result);
   connection.reducers.onJoinGame(result);
   connection.reducers.onLeaveGame(result);
   connection.reducers.onSetTargets(result);
@@ -146,6 +156,8 @@ export const strongholdNetwork = {
     if (action.action === 'connect') { connect(action.uri, action.database); return; }
     if (!conn || !ready || !connected) throw new Error('Connect to a server first.');
     switch (action.action) {
+      case 'save_game': conn.reducers.saveGame(action.title);break;
+      case 'load_game': conn.reducers.loadGame(BigInt(action.save_id));break;
       case 'create': conn.reducers.createGame(action.title); break;
       case 'join': conn.reducers.joinGame(BigInt(action.game_id)); break;
       case 'assign_peasant': conn.reducers.assignPeasant(BigInt(action.building_id)); break;
@@ -182,6 +194,7 @@ export const strongholdNetwork = {
         .subscribe([`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
+      saves: ready&&connected&&conn ? Array.from(conn.db.saveCatalog.iter()).filter(s=>s.owner.toHexString()===conn!.identity?.toHexString()).map(s=>({id:s.id.toString(),title:s.title,saved_at_micros:Number(s.savedAtMicros)})):[],
       connected, ready, error, game_id: gameId === undefined ? null : gameId.toString(),
       resources: ready && connected && conn && gameId !== undefined ? (() => {
         const stock=conn.db.playerResources.connectionId.find(conn.connectionId);

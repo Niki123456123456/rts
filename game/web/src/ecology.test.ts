@@ -4,7 +4,7 @@ const w=await world();const {db,game,build,own}=w;
 try{
  const nodes=()=>Array.from(db.db.resourceNode.iter()).filter(n=>n.gameId===game);
  assert.ok(nodes().some(n=>n.kind===0&&n.remaining===6));assert.ok(nodes().some(n=>n.kind===1&&n.remaining===180));assert.ok(nodes().some(n=>n.kind===2&&n.remaining===140));assert.equal(nodes().filter(n=>n.kind===7).length,8);
- const animals=Array.from(db.db.wildlife.iter()).filter(a=>a.gameId===game);assert.equal(new Set(animals.map(a=>a.species)).size,5);assert.ok(animals.some(a=>a.species===4));assert.ok(animals.filter(a=>a.species===3).length>10);
+ const animals=Array.from(db.db.wildlife.iter()).filter(a=>a.gameId===game);assert.equal(new Set(animals.map(a=>a.species)).size,5);assert.ok(animals.some(a=>a.species===4));assert.ok(animals.filter(a=>a.species===3).length<=5);
  assert.equal((await build('stockpile',-9,-43)).tag,'Committed');
  assert.equal((await build('granary',-9,-23)).tag,'Committed');
  assert.equal((await build('housing',-17,17)).tag,'Committed');
@@ -23,7 +23,7 @@ try{
  const initial=new Map(nodes().filter(n=>n.kind===0).map(n=>[n.site,n.remaining]));
  await until(()=>nodes().some(n=>n.kind===0&&n.remaining>0&&n.remaining<(initial.get(n.site)??0)),'tree falls, is chopped, and wood is consumed',60000);
  assert.equal((await build('fishpond',25,25)).tag,'Failed','fisheries reject land away from fish');
- let fishPlaced=false;for(const z of [-23,-25,-21,-27]){for(const x of [45,43,47,41]){if((await build('fishpond',x,z)).tag==='Committed'){fishPlaced=true;break}}if(fishPlaced)break}assert.ok(fishPlaced,'fishery can be built at a discrete fish school');
+ let fishPlaced=false;for(const z of [-39,-41,-37,-43]){for(const x of [65,63,67,61]){if((await build('fishpond',x,z)).tag==='Committed'){fishPlaced=true;break}}if(fishPlaced)break}assert.ok(fishPlaced,'fishery can be built at a discrete fish school');
  assert.equal((await build('hunters_post',-51,47)).tag,'Committed');
  await until(()=>Array.from(db.db.wildlife.iter()).filter(a=>a.gameId===game).some(a=>a.health<({0:1,1:.45,2:1.5,3:1.4,4:3.5} as Record<number,number>)[a.species]),'hunters engage actual wildlife',60000);
  await until(()=>nodes().some(n=>n.kind===7&&n.remaining<80),'fisher actually reduces its fish school',90000);

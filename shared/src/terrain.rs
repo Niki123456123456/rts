@@ -165,6 +165,7 @@ pub fn color(x: f32, z: f32) -> [u8; 3] {
 pub fn buildable(kind: crate::BuildingKind, x: f32, z: f32) -> bool {
     let terrain = biome(x, z);
     match kind {
+        crate::BuildingKind::Fishpond => terrain == Biome::River,
         crate::BuildingKind::SawPit => terrain == Biome::Forest,
         crate::BuildingKind::Quarry => terrain == Biome::Stone,
         crate::BuildingKind::IronMine => terrain == Biome::Iron,
@@ -204,8 +205,12 @@ pub fn construction_height(kind: crate::BuildingKind, x: f32, z: f32, rotation: 
     if !x.is_finite() || !z.is_finite() {
         return None;
     }
-    if kind == crate::BuildingKind::Fishpond && crate::ecology::fish_school((x, z)).is_none() {
-        return None;
+    if kind == crate::BuildingKind::Fishpond {
+        return (crate::ecology::fish_school((x, z)).is_some()
+            && kind
+                .rotated_build_samples(x, z, rotation)
+                .all(|(x, z)| biome(x, z) == Biome::River))
+        .then_some(-0.5);
     }
     let mut top = f32::NEG_INFINITY;
     for (px, pz) in kind.rotated_build_samples(x, z, rotation) {

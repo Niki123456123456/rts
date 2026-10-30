@@ -3,6 +3,7 @@ use stronghold_map::{self as map, BuildingKind};
 
 #[derive(Resource, Default)]
 pub(crate) struct BuildingInteraction {
+    overlaps: Vec<(Vec3, Vec3)>,
     pub placing: Option<BuildingKind>,
     pub fort_tool: Option<u8>,
     pub fort_start: Option<map::Point>,
@@ -379,6 +380,7 @@ pub(crate) fn building_input(
     mut state: ResMut<BuildingInteraction>,
     mut assets: ResMut<BuildingAssets>,
 ) {
+    state.overlaps.clear();
     state.consumed = state.fort_tool.is_some();
     if state.fort_tool.is_some() {
         return;
@@ -514,6 +516,14 @@ pub(crate) fn building_input(
             };
             let collision = model.collision.clone();
             for (index, &(x, z)) in line.iter().enumerate() {
+                state.overlaps.extend(overlap_regions(
+                    kind,
+                    x,
+                    z,
+                    terrain_height(x, z),
+                    0,
+                    &multiplayer,
+                ));
                 if index >= assets.wall_previews.len() {
                     let entity = commands
                         .spawn((
@@ -566,6 +576,7 @@ pub(crate) fn building_input(
         let y = map::terrain::construction_height(kind, x, z, state.rotation)
             .unwrap_or_else(|| terrain_height(x, z));
         let valid = placement_valid(kind, x, z, y, state.rotation, &multiplayer);
+        state.overlaps = overlap_regions(kind, x, z, y, state.rotation, &multiplayer);
         commands.entity(model.preview).insert((
             Visibility::Visible,
             placement_transform(x, y, z, state.rotation),
@@ -1481,5 +1492,72 @@ mod combat_preview_tests {
         assert!(enemy_surface_accessible(&snapshot, &[101], 202));
         snapshot.buildings.retain(|b| b.id != 3);
         assert!(!enemy_surface_accessible(&snapshot, &[101], 202));
+    }
+}
+
+fn overlap_regions(
+    kind: BuildingKind,
+    x: f32,
+    z: f32,
+    y: f32,
+    rotation: u8,
+    net: &Multiplayer,
+) -> Vec<(Vec3, Vec3)> {
+    let a = kind.construction_bounds(x, z, rotation);
+    net.snapshot
+        .buildings
+        .iter()
+        .filter_map(|b| {
+            let k = BuildingKind::from_name(&b.kind)?;
+            if kind.is_wall() && k.is_wall() {
+                return None;
+            }
+            let other = k.construction_bounds(b.x, b.z, b.rotation);
+            let x0 = (a.x - a.half_x).max(other.x - other.half_x);
+            let x1 = (a.x + a.half_x).min(other.x + other.half_x);
+            let z0 = (a.z - a.half_z).max(other.z - other.half_z);
+            let z1 = (a.z + a.half_z).min(other.z + other.half_z);
+            if x1 - x0 < 0.01 || z1 - z0 < 0.01 {
+                return None;
+            }
+            let h = (k.height() + b.y).max(y + 0.2);
+            Some((
+                Vec3::new((x0 + x1) * 0.5, h + 0.12, (z0 + z1) * 0.5),
+                Vec3::new(x1 - x0, 0.16, z1 - z0),
+            ))
+        })
+        .collect()
+}
+pub(crate) fn overlap_preview(
+    mut commands: Commands,
+    state: Res<BuildingInteraction>,
+    assets: Res<BuildingAssets>,
+    mut pool: Local<Vec<Entity>>,
+    mut gizmos: Gizmos,
+) {
+    for e in pool.iter() {
+        commands.entity(*e).insert(Visibility::Hidden);
+    }
+    for (i, (pos, size)) in state.overlaps.iter().enumerate() {
+        if i >= pool.len() {
+            pool.push(
+                commands
+                    .spawn((
+                        Mesh3d(assets.foundation_mesh.clone()),
+                        MeshMaterial3d(assets.invalid.clone()),
+                        Transform::default(),
+                        Visibility::Hidden,
+                    ))
+                    .id(),
+            );
+        }
+        commands.entity(pool[i]).insert((
+            Visibility::Visible,
+            Transform::from_translation(*pos).with_scale(*size),
+        ));
+        gizmos.cube(
+            Transform::from_translation(*pos).with_scale(*size),
+            Color::srgb(1., 0., 0.),
+        );
     }
 }

@@ -402,9 +402,9 @@ const DEFINITIONS: [Definition; 63] = [
         category: "supply",
         scene: "models/buildings/supply/fishpond/mesh.glb#Scene0",
         collision: "models/buildings/supply/fishpond/collision.glb#Mesh0/Primitive0",
-        min: [-26.060546875, -322.177490234375, -1049.995361328125],
-        max: [1254.001220703125, 267.754150390625, 22.880615234375],
-        grid: [7, 6],
+        min: [-200., 0., -250.],
+        max: [200., 380., 250.],
+        grid: [3, 3],
     },
     Definition {
         name: "dovecote",

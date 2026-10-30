@@ -124,12 +124,12 @@ pub const HERDS: [(u8, u32, f32, f32); 15] = [
     (1, 4, 210., 180.),
     (2, 3, -100., -45.),
     (2, 5, 200., 45.),
-    (3, 3, -120., 110.),
-    (3, 6, 180., -90.),
-    (3, 9, -230., -100.),
-    (4, 1, -100., -130.),
-    (4, 2, 265., 125.),
-    (4, 1, -230., 240.),
+    (3, 2, -320., 180.),
+    (3, 0, 300., -300.),
+    (3, 3, 315., 300.),
+    (4, 1, -320., -320.),
+    (4, 1, -320., 315.),
+    (4, 0, 320., -300.),
 ];
 #[cfg(test)]
 mod tests {
@@ -172,7 +172,7 @@ mod tests {
     }
     #[test]
     fn wildlife_has_different_group_sizes_and_predators() {
-        assert!(HERDS.iter().any(|h| h.0 == 3 && h.1 >= 6));
+        assert!(HERDS.iter().any(|h| h.0 == 3 && h.1 >= 3));
         assert!(HERDS.iter().any(|h| h.0 == 4 && h.1 == 1));
         assert_eq!(aggression_radius(0), 0.);
         assert!(aggression_radius(4) > aggression_radius(3));
@@ -186,5 +186,59 @@ mod tests {
             assert!(ids.insert(s.site));
             assert_eq!(terrain::biome(s.x, s.z), terrain::Biome::Forest);
         }
+    }
+}
+
+pub const PREDATOR_START_DISTANCE: f32 = 160.;
+pub const FIRST_RAID_SECONDS: u32 = 1200;
+pub fn defence(job: &str) -> (f32, f32) {
+    match job {
+        "hunters_post" => (14., 0.7),
+        "quarry" | "iron_mine" => (2.1, 0.65),
+        "saw_pit" => (1.9, 0.45),
+        "fishpond" => (1.9, 0.3),
+        _ => (1.7, 0.2),
+    }
+}
+
+#[cfg(test)]
+mod balance_tests {
+    use super::*;
+    #[test]
+    fn predators_are_sparse_remote_and_delayed() {
+        assert_eq!(
+            HERDS
+                .iter()
+                .filter(|h| predator(h.0))
+                .map(|h| h.1 as u32)
+                .sum::<u32>(),
+            7
+        );
+        for h in HERDS.iter().filter(|h| predator(h.0) && h.1 > 0) {
+            assert!((h.2 * h.2 + h.3 * h.3).sqrt() > PREDATOR_START_DISTANCE);
+        }
+        assert!(FIRST_RAID_SECONDS >= 1200);
+    }
+    #[test]
+    fn professions_defend_with_different_weapons() {
+        assert!(defence("hunters_post").0 > defence("quarry").0);
+        assert!(defence("hunters_post").1 > defence("quarry").1);
+        assert!(defence("quarry").1 > defence("fishpond").1);
+    }
+    #[test]
+    fn fishery_fits_river_and_rejects_land() {
+        let k = crate::BuildingKind::Fishpond;
+        assert!(k.grid_size().0 <= 3);
+        let mut n = 0;
+        for z in -60..0 {
+            for x in 40..90 {
+                if terrain::construction_height(k, x as f32, z as f32, 0).is_some() {
+                    n += 1;
+                    assert_eq!(terrain::biome(x as f32, z as f32), terrain::Biome::River);
+                }
+            }
+        }
+        assert!(n > 0);
+        assert!(terrain::construction_height(k, 0., 0., 0).is_none());
     }
 }

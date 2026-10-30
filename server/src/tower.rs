@@ -392,6 +392,9 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
             clear_tower(ctx, t.unit_id);
             continue;
         };
+        if ctx.db.participant().connection_id().find(u.owner).is_none() {
+            continue;
+        }
         let Some(b) = ctx.db.building().id().find(t.building_id) else {
             clear_tower(ctx, t.unit_id);
             continue;

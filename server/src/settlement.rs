@@ -253,10 +253,12 @@ fn auto_assign_peasants(ctx: &ReducerContext, owner: spacetimedb::ConnectionId) 
             reserved
                 .iter()
                 .all(|q| map::distance(*p, *q) >= map::UNIT_SPACING)
-                && map::attack_positions(shape)
-                    .into_iter()
-                    .filter(|s| s.ring == 0)
-                    .any(|s| map::shortest_path(*p, s.point, &obs).is_some())
+                && ((b.kind == "fishpond" && fishing_bank(&b, *p, &obs).is_some())
+                    || (b.kind != "fishpond"
+                        && map::attack_positions(shape)
+                            .into_iter()
+                            .filter(|s| s.ring == 0)
+                            .any(|s| map::shortest_path(*p, s.point, &obs).is_some())))
         });
         if let Some(point) = point {
             if spawn_production_worker(ctx, &b, point).is_ok() {
