@@ -423,3 +423,113 @@ fn fort_pieces(ctx: &ReducerContext, game: u64) -> Vec<fort::Structure> {
         .map(|b| fort_piece(ctx, &b))
         .collect()
 }
+
+fn reconcile_fort_heights(ctx: &ReducerContext, game: u64) {
+    let pieces = fort_pieces(ctx, game);
+    for p in pieces.iter().filter(|p| p.kind.is_crenellated()) {
+        let next = fort::crenellation_kind(*p, &pieces);
+        if next == p.kind {
+            continue;
+        }
+        let Some(mut b) = ctx.db.building().id().find(p.id) else {
+            continue;
+        };
+        let old = p.level() + roof::UNIT_CENTER_HEIGHT;
+        let height = b.y + next.roof_profile().unwrap().height + roof::UNIT_CENTER_HEIGHT;
+        b.kind = next.name().into();
+        ctx.db.building().id().update(b);
+        for o in ctx
+            .db
+            .tower_occupant()
+            .iter()
+            .filter(|o| o.building_id == p.id || o.next_building == Some(p.id))
+            .collect::<Vec<_>>()
+        {
+            if let Some(mut u) = ctx.db.army_unit().id().find(o.unit_id) {
+                if (u.y - old).abs() < 0.15 {
+                    u.y = height;
+                    ctx.db.army_unit().id().update(u);
+                }
+            }
+            if let Some(mut t) = ctx.db.tower_travel().unit_id().find(o.unit_id) {
+                for point in t.path.chunks_exact_mut(3) {
+                    if (point[1] - old).abs() < 0.15 {
+                        point[1] = height;
+                    }
+                }
+                ctx.db.tower_travel().unit_id().update(t);
+            }
+        }
+        for mut stair in ctx
+            .db
+            .wall_stair()
+            .game_id()
+            .filter(game)
+            .filter(|s| s.wall_id == p.id)
+            .collect::<Vec<_>>()
+        {
+            stair.top_y = height - roof::UNIT_CENTER_HEIGHT;
+            ctx.db.wall_stair().id().update(stair);
+        }
+    }
+}
+
+// Existing worlds retain their crenellated wall kind; migrate the old floor once.
+#[spacetimedb::table(name=fort_height_revision)]
+pub struct FortHeightRevision {
+    #[primary_key]
+    pub game_id: u64,
+}
+fn migrate_fort_heights(ctx: &ReducerContext, game: u64) {
+    if ctx.db.fort_height_revision().game_id().find(game).is_some() {
+        return;
+    }
+    for b in ctx
+        .db
+        .building()
+        .game_id()
+        .filter(game)
+        .filter(|b| b.kind == "stone_wall_crenellated")
+        .collect::<Vec<_>>()
+    {
+        let old = b.y + 6.663 + roof::UNIT_CENTER_HEIGHT;
+        let new = b.y + 10. + roof::UNIT_CENTER_HEIGHT;
+        for o in ctx
+            .db
+            .tower_occupant()
+            .iter()
+            .filter(|o| o.building_id == b.id || o.next_building == Some(b.id))
+            .collect::<Vec<_>>()
+        {
+            if let Some(mut u) = ctx.db.army_unit().id().find(o.unit_id) {
+                if (u.y - old).abs() < 0.15 {
+                    u.y = new;
+                    ctx.db.army_unit().id().update(u);
+                }
+            }
+            if let Some(mut t) = ctx.db.tower_travel().unit_id().find(o.unit_id) {
+                for p in t.path.chunks_exact_mut(3) {
+                    if (p[1] - old).abs() < 0.15 {
+                        p[1] = new;
+                    }
+                }
+                ctx.db.tower_travel().unit_id().update(t);
+            }
+        }
+        for mut stair in ctx
+            .db
+            .wall_stair()
+            .game_id()
+            .filter(game)
+            .filter(|s| s.wall_id == b.id)
+            .collect::<Vec<_>>()
+        {
+            stair.top_y = b.y + 10.;
+            ctx.db.wall_stair().id().update(stair);
+        }
+    }
+    reconcile_fort_heights(ctx, game);
+    ctx.db
+        .fort_height_revision()
+        .insert(FortHeightRevision { game_id: game });
+}

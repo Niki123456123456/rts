@@ -472,6 +472,20 @@ fn animal_damaged(ctx: &ReducerContext, mut a: Wildlife, damage: f32) {
     ctx.db.wildlife().id().update(a);
 }
 fn take_harvest(ctx: &ReducerContext, b: &Building) -> u32 {
+    if b.kind == "windmill" {
+        return u32::from(consume_intermediate(ctx, b, Commodity::Wheat, 1));
+    }
+    if b.kind == "bakery" {
+        return if consume_intermediate(ctx, b, Commodity::Flour, 1) {
+            2
+        } else {
+            0
+        };
+    }
+    if b.kind == "wheat_farm" {
+        return 2;
+    }
+
     if b.kind == "hunters_post" {
         let Some(mut a) = hunt_target(ctx, b) else {
             return 0;

@@ -28,7 +28,7 @@ try {
  assert.equal((await act('closeAllGates')).tag,'Committed');assert.equal(d.db.gateState.buildingId.find(gate.id)!.open,false);
  assert.equal((await act('setGate',gate.id,true)).tag,'Committed');
  assert.equal((await act('palaceAlarm',true)).tag,'Committed');
- await until(()=>d.db.towerOccupant.unitId.find(worker.unitId)?.buildingId===keep.id,'farmer physically seeks palace',45000);
+ await until(()=>{const u=d.db.armyUnit.id.find(worker.unitId);return d.db.towerOccupant.unitId.find(worker.unitId)?.buildingId===keep.id&&!!u&&u.y>6&&Math.hypot(u.x-u.targetX,u.z-u.targetZ)<.3},'farmer physically reaches palace roof',60000);
  await until(()=>d.db.gateState.buildingId.find(gate.id)?.open===false,'alarm closes gates after residents enter',30000);
  assert.ok(d.db.armyUnit.id.find(worker.unitId)!.y>5);
  assert.equal((await act('palaceAlarm',false)).tag,'Committed');

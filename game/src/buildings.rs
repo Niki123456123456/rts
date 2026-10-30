@@ -207,6 +207,11 @@ pub(crate) fn sync_buildings(
         .collect();
     for (entity, mut building) in &mut buildings {
         if let Some(row) = remaining.remove(&building.0.id) {
+            if building.0.kind != row.kind {
+                commands.entity(entity).despawn();
+                remaining.insert(row.id, row);
+                continue;
+            }
             if building.0.rotation != row.rotation {
                 commands.entity(entity).insert(placement_transform(
                     row.x,
@@ -249,17 +254,13 @@ pub(crate) fn sync_buildings(
                         )),
                     ));
                 }
-                if kind.is_tower() {
-                    parent
-                        .spawn((
-                            WorldAssetRoot(model.scene.clone()),
-                            model_transform(kind),
-                            crate::tower_mesh::TowerRoot(row.id),
-                        ))
-                        .observe(crate::tower_mesh::ready);
-                } else {
-                    parent.spawn((WorldAssetRoot(model.scene.clone()), model_transform(kind)));
-                }
+                parent
+                    .spawn((
+                        WorldAssetRoot(model.scene.clone()),
+                        model_transform(kind),
+                        crate::tower_mesh::TowerRoot(row.id),
+                    ))
+                    .observe(crate::tower_mesh::ready);
                 parent.spawn((
                     BuildingCollider(row.id),
                     Mesh3d(model.collision.clone()),
@@ -607,6 +608,26 @@ pub(crate) fn building_input(
                         .id();
                     assets.wall_previews.push(entity);
                 }
+                let mut preview_model = model_transform(kind);
+                if kind.is_crenellated() {
+                    let p = map::fortifications::Structure {
+                        id: u64::MAX,
+                        kind,
+                        x,
+                        y: terrain_height(x, z),
+                        z,
+                        rotation: 0,
+                        owner: multiplayer
+                            .snapshot
+                            .buildings
+                            .iter()
+                            .find(|b| b.owned)
+                            .map_or(0, |b| b.color),
+                    };
+                    let pieces = crate::fortifications::pieces(&multiplayer.snapshot);
+                    let actual = map::fortifications::crenellation_kind(p, &pieces);
+                    preview_model.scale.y *= actual.height() / kind.height();
+                }
                 commands.entity(assets.wall_previews[index]).insert((
                     Visibility::Visible,
                     placement_transform(
@@ -617,7 +638,7 @@ pub(crate) fn building_input(
                         z,
                         0,
                     )
-                    .mul_transform(model_transform(kind)),
+                    .mul_transform(preview_model),
                     MeshMaterial3d(material.clone()),
                 ));
             }

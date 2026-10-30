@@ -16,6 +16,7 @@ impl GranaryStock {
     fn food_amount(&self, resource: Commodity) -> Option<u32> {
         match resource {
             Commodity::Apples => Some(self.apples),
+            Commodity::Bread => Some(self.bread),
             Commodity::Cheese => Some(self.cheese),
             Commodity::Meat => Some(self.meat),
             _ => None,
@@ -24,6 +25,7 @@ impl GranaryStock {
     fn add_food(&mut self, resource: Commodity, amount: u32) {
         match resource {
             Commodity::Apples => self.apples += amount,
+            Commodity::Bread => self.bread += amount,
             Commodity::Cheese => self.cheese += amount,
             Commodity::Meat => self.meat += amount,
             _ => unreachable!("Not a food commodity"),
@@ -55,7 +57,7 @@ impl WarehouseStock {
             Commodity::Wood => self.wood += n,
             Commodity::Stone => self.stone += n,
             Commodity::Iron => self.iron += n,
-            Commodity::Apples | Commodity::Cheese | Commodity::Meat | Commodity::Fish => {
+            _ => {
                 unreachable!("Food belongs in granaries")
             }
         }
@@ -194,7 +196,7 @@ fn storage_targets(
     } else {
         own_warehouses(ctx, u.game_id, u.owner)
             .into_iter()
-            .filter(|s| economy::can_store(s.amounts(), resource, amount))
+            .filter(|s| can_store_cargo(ctx, s, resource, amount))
             .map(|s| s.building_id)
             .collect()
     };
@@ -216,6 +218,9 @@ fn deliver_resource(
     resource: Commodity,
     amount: u32,
 ) -> bool {
+    if resource.is_intermediate() {
+        return deliver_intermediate(ctx, u, id, resource, amount);
+    }
     if resource.is_food() {
         let Some(mut stock) = ctx.db.granary_stock().building_id().find(id).filter(|s| {
             s.owner == u.owner && s.game_id == u.game_id && can_store_food(ctx, s, resource, amount)
@@ -244,7 +249,7 @@ fn deliver_resource(
             .warehouse_stock()
             .building_id()
             .find(id)
-            .filter(|s| economy::can_store(s.amounts(), resource, amount))
+            .filter(|s| can_store_cargo(ctx, s, resource, amount))
         else {
             return false;
         };
@@ -260,7 +265,7 @@ fn deliver_resource(
             Commodity::Wood => balance.wood += amount,
             Commodity::Stone => balance.stone += amount,
             Commodity::Iron => balance.iron += amount,
-            Commodity::Apples | Commodity::Cheese | Commodity::Meat | Commodity::Fish => {
+            _ => {
                 unreachable!()
             }
         }
@@ -500,6 +505,11 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         if !staffed {
             continue;
         }
+        if building.kind == "stable" || building.kind == "siege_workshop" {
+            produce_industry(ctx, &building, &mut p);
+            ctx.db.producer().building_id().update(p);
+            continue;
+        }
         if p.buffer < economy::PRODUCTION_BUFFER {
             p.progress += 1;
             if p.progress >= nature::production_seconds(&building.kind) {
@@ -526,6 +536,12 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         let Some(source) = ctx.db.building().id().find(w.source_building) else {
             continue;
         };
+        if source.kind == "stable" || source.kind == "siege_workshop" {
+            if !at_work_site(ctx, &source, &u) {
+                route_to_work(ctx, &source, &mut u);
+            }
+            continue;
+        }
         let resource = Commodity::from_u8(w.resource).unwrap();
         let moving = ctx.db.unit_order().unit_id().find(u.id).is_some();
         if moving {

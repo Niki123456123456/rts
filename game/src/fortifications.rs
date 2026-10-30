@@ -13,6 +13,7 @@ pub(crate) struct FortAssets {
     cube: Handle<Mesh>,
     stone: Handle<StandardMaterial>,
     mortar: Handle<StandardMaterial>,
+    door: Handle<StandardMaterial>,
     wood: Handle<StandardMaterial>,
     water: Handle<StandardMaterial>,
     soil: Handle<StandardMaterial>,
@@ -25,6 +26,7 @@ pub(crate) fn setup(
     let cube = meshes.add(Cuboid::new(1., 1., 1.));
     let stone = materials.add(Color::srgb(0.58, 0.54, 0.44));
     let mortar = materials.add(Color::srgb(0.38, 0.35, 0.30));
+    let door = materials.add(Color::srgb(0.035, 0.022, 0.014));
     let wood = materials.add(Color::srgb(0.32, 0.18, 0.08));
     let water = materials.add(StandardMaterial {
         base_color: Color::srgb(0.13, 0.33, 0.35),
@@ -36,6 +38,7 @@ pub(crate) fn setup(
         cube,
         stone,
         mortar,
+        door,
         wood,
         water,
         soil,
@@ -97,7 +100,7 @@ pub(crate) fn sync(
         s.stairs.iter().map(|s| s.id).collect::<Vec<_>>(),
         s.buildings
             .iter()
-            .map(|b| (b.id, b.rotation, b.x.to_bits(), b.z.to_bits()))
+            .map(|b| (b.id, &b.kind, b.rotation, b.x.to_bits(), b.z.to_bits()))
             .collect::<Vec<_>>()
     );
     if *previous == revision {
@@ -108,10 +111,16 @@ pub(crate) fn sync(
         commands.entity(e).despawn();
     }
     let structures = pieces(s);
-    for joint in fort::joins(&structures) {
+    let connections = fort::joins(&structures);
+    for joint in &connections {
         let h = (joint.top - joint.base).max(0.1);
         commands.spawn((
             FortVisual,
+            crate::masonry::JointTexture {
+                a: joint.a,
+                b: joint.b,
+                painted: false,
+            },
             Mesh3d(assets.cube.clone()),
             MeshMaterial3d(if joint.wood {
                 assets.wood.clone()
@@ -120,44 +129,73 @@ pub(crate) fn sync(
             }),
             Transform::from_xyz(joint.shape.x, joint.base + h * 0.5, joint.shape.z).with_scale(
                 Vec3::new(
-                    (joint.shape.half_x * 2. - 0.025).max(0.02),
+                    (joint.shape.half_x * 2.).max(0.02),
                     h,
-                    (joint.shape.half_z * 2. - 0.025).max(0.02),
+                    (joint.shape.half_z * 2.).max(0.02),
                 ),
             ),
             Ground,
         ));
-        let n = (h / 0.4).ceil() as usize;
-        for row in 0..n {
-            let height = h / n as f32;
+    }
+    for door in fort::doorways(&structures, &connections) {
+        let high = structures.iter().find(|p| p.id == door.higher).unwrap();
+        let h = (high.level() - door.floor - 0.1).min(2.3).max(0.6);
+        let tangent = (door.normal.1, -door.normal.0);
+        for side in [-1., 1.] {
+            let x = door.point.0 + tangent.0 * side * 0.83;
+            let z = door.point.1 + tangent.1 * side * 0.83;
             commands.spawn((
                 FortVisual,
+                crate::masonry::JointTexture {
+                    a: door.higher,
+                    b: door.lower,
+                    painted: false,
+                },
                 Mesh3d(assets.cube.clone()),
-                MeshMaterial3d(if joint.wood {
-                    assets.wood.clone()
-                } else {
-                    assets.stone.clone()
-                }),
-                Transform::from_xyz(
-                    joint.shape.x,
-                    joint.base + (row as f32 + 0.5) * height,
-                    joint.shape.z,
-                )
-                .with_scale(Vec3::new(
-                    joint.shape.half_x * 2.,
-                    height - 0.018,
-                    joint.shape.half_z * 2.,
+                MeshMaterial3d(assets.stone.clone()),
+                Transform::from_xyz(x, door.floor + h * 0.5, z).with_scale(Vec3::new(
+                    if door.normal.0 != 0. { 0.26 } else { 0.18 },
+                    h,
+                    if door.normal.1 != 0. { 0.26 } else { 0.18 },
                 )),
-                Ground,
             ));
         }
+        commands.spawn((
+            FortVisual,
+            crate::masonry::JointTexture {
+                a: door.higher,
+                b: door.lower,
+                painted: false,
+            },
+            Mesh3d(assets.cube.clone()),
+            MeshMaterial3d(assets.stone.clone()),
+            Transform::from_xyz(door.point.0, door.floor + h + 0.08, door.point.1).with_scale(
+                Vec3::new(
+                    if door.normal.0 != 0. { 0.26 } else { 1.85 },
+                    0.2,
+                    if door.normal.1 != 0. { 0.26 } else { 1.85 },
+                ),
+            ),
+        ));
+        commands.spawn((
+            FortVisual,
+            Mesh3d(assets.cube.clone()),
+            MeshMaterial3d(assets.door.clone()),
+            Transform::from_xyz(
+                door.point.0 + door.normal.0 * 0.01,
+                door.floor + h * 0.5,
+                door.point.1 + door.normal.1 * 0.01,
+            )
+            .with_scale(Vec3::new(
+                if door.normal.0 != 0. { 0.015 } else { 1.45 },
+                h - 0.04,
+                if door.normal.1 != 0. { 0.015 } else { 1.45 },
+            )),
+        ));
     }
     for b in &s.buildings {
         let k = BuildingKind::from_name(&b.kind).unwrap_or_default();
-        if !matches!(
-            k,
-            BuildingKind::StoneWallCrenellated | BuildingKind::GatehouseSmall
-        ) {
+        if !(k.is_crenellated() || k == BuildingKind::GatehouseSmall) {
             continue;
         }
         let edges = if k.is_wall() {

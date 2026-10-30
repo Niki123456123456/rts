@@ -204,3 +204,27 @@ on an isolated database, plus tower_mesh and fortifications attachment tests.
 Roof hatches must remain inside the walkable area with unit-radius clearance.
 BuildingRoof::hatch_for_door clamps the approach point; preserve both palace
 stairs and verify entry/exit routes for every roof profile, not only square towers.
+
+Roman industry is shared/server/game industry.rs. Wheat (8) and flour (9) are
+intermediate cargo, stored in additive IndustryStock at real stockpiles. WheatFarm
+produces grain, Windmill (Mola) consumes grain, Bakery (Pistrinum) consumes flour
+and delivers Bread (4) to a granary. Stable and SiegeWorkshop use the producer
+workforce but must never create or dispatch placeholder wood. StableHorse ages
+on migration ticks; staffed stables breed every 45 work seconds, foals mature at
+90 seconds. Cavalry consumes a real adult horse. Fabrica queue_siege charges
+materials and two free peasants, builds Ballista/Onager over 30/50 work seconds.
+Siege projectiles retain their kind in ProjectileStyle until impact. Harbor
+(Portus) is a river-bank trade building, not a ship simulation. New Roman GLBs
+come from create-industry.py; horse rigs from create-light-units.py. IndustrySave
+is a private sidecar: do not change SavedWorld or expose authentication data.
+
+Crenellated walls default to 10 m (same as StoneWallHigh). Three appended hidden
+variants match directly adjacent lower plain walls; reconcile_fort_heights updates
+occupants/travel/stairs and client models. FortHeightRevision migrates old floors
+once. Shared doorways/roof_transfer open higher tower walls at the lower floor;
+mode 5 travels internally through that tower. Initial old-roof route segments use
+mode 4, not destination-roof collision/height. masonry.rs continues the actual
+neighbouring tower material and world UV scale onto solid joints and door frames;
+keep original meshes/materials unchanged. Run industry.test.ts,
+siege-industry.test.ts and tower-doors.test.ts against stronghold-industry-test,
+plus shared tests and native material/horse/catalog tests.

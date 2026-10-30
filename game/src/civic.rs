@@ -69,7 +69,9 @@ pub(crate) fn ui(
         })
         .cloned();
 
-    if let Some(b) = building.filter(|b| b.kind == "keep" || b.kind == "market") {
+    if let Some(b) =
+        building.filter(|b| b.kind == "keep" || b.kind == "market" || b.kind == "harbor")
+    {
         let mut open = true;
 
         if b.kind == "keep" {
@@ -87,14 +89,7 @@ pub(crate) fn ui(
 
                 ui.heading("Sicherheit");
                 ui.horizontal(|ui| {
-                    if ui
-                        .button(if alarm {
-                            "Entwarnung geben"
-                        } else {
-                            "Alarm blasen · Bewohner in den Palast"
-                        })
-                        .clicked()
-                    {
+                    if alarm_button(ui, alarm).clicked() {
                         net.send(Action::PalaceAlarm { active: !alarm });
                     }
                     if ui.button("Alle Tore schließen").clicked() {
@@ -258,12 +253,16 @@ pub(crate) fn ui(
                     ui.colored_label(egui::Color32::LIGHT_RED, e);
                 }
             };
-            egui::Window::new("Römischer Marktplatz")
-                .open(&mut open)
-                .default_width(440.)
-                .default_pos(egui::pos2(18., 110.))
-                .resizable(false)
-                .show(ctx, content);
+            egui::Window::new(if b.kind == "harbor" {
+                "Portus · Hafenhandel"
+            } else {
+                "Römischer Marktplatz"
+            })
+            .open(&mut open)
+            .default_width(440.)
+            .default_pos(egui::pos2(18., 110.))
+            .resizable(false)
+            .show(ctx, content);
         }
 
         if !open {
@@ -422,4 +421,52 @@ fn owned_amount(net: &Multiplayer, r: u8) -> u32 {
         6 => s.meat,
         _ => 0,
     })
+}
+
+fn alarm_button(ui: &mut egui::Ui, active: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(248., 30.), egui::Sense::click());
+    let p = ui.painter();
+    p.rect_filled(
+        rect,
+        4.,
+        if response.hovered() {
+            egui::Color32::from_rgb(94, 72, 40)
+        } else {
+            egui::Color32::from_rgb(57, 46, 31)
+        },
+    );
+    let center = rect.left_center() + egui::vec2(17., 0.);
+    let points = (0..=24)
+        .map(|i| {
+            let a = 0.3 + i as f32 / 24. * 4.8;
+            center + egui::vec2(a.cos() * 8., a.sin() * 8.)
+        })
+        .collect::<Vec<_>>();
+    p.add(egui::Shape::line(
+        points,
+        egui::Stroke::new(3., egui::Color32::GOLD),
+    ));
+    p.add(egui::Shape::convex_polygon(
+        vec![
+            center + egui::vec2(1., -8.),
+            center + egui::vec2(10., -13.),
+            center + egui::vec2(10., -3.),
+        ],
+        egui::Color32::GOLD,
+        egui::Stroke::NONE,
+    ));
+    p.text(
+        rect.left_center() + egui::vec2(34., 0.),
+        egui::Align2::LEFT_CENTER,
+        if active {
+            "Entwarnung geben"
+        } else {
+            "Alarm blasen · Bewohner schützen"
+        },
+        egui::FontId::proportional(13.),
+        egui::Color32::WHITE,
+    );
+    response.on_hover_text(
+        "Römischer Hornruf: Bewohner suchen den Palast auf; danach schließen die Tore.",
+    )
 }

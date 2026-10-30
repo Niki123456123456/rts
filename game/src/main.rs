@@ -7,8 +7,10 @@ mod combat_units;
 mod dairy;
 mod ecology;
 mod fortifications;
+mod industry;
 mod keep;
 mod logistics;
+mod masonry;
 mod menu_ui;
 mod minimap;
 #[cfg(not(target_arch = "wasm32"))]
@@ -35,6 +37,7 @@ fn main() {
     let mut app = App::new();
     app.init_resource::<combat_units::CombatAssets>();
     app.init_resource::<dairy::DairyAssets>();
+    app.init_resource::<industry::IndustryAssets>();
     #[cfg(not(target_arch = "wasm32"))]
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -69,6 +72,7 @@ fn main() {
             (
                 setup,
                 terrain::setup,
+                industry::setup,
                 keep::setup,
                 ecology::setup,
                 roman::setup,
@@ -106,6 +110,8 @@ fn main() {
                     keep::animate_citizens,
                 )
                     .chain(),
+                industry::load_assets,
+                industry::visuals,
                 logistics::load_storage_assets,
                 combat_units::load_combat_models,
                 combat_units::sync_combat_visuals,
@@ -147,6 +153,7 @@ fn main() {
                 selection_ui,
                 minimap::minimap_ui,
                 build_info::ui,
+                industry::ui,
                 selection_rectangle_ui,
                 buildings::attack_hover_ui,
             )
@@ -154,7 +161,9 @@ fn main() {
         )
         .add_systems(
             PostUpdate,
-            tower_mesh::update.after(bevy::transform::TransformSystems::Propagate),
+            (tower_mesh::update, masonry::update)
+                .chain()
+                .after(bevy::transform::TransformSystems::Propagate),
         )
         .run();
 }
@@ -1017,15 +1026,18 @@ fn selection_ui(
                             .iter()
                             .find(|p| p.building_id == building.id)
                         {
-                            let resource = match producer.resource {
+                            let resource = if building.kind=="stable"{"Pferdezucht"}else if building.kind=="siege_workshop"{"Fertigung"}else{match producer.resource {
                                 0 => "Holz",
                                 1 => "Stein",
                                 5 => "Käse",
                                 3 => "Äpfel",
                                 6 => "Wildfleisch",
                                 7 => "Fisch",
+                                4 => "Brot",
+                                8 => "Korn",
+                                9 => "Mehl",
                                 _ => "Eisen",
-                            };
+                            }};
                             let cargo: u32 = multiplayer
                                 .snapshot
                                 .workers
@@ -1106,6 +1118,8 @@ fn selection_ui(
                                     stronghold_map::units::UnitKind::Archer,
                                     stronghold_map::units::UnitKind::LightSwordsman,
                                     stronghold_map::units::UnitKind::LightCavalry,
+                                    stronghold_map::units::UnitKind::Ballista,
+                                    stronghold_map::units::UnitKind::Onager,
                                 ] {
                                     let count = selected
                                         .0

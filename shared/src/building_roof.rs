@@ -78,17 +78,20 @@ impl BuildingKind {
                 hatch: (4.1, 2.7),
                 doors: &[(6.5, 10.6), (-6.5, 10.6)],
             },
-            Self::StoneWallLow | Self::StoneWallHigh | Self::StoneWallCrenellated => RoofProfile {
+            Self::StoneWallLow
+            | Self::StoneWallHigh
+            | Self::StoneWallCrenellated
+            | Self::StoneWallCrenellatedLow
+            | Self::StoneWallCrenellatedMedium
+            | Self::StoneWallCrenellatedWoodHeight => RoofProfile {
                 height: match self {
                     Self::StoneWallLow => 3.3,
-                    Self::StoneWallHigh => 10.,
+                    Self::StoneWallHigh | Self::StoneWallCrenellated => 10.,
+                    Self::StoneWallCrenellatedLow => 3.3,
+                    Self::StoneWallCrenellatedWoodHeight => 4.1,
                     _ => 6.663,
                 },
-                half_x: if self == Self::StoneWallCrenellated {
-                    0.65
-                } else {
-                    0.72
-                },
+                half_x: if self.is_crenellated() { 0.65 } else { 0.72 },
                 half_z: 0.72,
                 hatch: (0., 0.),
                 doors: &[],

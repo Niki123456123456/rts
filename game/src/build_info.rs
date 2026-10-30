@@ -43,6 +43,8 @@ pub(crate) fn ui(
 BuildingKind::Quarry=>"Auf einem Steinvorkommen. Benötigt einen nahen Ochsenkarren für den Abtransport.",
 BuildingKind::IronMine=>"Auf einem Eisenvorkommen. Benötigt einen nahen Ochsenkarren für den Abtransport.",
 BuildingKind::Fishpond=>"Im Wasser bei einem Fischschwarm; freies Ufer für den Fischer erforderlich.",
+BuildingKind::Harbor=>"Am Flussufer: Lagerhaus auf Land, Anleger im Wasser. Mit R drehen.",
+BuildingKind::WheatFarm=>"Auf Grasland oder Wald; freier Zugang zum Lager nötig.",
 BuildingKind::OxTether=>"Auf Land oder in Rohstofffeldern. Bedient passende Betriebe bis 80 Meter automatisch.",
 _=>"Auf geeignetem Land. Rote Flächen sind blockiert. Direkt an Nachbarn anschließen ist möglich."});
         if kind.peasant_cost() > 0 {
@@ -75,7 +77,7 @@ fn description(kind: BuildingKind) -> &'static str {
     use BuildingKind::*;
     match kind {
  Housing=>"Bietet vier weitere Wohnplätze und ermöglicht zusätzlichen Zuzug.",
-Stockpile=>"Lagert Holz, Stein und Eisen. Arbeiter und Karren liefern ihre Rohstoffe hier ab.",
+Stockpile=>"Lagert auch Korn und Mehl sowie Holz, Stein und Eisen. Arbeiter und Karren liefern ihre Rohstoffe hier ab.",
 Granary=>"Lagert Lebensmittel für die Bevölkerung. Rationen werden im Palast festgelegt.",
 Market=>"Römischer Handelsplatz zum Kaufen, Verkaufen und Tauschen. Angebot und Nachfrage verändern die Preise.",
 Barracks=>"Bildet aus freien Bauern bewaffnete Bauern, Bogenschützen, leichte Schwertkämpfer und leichte Reiter aus.",
@@ -86,11 +88,17 @@ Fishpond=>"Fängt Fisch aus einem örtlichen Schwarm. Überfischte Bestände bra
 HuntersPost=>"Jäger liefern Wildfleisch und verteidigen sich mit Pfeil und Bogen.",
 OxTether=>"Stellt einen Ochsenkarren für den automatischen Rohstofftransport bereit.",
 AppleFarm=>"Versorgt den Kornspeicher mit Äpfeln.",
+WheatFarm=>"Baut Korn an und liefert es ins Lager. Benötigt einen Bauern.",
+Windmill=>"Mola: römische Kornmühle. Verarbeitet gelagertes Korn zu Mehl.",
+Bakery=>"Pistrinum: Bäckerei. Verarbeitet ein Mehl zu zwei Brot für den Kornspeicher.",
+Stable=>"Equile: Pferdestall mit Zucht. Alle 45 Arbeitssekunden entsteht ein Fohlen; nach 90 Sekunden ist es reitfähig. Leichte Reiter benötigen ein erwachsenes Pferd.",
+SiegeWorkshop=>"Fabrica: Baut Ballisten zur Verteidigung und Onager für den Angriff. Jeder Auftrag benötigt Rohstoffe und zwei freie Bauern als Besatzung.",
+Harbor=>"Portus: Römischer Anleger zum Kaufen, Verkaufen und Tauschen am Fluss.",
 DairyFarm=>"Produziert Käse als zusätzliche Nahrungsquelle.",
 WoodenWall=>"Kleiner hölzerner Schutzwall mit begehbarem Wehrgang.",
 StoneWallLow=>"Niedrige Steinmauer mit einem kurzen Aufstieg zum Wehrgang.",
 StoneWallHigh=>"Hohe Steinmauer für einen erhöhten Wehrgang und größere Bogenreichweite.",
-StoneWallCrenellated=>"Zinnen folgen der Mauerlinie und können Pfeile abfangen.",
+StoneWallCrenellated=>"Zehn Meter hohe Zinnenmauer. Direkt neben niedrigeren Mauern passt sie ihre Höhe an. Zinnen folgen der Mauerlinie und fangen Geschosse ab.",
 StoneWall=>"Steinerner Wehrgang. Gleiche Höhen lassen sich miteinander verbinden.",
 GatehouseSmall|GatehouseLarge|GatehouseWooden=>"Kontrollierbarer Durchgang durch die Befestigung. Bei Alarm vom Palast aus schließen.",
 DrawbridgeGate=>"Befestigtes Tor mit beweglicher Zugbrücke über einen Fluss oder Graben.",

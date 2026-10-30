@@ -310,9 +310,9 @@ fn own_market(ctx: &ReducerContext, p: &Participant) -> Result<(), String> {
         .building()
         .owner()
         .filter(p.connection_id)
-        .any(|b| b.kind == "market" && building_open(ctx, b.id))
+        .any(|b| (b.kind == "market" || b.kind == "harbor") && building_open(ctx, b.id))
     {
-        return Err("Baue zuerst einen eigenen geöffneten Marktplatz.".into());
+        return Err("Baue zuerst einen eigenen geöffneten Marktplatz oder Hafen.".into());
     }
     Ok(())
 }

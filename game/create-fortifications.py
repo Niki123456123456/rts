@@ -11,7 +11,7 @@ b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
 def generate(item):
     k.geometry[:]=[([],[],[]) for _ in k.materials]
     name=item['id']; k.rng.seed(841+sum(map(ord,name))); folder=ROOT/'assets/models/buildings/fortifications'/item['folder'];folder.mkdir(parents=True,exist_ok=True)
-    height={'wooden_wall':4.1,'stone_wall_low':3.3,'stone_wall_high':10.0,'stone_wall_crenellated':6.663}.get(name,8.0)
+    height={'wooden_wall':4.1,'stone_wall_low':3.3,'stone_wall_high':10.0,'stone_wall_crenellated':10.0,'stone_wall_crenellated_low':3.3,'stone_wall_crenellated_medium':6.663,'stone_wall_crenellated_wood_height':4.1}.get(name,8.0)
     if name=='drawbridge_gate':
         for x in [-3.5,3.5]:
             k.masonry(x,0,2.8,7.5,-1.5,9.5)

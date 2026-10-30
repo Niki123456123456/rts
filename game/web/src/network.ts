@@ -2,6 +2,7 @@ import {prepareCaches} from './cache';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
 
 type Action =
+ | {action:'queue_siege';building_id:string;kind:string}
  | {action:'market_exchange';sell:number;amount:number;buy:number}
  | {action:'set_civic_policy';rations:number;taxes:number}|{action:'palace_alarm';active:boolean}|{action:'close_all_gates'}
  | {action:'market_trade';resource:number;amount:number;buy:boolean}|{action:'request_goods';target_color:number;resource:number;amount:number;offered_gold:number;note:string}|{action:'respond_request';request_id:string;accept:boolean}
@@ -128,7 +129,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onHuntAnimal(result);
   connection.reducers.onCreateGame(result);
   connection.reducers.onSaveGame(result);
-  connection.reducers.onSetCivicPolicy(result);connection.reducers.onPalaceAlarm(result);connection.reducers.onCloseAllGates(result);connection.reducers.onMarketTrade(result);connection.reducers.onMarketExchange(result);connection.reducers.onRequestGoods(result);connection.reducers.onRespondRequest(result);
+  connection.reducers.onQueueSiege(result);connection.reducers.onSetCivicPolicy(result);connection.reducers.onPalaceAlarm(result);connection.reducers.onCloseAllGates(result);connection.reducers.onMarketTrade(result);connection.reducers.onMarketExchange(result);connection.reducers.onRequestGoods(result);connection.reducers.onRespondRequest(result);
   connection.reducers.onLoadGame(result);
   connection.reducers.onJoinGame(result);
   connection.reducers.onLeaveGame(result);
@@ -163,6 +164,7 @@ export const strongholdNetwork = {
       case 'set_civic_policy':conn.reducers.setCivicPolicy(action.rations,action.taxes);break;
       case 'palace_alarm':conn.reducers.palaceAlarm(action.active);if(action.active)playCornu();break;
       case 'close_all_gates':conn.reducers.closeAllGates();break;
+      case 'queue_siege':conn.reducers.queueSiege(BigInt(action.building_id),action.kind);break;
       case 'market_exchange':conn.reducers.marketExchange(action.sell,action.amount,action.buy);break;
       case 'market_trade':conn.reducers.marketTrade(action.resource,action.amount,action.buy);break;
       case 'request_goods':conn.reducers.requestGoods(action.target_color,action.resource,action.amount,BigInt(action.offered_gold),action.note);break;
@@ -202,9 +204,12 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM civic_policy WHERE game_id = ${gameId}`,`SELECT * FROM treasury WHERE game_id = ${gameId}`,`SELECT * FROM market_pressure WHERE game_id = ${gameId}`,`SELECT * FROM diplomatic_request WHERE game_id = ${gameId}`,`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM projectile_style WHERE game_id = ${gameId}`,`SELECT * FROM industry_stock WHERE game_id = ${gameId}`,`SELECT * FROM stable_horse WHERE game_id = ${gameId}`,`SELECT * FROM factory_order WHERE game_id = ${gameId}`,`SELECT * FROM civic_policy WHERE game_id = ${gameId}`,`SELECT * FROM treasury WHERE game_id = ${gameId}`,`SELECT * FROM market_pressure WHERE game_id = ${gameId}`,`SELECT * FROM diplomatic_request WHERE game_id = ${gameId}`,`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
     return JSON.stringify({
+      industry_stocks:ready&&connected&&conn?Array.from(conn.db.industryStock.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),wheat:r.wheat,flour:r.flour})):[],
+      horses:ready&&connected&&conn?Array.from(conn.db.stableHorse.iter()).filter(r=>r.gameId===gameId).map(r=>({id:r.id.toString(),stable_id:r.stableId.toString(),age:r.age})):[],
+      factory_orders:ready&&connected&&conn?Array.from(conn.db.factoryOrder.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),kind:r.kind,progress:r.progress,duration:r.duration})):[],
       policies:ready&&connected&&conn?Array.from(conn.db.civicPolicy.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),rations:r.rations,taxes:r.taxes,alarm:r.alarm,alarm_started:r.alarmStarted})):[],
       gold:ready&&connected&&conn?Number(conn.db.treasury.connectionId.find(conn.connectionId)?.gold??0n):null,
       prices:ready&&connected&&conn?Array.from(conn.db.marketPressure.iter()).filter(r=>r.gameId===gameId).map(r=>({resource:r.resource,pressure:r.pressure})):[],
@@ -235,8 +240,8 @@ export const strongholdNetwork = {
       warehouses: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.warehouseStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),wood:s.wood,stone:s.stone,iron:s.iron})) : [],
       granaries: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.granaryStock.iter()).filter(s=>s.gameId===gameId).map(s=>({building_id:s.buildingId.toString(),apples:s.apples,bread:s.bread,cheese:s.cheese,meat:s.meat})) : [],
       workers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.worker.iter()).filter(w=>w.gameId===gameId).map(w=>({unit_id:w.unitId.toString(),source_building:w.sourceBuilding.toString(),resource:w.resource,cargo:w.cargo})) : [],
-      producers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.producer.iter()).filter(p=>p.gameId===gameId).map(p=>({building_id:p.buildingId.toString(),resource:p.resource,buffer:p.buffer})) : [],
-      arrows: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.arrowProjectile.iter()).filter(a=>a.gameId===gameId).map(a=>({id:a.id.toString(),target_id:a.targetId.toString(),building:a.building,start_x:a.startX,start_y:a.startY,start_z:a.startZ,end_x:a.endX,end_y:a.endY,end_z:a.endZ,age:a.age,flight_seconds:a.flightSeconds})) : [],
+      producers: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.producer.iter()).filter(p=>p.gameId===gameId).map(p=>({building_id:p.buildingId.toString(),resource:p.resource,buffer:p.buffer,progress:p.progress})) : [],
+      arrows: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.arrowProjectile.iter()).filter(a=>a.gameId===gameId).map(a=>({kind:conn!.db.projectileStyle.projectileId.find(a.id)?.kind??'archer',id:a.id.toString(),target_id:a.targetId.toString(),building:a.building,start_x:a.startX,start_y:a.startY,start_z:a.startZ,end_x:a.endX,end_y:a.endY,end_z:a.endZ,age:a.age,flight_seconds:a.flightSeconds})) : [],
       roof_occupants: ready && connected && conn && gameId !== undefined ? Array.from(conn.db.towerOccupant.iter())
         .filter(o => o.gameId === gameId)
         .map(o => ({ unit_id: o.unitId.toString(), building_id: o.buildingId.toString(), slot: o.slot, next_building: o.nextBuilding?.toString() ?? null, next_slot: o.nextSlot })) : [],

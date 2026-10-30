@@ -381,6 +381,7 @@ pub fn leave_game(ctx: &ReducerContext) {
                 .collect::<Vec<_>>()
             {
                 ctx.db.arrow_projectile().id().delete(arrow.id);
+                ctx.db.projectile_style().projectile_id().delete(arrow.id);
             }
             let units: Vec<_> = ctx.db.army_unit().owner().filter(connection_id).collect();
             for unit in units {
@@ -780,6 +781,7 @@ fn rotation(ctx: &ReducerContext, building_id: u64) -> u8 {
         .map_or(0, |row| row.quarter_turns)
 }
 fn delete_building(ctx: &ReducerContext, building_id: u64) {
+    let removed_game = ctx.db.building().id().find(building_id).map(|b| b.game_id);
     ctx.db.civic_policy().building_id().delete(building_id);
     ctx.db.close_gate_order().building_id().delete(building_id);
     ctx.db.keep_population().building_id().delete(building_id);
@@ -792,6 +794,7 @@ fn delete_building(ctx: &ReducerContext, building_id: u64) {
         .building_operation()
         .building_id()
         .delete(building_id);
+    remove_industry_building(ctx, building_id);
     remove_fort_building(ctx, building_id);
     remove_ecology_building(ctx, building_id);
     remove_logistics_building(ctx, building_id);
@@ -799,6 +802,9 @@ fn delete_building(ctx: &ReducerContext, building_id: u64) {
     ctx.db.building_rotation().building_id().delete(building_id);
     ctx.db.building().id().delete(building_id);
     evacuate_tower(ctx, building_id);
+    if let Some(game) = removed_game {
+        reconcile_fort_heights(ctx, game);
+    }
 }
 fn building_shape(ctx: &ReducerContext, building: &Building) -> Obstacle {
     map::BuildingKind::from_name(&building.kind)
@@ -1297,6 +1303,7 @@ fn place_building_for(
         half_z: cleared.half_z,
     });
     clear_resource_trees(ctx, player.game_id, cleared);
+    reconcile_fort_heights(ctx, player.game_id);
     auto_assign_peasants(ctx, player.connection_id);
     Ok(())
 }
@@ -1414,3 +1421,5 @@ pub fn build_wall_kind(
 include!("saves.rs");
 
 include!("civic.rs");
+
+include!("industry.rs");

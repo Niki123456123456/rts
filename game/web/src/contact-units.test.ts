@@ -12,6 +12,8 @@ try {
  assert.ok(Math.abs(homes[1].x-homes[0].x-width)<.002,'houses touch at their visible wall edges');
  assert.equal((await build('housing',first.x,first.z)).tag,'Failed','actual overlapping buildings remain forbidden');
  assert.equal((await build('barracks',-25,-23)).tag,'Committed');const barracks=own().find(b=>b.kind==='barracks')!;
+ assert.equal((await build('stable',24,22)).tag,'Committed');
+ await until(()=>Array.from(db.db.stableHorse.iter()).some(h=>h.gameId===game&&h.age>=90),'stable supplies a grown cavalry horse',180000);
  await until(()=>db.db.keepPopulation.buildingId.find(own().find(b=>b.kind==='keep')!.id)!.arrived>=2,'free peasants arrive',15000);
  const before=stock();const peasants=db.db.keepPopulation.buildingId.find(own().find(b=>b.kind==='keep')!.id)!.arrived;
  assert.equal((await call('recruitUnit',barracks.id,'light_swordsman')).tag,'Committed');

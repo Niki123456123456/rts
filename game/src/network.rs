@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Deserialize)]
 pub struct Snapshot {
     #[serde(default)]
+    pub industry_stocks: Vec<IndustryStockView>,
+    #[serde(default)]
+    pub horses: Vec<HorseView>,
+    #[serde(default)]
+    pub factory_orders: Vec<FactoryView>,
+
+    #[serde(default)]
     pub policies: Vec<PolicyView>,
     #[serde(default)]
     pub gold: Option<u64>,
@@ -170,6 +177,8 @@ pub struct FishStock {
 }
 #[derive(Clone, Deserialize)]
 pub struct Arrow {
+    #[serde(default)]
+    pub kind: String,
     #[serde(deserialize_with = "id")]
     pub id: u64,
     #[serde(deserialize_with = "id")]
@@ -229,6 +238,8 @@ pub struct WorkerState {
 }
 #[derive(Clone, Deserialize)]
 pub struct ProducerState {
+    #[serde(default)]
+    pub progress: u32,
     #[serde(deserialize_with = "id")]
     pub building_id: u64,
     pub resource: u8,
@@ -354,9 +365,37 @@ fn serialize_ids<S: serde::Serializer>(values: &[u64], serializer: S) -> Result<
     serializer.collect_seq(values.iter().map(u64::to_string))
 }
 
+#[derive(Clone, Deserialize)]
+pub struct IndustryStockView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub wheat: u32,
+    pub flour: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct HorseView {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    #[serde(deserialize_with = "id")]
+    pub stable_id: u64,
+    pub age: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct FactoryView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub kind: String,
+    pub progress: u32,
+    pub duration: u32,
+}
 #[derive(Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
+    QueueSiege {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+        kind: String,
+    },
     SetCivicPolicy {
         rations: u8,
         taxes: u8,
@@ -681,6 +720,9 @@ mod backend {
                     .map_err(|e| e.to_string())?;
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_queue_siege(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_set_civic_policy(move |ctx, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -812,6 +854,9 @@ mod backend {
                 } => conn
                     .reducers
                     .build_wall_kind(start_x, start_z, end_x, end_z, kind),
+                Action::QueueSiege { building_id, kind } => {
+                    conn.reducers.queue_siege(building_id, kind)
+                }
                 Action::SetCivicPolicy { rations, taxes } => {
                     conn.reducers.set_civic_policy(rations, taxes)
                 }
@@ -962,6 +1007,10 @@ mod backend {
                             })
                             .subscribe([
                                 format!("SELECT * FROM civic_policy WHERE game_id = {id}"),
+                                format!("SELECT * FROM industry_stock WHERE game_id = {id}"),
+                                format!("SELECT * FROM stable_horse WHERE game_id = {id}"),
+                                format!("SELECT * FROM factory_order WHERE game_id = {id}"),
+                                format!("SELECT * FROM projectile_style WHERE game_id = {id}"),
                                 format!("SELECT * FROM treasury WHERE game_id = {id}"),
                                 format!("SELECT * FROM market_pressure WHERE game_id = {id}"),
                                 format!("SELECT * FROM diplomatic_request WHERE game_id = {id}"),
@@ -991,6 +1040,40 @@ mod backend {
                     );
                 }
             }
+            snapshot.industry_stocks = conn
+                .db
+                .industry_stock()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::IndustryStockView {
+                    building_id: r.building_id,
+                    wheat: r.wheat,
+                    flour: r.flour,
+                })
+                .collect();
+            snapshot.horses = conn
+                .db
+                .stable_horse()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::HorseView {
+                    id: r.id,
+                    stable_id: r.stable_id,
+                    age: r.age,
+                })
+                .collect();
+            snapshot.factory_orders = conn
+                .db
+                .factory_order()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::FactoryView {
+                    building_id: r.building_id,
+                    kind: r.kind,
+                    progress: r.progress,
+                    duration: r.duration,
+                })
+                .collect();
             snapshot.policies = conn
                 .db
                 .civic_policy()
@@ -1255,6 +1338,7 @@ mod backend {
                 .iter()
                 .filter(|p| Some(p.game_id) == snapshot.game_id)
                 .map(|p| super::ProducerState {
+                    progress: p.progress,
                     building_id: p.building_id,
                     resource: p.resource,
                     buffer: p.buffer,
@@ -1266,6 +1350,12 @@ mod backend {
                 .iter()
                 .filter(|a| Some(a.game_id) == snapshot.game_id)
                 .map(|a| super::Arrow {
+                    kind: conn
+                        .db
+                        .projectile_style()
+                        .projectile_id()
+                        .find(&a.id)
+                        .map_or_else(|| "archer".into(), |s| s.kind),
                     id: a.id,
                     target_id: a.target_id,
                     building: a.building,

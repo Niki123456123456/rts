@@ -83,7 +83,7 @@ fn update_unit_activity(
 pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Result<(), String> {
     let player = participant(ctx)?;
     let kind = map::units::UnitKind::from_name(&kind)
-        .filter(|k| *k != map::units::UnitKind::Lord)
+        .filter(|k| *k != map::units::UnitKind::Lord && !k.is_siege())
         .ok_or("Unbekannter Einheitentyp.")?;
     let b = ctx
         .db
@@ -155,6 +155,9 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
         .ok_or("Keine Bauern vorhanden.")?;
     if population.arrived <= employed_peasants(ctx, player.connection_id) {
         return Err("Kein freier Bauer für die Rekrutierung. Schließe einen Betrieb oder warte auf Zuwanderer.".into());
+    }
+    if kind == map::units::UnitKind::LightCavalry {
+        take_adult_horse(ctx, &player)?;
     }
     debit_cost(ctx, &player, kind.cost())?;
     population.arrived -= 1;

@@ -10,26 +10,28 @@ use stronghold_map::fortifications::ParapetBlock;
 pub(crate) struct TowerRoot(pub u64);
 #[derive(Component)]
 pub(crate) struct TowerPart {
-    building: u64,
-    original: Handle<Mesh>,
-    revision: String,
-    variant: Option<Handle<Mesh>>,
+    pub(crate) building: u64,
+    pub(crate) original: Handle<Mesh>,
+    pub(crate) material: Handle<StandardMaterial>,
+    pub(crate) revision: String,
+    pub(crate) variant: Option<Handle<Mesh>>,
 }
 pub(crate) fn ready(
     event: On<WorldInstanceReady>,
     mut commands: Commands,
     roots: Query<&TowerRoot>,
     children: Query<&Children>,
-    meshes: Query<&Mesh3d>,
+    meshes: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>)>,
 ) {
     let Ok(root) = roots.get(event.entity) else {
         return;
     };
     for entity in children.iter_descendants(event.entity) {
-        if let Ok(mesh) = meshes.get(entity) {
+        if let Ok((mesh, material)) = meshes.get(entity) {
             commands.entity(entity).insert(TowerPart {
                 building: root.0,
                 original: mesh.0.clone(),
+                material: material.0.clone(),
                 revision: String::new(),
                 variant: None,
             });
@@ -53,6 +55,7 @@ pub(crate) fn update(
             .iter()
             .map(|b| (
                 b.id,
+                &b.kind,
                 b.x.to_bits(),
                 b.y.to_bits(),
                 b.z.to_bits(),
@@ -318,6 +321,7 @@ mod tests {
                 TowerPart {
                     building: 1,
                     original: original.clone(),
+                    material: default(),
                     revision: String::new(),
                     variant: None,
                 },

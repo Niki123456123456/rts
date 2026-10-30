@@ -46,9 +46,12 @@ pub enum Commodity {
     Stone = 1,
     Iron = 2,
     Apples = 3,
+    Bread = 4,
     Cheese = 5,
     Meat = 6,
     Fish = 7,
+    Wheat = 8,
+    Flour = 9,
 }
 impl Commodity {
     pub fn from_u8(value: u8) -> Option<Self> {
@@ -57,9 +60,12 @@ impl Commodity {
             1 => Some(Self::Stone),
             2 => Some(Self::Iron),
             3 => Some(Self::Apples),
+            4 => Some(Self::Bread),
             5 => Some(Self::Cheese),
             6 => Some(Self::Meat),
             7 => Some(Self::Fish),
+            8 => Some(Self::Wheat),
+            9 => Some(Self::Flour),
             _ => None,
         }
     }
@@ -68,17 +74,26 @@ impl Commodity {
             Self::Wood => 20,
             Self::Stone => 54,
             Self::Iron => 96,
-            Self::Apples | Self::Cheese | Self::Meat | Self::Fish => FOOD_CAPACITY_PER_KIND,
+            Self::Apples | Self::Bread | Self::Cheese | Self::Meat | Self::Fish => {
+                FOOD_CAPACITY_PER_KIND
+            }
+            Self::Wheat | Self::Flour => 120,
         }
     }
     pub fn is_food(self) -> bool {
-        matches!(self, Self::Apples | Self::Cheese | Self::Meat | Self::Fish)
+        matches!(
+            self,
+            Self::Apples | Self::Bread | Self::Cheese | Self::Meat | Self::Fish
+        )
     }
 }
 impl BuildingKind {
     pub fn produces(self) -> Option<Commodity> {
         match self {
-            Self::SawPit => Some(Commodity::Wood),
+            Self::SawPit | Self::Stable | Self::SiegeWorkshop => Some(Commodity::Wood),
+            Self::WheatFarm => Some(Commodity::Wheat),
+            Self::Windmill => Some(Commodity::Flour),
+            Self::Bakery => Some(Commodity::Bread),
             Self::Quarry => Some(Commodity::Stone),
             Self::IronMine => Some(Commodity::Iron),
             Self::DairyFarm => Some(Commodity::Cheese),
@@ -97,7 +112,7 @@ pub fn storage_cells(stock: [u32; 3]) -> u64 {
         .sum()
 }
 pub fn can_store(mut stock: [u32; 3], resource: Commodity, amount: u32) -> bool {
-    if resource.is_food() {
+    if resource.is_food() || resource.is_intermediate() {
         return false;
     }
     let Some(sum) = stock[resource as usize].checked_add(amount) else {
@@ -177,7 +192,7 @@ pub fn stock_visuals(stock: [u32; 3]) -> Vec<StockVisual> {
                         });
                     }
                 }
-                Commodity::Apples | Commodity::Cheese | Commodity::Meat | Commodity::Fish => {
+                _ => {
                     unreachable!("Food is stored in granaries")
                 }
             }
@@ -227,5 +242,25 @@ mod tests {
         assert!(!can_store([480, 0, 0], Commodity::Stone, 1));
         assert!(!can_store([u32::MAX, 0, 0], Commodity::Wood, 1));
         assert!(!can_store([0; 3], Commodity::Cheese, 1));
+    }
+}
+
+impl Commodity {
+    pub fn is_intermediate(self) -> bool {
+        matches!(self, Self::Wheat | Self::Flour)
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Wood => "Holz",
+            Self::Stone => "Stein",
+            Self::Iron => "Eisen",
+            Self::Apples => "Äpfel",
+            Self::Bread => "Brot",
+            Self::Cheese => "Käse",
+            Self::Meat => "Fleisch",
+            Self::Fish => "Fisch",
+            Self::Wheat => "Korn",
+            Self::Flour => "Mehl",
+        }
     }
 }

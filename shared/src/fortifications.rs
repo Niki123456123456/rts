@@ -379,7 +379,7 @@ pub fn tower_openings_from(
     if !piece.kind.is_tower() {
         return Vec::new();
     }
-    connections
+    let mut result = connections
         .iter()
         .filter_map(|j| {
             let other_id = if j.a == piece.id {
@@ -402,7 +402,24 @@ pub fn tower_openings_from(
                 top: piece.level().max(piece.y + piece.kind.height()) + 6.,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    for door in doorways(pieces, connections)
+        .into_iter()
+        .filter(|d| d.higher == piece.id)
+    {
+        let shape = Obstacle {
+            x: door.point.0 - door.normal.0 * 0.5,
+            z: door.point.1 - door.normal.1 * 0.5,
+            half_x: if door.normal.0 != 0. { 0.85 } else { 0.8 },
+            half_z: if door.normal.1 != 0. { 0.85 } else { 0.8 },
+        };
+        result.push(ParapetBlock {
+            shape,
+            bottom: door.floor,
+            top: (door.floor + 2.3).min(piece.level() - 0.05),
+        });
+    }
+    result
 }
 /// Exposed sides follow straight runs, corners and junctions, never the model's default rotation.
 pub fn exposed_edges(piece: Structure, pieces: &[Structure]) -> Vec<Point> {
@@ -575,7 +592,12 @@ mod attachment_tests {
             assert!(tower_openings(a, &[a]).is_empty());
             let mut lower = b;
             lower.y = -2.;
-            assert!(tower_openings(a, &[a, lower]).is_empty());
+            assert!(
+                tower_openings(a, &[a, lower])
+                    .iter()
+                    .all(|c| c.top < a.level()),
+                "different heights open only the access door below the higher roof"
+            );
         }
     }
     #[test]
@@ -588,5 +610,258 @@ mod attachment_tests {
         let shapes = parapets(a.kind, (a.x, a.z), 0, &edges);
         assert!(!shapes.is_empty());
         assert!(shapes.iter().all(|b| b.shape.x < 1. || b.shape.z < 1.));
+    }
+}
+
+/// A second crenellated skin follows an adjacent lower plain wall, not other crenels.
+pub fn crenellation_kind(piece: Structure, pieces: &[Structure]) -> BuildingKind {
+    if !piece.kind.is_crenellated() {
+        return piece.kind;
+    }
+    let height = pieces
+        .iter()
+        .filter(|p| {
+            p.id != piece.id
+                && p.owner == piece.owner
+                && p.kind.is_wall()
+                && !p.kind.is_crenellated()
+                && ((p.x - piece.x).abs() + (p.z - piece.z).abs() - 2.).abs() < 0.12
+        })
+        .filter_map(|p| p.kind.roof_profile().map(|r| r.height))
+        .fold(10.0_f32, f32::min);
+    if height < 3.5 {
+        BuildingKind::StoneWallCrenellatedLow
+    } else if height < 4.5 {
+        BuildingKind::StoneWallCrenellatedWoodHeight
+    } else if height < 9. {
+        BuildingKind::StoneWallCrenellatedMedium
+    } else {
+        BuildingKind::StoneWallCrenellated
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Doorway {
+    pub higher: u64,
+    pub lower: u64,
+    pub point: Point,
+    pub normal: Point,
+    pub floor: f32,
+}
+pub fn doorways(pieces: &[Structure], connections: &[FortJoin]) -> Vec<Doorway> {
+    connections
+        .iter()
+        .filter_map(|j| {
+            let a = *pieces.iter().find(|p| p.id == j.a)?;
+            let b = *pieces.iter().find(|p| p.id == j.b)?;
+            let (high, low) = if a.level() > b.level() {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            if !high.kind.is_tower()
+                || !(low.kind.is_wall() || low.kind.is_tower())
+                || high.level() - low.level() < 0.15
+            {
+                return None;
+            }
+            let horizontal = (high.x - low.x).abs() > (high.z - low.z).abs();
+            let body = high.body();
+            let normal = if horizontal {
+                ((low.x - high.x).signum(), 0.)
+            } else {
+                (0., (low.z - high.z).signum())
+            };
+            let point = if horizontal {
+                (high.x + normal.0 * (body.half_x + 0.04), j.shape.z)
+            } else {
+                (j.shape.x, high.z + normal.1 * (body.half_z + 0.04))
+            };
+            Some(Doorway {
+                higher: high.id,
+                lower: low.id,
+                point,
+                normal,
+                floor: low.level(),
+            })
+        })
+        .collect()
+}
+#[derive(Clone, Copy, Debug)]
+pub struct RoofStep {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub mode: u8,
+}
+pub fn roof_transfer(start: u64, target: u64, pieces: &[Structure]) -> Option<Vec<RoofStep>> {
+    let connections = joins(pieces);
+    let doors = doorways(pieces, &connections);
+    let mut queue = vec![start];
+    let mut parents = std::collections::HashMap::from([(start, None)]);
+    let mut i = 0;
+    while i < queue.len() {
+        let id = queue[i];
+        if id == target {
+            break;
+        }
+        for j in connections.iter().filter(|j| j.a == id || j.b == id) {
+            let next = if j.a == id { j.b } else { j.a };
+            if parents.contains_key(&next) {
+                continue;
+            }
+            let a = pieces.iter().find(|p| p.id == id)?;
+            let b = pieces.iter().find(|p| p.id == next)?;
+            if a.kind.roof_profile().is_none() || b.kind.roof_profile().is_none() {
+                continue;
+            }
+            if (a.level() - b.level()).abs() > 0.05
+                && !doors.iter().any(|d| {
+                    (d.higher == id && d.lower == next) || (d.higher == next && d.lower == id)
+                })
+            {
+                continue;
+            }
+            parents.insert(next, Some(id));
+            queue.push(next);
+        }
+        i += 1;
+    }
+    if !parents.contains_key(&target) {
+        return None;
+    }
+    let mut ids = vec![target];
+    while let Some(prev) = *parents.get(ids.last()?)? {
+        ids.push(prev);
+    }
+    ids.reverse();
+    let hatch = |p: Structure| {
+        crate::building_roof::BuildingRoof::new(p.kind, p.x, p.y, p.z, p.rotation)
+            .unwrap()
+            .hatch()
+    };
+    let first = *pieces.iter().find(|p| p.id == start)?;
+    let p = hatch(first);
+    let mut route = vec![RoofStep {
+        x: p.0,
+        y: first.level() + crate::building_roof::UNIT_CENTER_HEIGHT,
+        z: p.1,
+        mode: 4,
+    }];
+    for pair in ids.windows(2) {
+        let a = *pieces.iter().find(|p| p.id == pair[0])?;
+        let b = *pieces.iter().find(|p| p.id == pair[1])?;
+        let j = connections
+            .iter()
+            .find(|j| (j.a == a.id && j.b == b.id) || (j.a == b.id && j.b == a.id))?;
+        if (a.level() - b.level()).abs() < 0.05 {
+            route.push(RoofStep {
+                x: j.shape.x,
+                y: a.level() + crate::building_roof::UNIT_CENTER_HEIGHT,
+                z: j.shape.z,
+                mode: 4,
+            });
+            let p = hatch(b);
+            route.push(RoofStep {
+                x: p.0,
+                y: b.level() + crate::building_roof::UNIT_CENTER_HEIGHT,
+                z: p.1,
+                mode: 4,
+            });
+        } else {
+            let d = *doors.iter().find(|d| {
+                (d.higher == a.id && d.lower == b.id) || (d.higher == b.id && d.lower == a.id)
+            })?;
+            let point = (d.point.0 + d.normal.0 * 0.12, d.point.1 + d.normal.1 * 0.12);
+            if b.level() > a.level() {
+                route.push(RoofStep {
+                    x: point.0,
+                    y: d.floor + crate::building_roof::UNIT_CENTER_HEIGHT,
+                    z: point.1,
+                    mode: 4,
+                });
+                let p = hatch(b);
+                route.push(RoofStep {
+                    x: p.0,
+                    y: b.level() + crate::building_roof::UNIT_CENTER_HEIGHT,
+                    z: p.1,
+                    mode: 5,
+                });
+            } else {
+                route.push(RoofStep {
+                    x: point.0,
+                    y: d.floor + crate::building_roof::UNIT_CENTER_HEIGHT,
+                    z: point.1,
+                    mode: 5,
+                });
+                let p = hatch(b);
+                route.push(RoofStep {
+                    x: p.0,
+                    y: b.level() + crate::building_roof::UNIT_CENTER_HEIGHT,
+                    z: p.1,
+                    mode: 4,
+                });
+            }
+        }
+    }
+    Some(route)
+}
+
+#[cfg(test)]
+mod transition_tests {
+    use super::*;
+    fn piece(id: u64, kind: BuildingKind, x: f32, z: f32) -> Structure {
+        Structure {
+            id,
+            kind,
+            x,
+            y: 0.,
+            z,
+            rotation: 0,
+            owner: 0,
+        }
+    }
+    #[test]
+    fn crenels_follow_only_the_adjacent_plain_skin() {
+        use BuildingKind::*;
+        let c = piece(1, StoneWallCrenellated, 0., 0.);
+        assert_eq!(crenellation_kind(c, &[c]), StoneWallCrenellated);
+        let mut low = piece(2, StoneWallLow, 0., 2.);
+        assert_eq!(crenellation_kind(c, &[c, low]), StoneWallCrenellatedLow);
+        low.owner = 1;
+        assert_eq!(crenellation_kind(c, &[c, low]), StoneWallCrenellated);
+        low.owner = 0;
+        low.x = 2.;
+        low.z = 2.;
+        assert_eq!(crenellation_kind(c, &[c, low]), StoneWallCrenellated);
+        assert_eq!(
+            StoneWallCrenellated.roof_profile().unwrap().height,
+            StoneWallHigh.roof_profile().unwrap().height
+        );
+    }
+    #[test]
+    fn lower_wall_enters_a_higher_tower_through_a_door_in_both_directions() {
+        use BuildingKind::*;
+        let high = piece(1, TowerStairwell, 0., 0.);
+        let low = piece(2, StoneWallLow, 3., 1.);
+        let pieces = [high, low];
+        let joints = joins(&pieces);
+        assert!(!joints.is_empty());
+        let doors = doorways(&pieces, &joints);
+        assert_eq!(doors.len(), 1);
+        assert_eq!(doors[0].floor, 3.3);
+        let cuts = tower_openings(high, &pieces);
+        assert!(cuts.iter().any(|c| c.bottom < 3.5 && c.top > 5.));
+        for (a, b) in [(1, 2), (2, 1)] {
+            let route = roof_transfer(a, b, &pieces).unwrap();
+            assert!(route.iter().any(|s| s.mode == 5));
+            let last = route.last().unwrap();
+            assert_eq!(
+                last.y,
+                pieces.iter().find(|p| p.id == b).unwrap().level()
+                    + crate::building_roof::UNIT_CENTER_HEIGHT
+            );
+        }
+        assert!(roof_transfer(1, 3, &pieces).is_none());
     }
 }

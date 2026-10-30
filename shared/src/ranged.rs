@@ -32,10 +32,37 @@ pub fn shot_clear(
     ignored: Option<u64>,
     terrain: impl Fn(Point) -> f32,
 ) -> bool {
+    projectile_clear(start, end, blocks, ignored, terrain, "archer")
+}
+pub fn projectile_point(start: Position, end: Position, progress: f32, kind: &str) -> Position {
+    if kind != "onager" && kind != "ballista" {
+        return arrow_point(start, end, progress);
+    }
+    let t = progress.clamp(0., 1.);
+    let distance = distance((start.0, start.2), (end.0, end.2));
+    let arc = if kind == "onager" {
+        (distance * 0.35 + 3.).clamp(6., 20.)
+    } else {
+        (distance * 0.06 + 0.4).clamp(0.7, 3.)
+    };
+    (
+        start.0 + (end.0 - start.0) * t,
+        start.1 + (end.1 - start.1) * t + 4. * arc * t * (1. - t),
+        start.2 + (end.2 - start.2) * t,
+    )
+}
+pub fn projectile_clear(
+    start: Position,
+    end: Position,
+    blocks: &[ShotBlock],
+    ignored: Option<u64>,
+    terrain: impl Fn(Point) -> f32,
+    kind: &str,
+) -> bool {
     let length = distance((start.0, start.2), (end.0, end.2)).hypot(end.1 - start.1);
     let steps = (length / 0.2).ceil().max(2.) as usize;
     (1..steps).all(|i| {
-        let p = arrow_point(start, end, i as f32 / steps as f32);
+        let p = projectile_point(start, end, i as f32 / steps as f32, kind);
         p.1 > terrain((p.0, p.2)) + 0.02
             && !blocks.iter().any(|b| {
                 Some(b.id) != ignored
@@ -78,5 +105,32 @@ mod tests {
             None,
             |_| 0.
         ));
+    }
+}
+
+#[cfg(test)]
+mod siege_tests {
+    use super::*;
+    #[test]
+    fn onager_clears_a_wall_that_stops_the_flat_ballista_bolt() {
+        let a = (0., 1., 0.);
+        let b = (30., 1., 0.);
+        let wall = ShotBlock {
+            id: 1,
+            shape: Obstacle {
+                x: 15.,
+                z: 0.,
+                half_x: 1.,
+                half_z: 2.,
+            },
+            base: 0.,
+            top: 8.,
+        };
+        assert!(projectile_clear(a, b, &[wall], None, |_| 0., "onager"));
+        assert!(!projectile_clear(a, b, &[wall], None, |_| 0., "ballista"));
+        for k in ["onager", "ballista"] {
+            assert_eq!(projectile_point(a, b, 0., k), a);
+            assert_eq!(projectile_point(a, b, 1., k), b);
+        }
     }
 }

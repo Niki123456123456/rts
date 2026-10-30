@@ -117,6 +117,9 @@ def main():
             spec = importlib.util.spec_from_file_location('fortifications', ROOT / 'create-fortifications.py')
             generator = importlib.util.module_from_spec(spec); spec.loader.exec_module(generator)
             minimum, maximum = generator.generate(item)
+        elif item.get('procedural') == 'roman_industry':
+            import importlib.util
+            spec=importlib.util.spec_from_file_location('industry',ROOT/'create-industry.py');generator=importlib.util.module_from_spec(spec);spec.loader.exec_module(generator);minimum,maximum=generator.generate(item)
         elif item.get('procedural') == 'roman_market':
             import importlib.util
             spec = importlib.util.spec_from_file_location('market', ROOT / 'create-market.py')

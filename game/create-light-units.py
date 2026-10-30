@@ -15,8 +15,10 @@ def rotate(q,p):return mul(mul(q,[*p,0]),inv(q))[:3]
 def source():
  raw=(ROOT/'assets/models/units/lord/mesh.glb').read_bytes();n=struct.unpack_from('<I',raw,12)[0]
  return json.loads(raw[20:20+n]),bytearray(raw[28+n:])
-def generate(mounted):
- j,b=source()
+def generate(mounted,horse_only=False):
+ if horse_only:
+  j={'asset':{'version':'2.0'},'nodes':[],'meshes':[],'materials':[],'scenes':[{'nodes':[]}],'scene':0,'bufferViews':[],'accessors':[],'animations':[{'name':name,'samplers':[],'channels':[]} for name in ['idle','walking','fighting']]};b=bytearray()
+ else:j,b=source()
  def accessor(values,kind,integer=False):
   while len(b)%4:b.append(0)
   offset=len(b);flat=[x for v in values for x in (v if isinstance(v,(list,tuple)) else [v])]
@@ -44,7 +46,7 @@ def generate(mounted):
  # Neutral ochre uniform differentiates the lighter units from the lord.
  for m in j['materials'][:3]:m.setdefault('pbrMetallicRoughness',{})['baseColorFactor']=[.88,.83,.68,1]
  if mounted:
-  j['nodes'][33]['translation']=[0,70,0]
+  if not horse_only:j['nodes'][33]['translation']=[0,70,0]
   brown=material('Horse chestnut coat',(.34,.14,.065));dark=material('Mane tail hooves',(.065,.04,.025));leather=material('Saddle',(.21,.07,.035));eye=material('Eyes',(.008,.008,.006))
   ellipse('Horse_body',(0,140,-5),(43,44,85),brown)
   ellipse('Horse_neck',(0,174,62),(27,61,30),brown)
@@ -53,7 +55,7 @@ def generate(mounted):
   for x in [-15,15]:ellipse('Ear',(x,248,84),(6,19,9),brown)
   for x in [-22,22]:ellipse('Eye',(x,225,108),(3,4,5),eye)
   ellipse('Mane',(0,190,40),(9,53,12),dark)
-  ellipse('Saddle',(0,177,-11),(43,9,35),leather)
+  if not horse_only:ellipse('Saddle',(0,177,-11),(43,9,35),leather)
   ellipse('Tail',(0,119,-97),(10,47,13),dark)
   legs=[]
   for x in [-28,28]:
@@ -76,8 +78,8 @@ def generate(mounted):
     out=accessor([quat([1,0,0],amplitude*phase*math.sin(2*math.pi*i/(frames-1))) for i in range(frames)],'VEC4');animation['channels'].append({'sampler':len(animation['samplers']),'target':{'node':node,'path':'rotation'}});animation['samplers'].append({'input':inp,'output':out,'interpolation':'LINEAR'})
  if mounted:
   scene_root=len(j['nodes']);j['nodes'].append({'name':'LightCavalryRoot','children':j['scenes'][0]['nodes'][:]});j['scenes'][0]['nodes']=[scene_root]
- name='light_cavalry' if mounted else 'light_swordsman';folder=ROOT/'assets/models/units'/name;folder.mkdir(parents=True,exist_ok=True)
+ name='horse' if horse_only else 'light_cavalry' if mounted else 'light_swordsman';folder=ROOT/('assets/models/animals' if horse_only else 'assets/models/units')/name;folder.mkdir(parents=True,exist_ok=True)
  j['buffers']=[{'byteLength':len(b)}];encoded=json.dumps(j,separators=(',',':')).encode();encoded+=b' '*(-len(encoded)%4);b.extend(b'\0'*(-len(b)%4));(folder/'mesh.glb').write_bytes(struct.pack('<III',0x46546c67,2,28+len(encoded)+len(b))+struct.pack('<II',len(encoded),0x4e4f534a)+encoded+struct.pack('<II',len(b),0x004e4942)+b)
  print(name,len(b),'bytes, three animations')
 if __name__=='__main__':
- generate(False);generate(True)
+ generate(False);generate(True);generate(True,True)

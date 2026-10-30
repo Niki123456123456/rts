@@ -183,7 +183,7 @@ pub fn move_to_roof(
     z: f32,
 ) -> Result<(), String> {
     let player = participant(ctx)?;
-    let mut units = owned_units(ctx, &player, unit_ids)?;
+    let units = owned_units(ctx, &player, unit_ids)?;
     let b = ctx
         .db
         .building()
@@ -197,8 +197,79 @@ pub fn move_to_roof(
         return Err("Choose the roof of your own walkable tower.".into());
     }
     let tower = tower_geometry(ctx, &b);
+    if units
+        .iter()
+        .any(|u| combat_kind(ctx, u) == map::units::UnitKind::Onager)
+    {
+        return Err("Onager werden auf festem Boden aufgestellt.".into());
+    }
+    if units.iter().any(|u| combat_kind(ctx, u).is_siege())
+        && tower.profile.half_x.min(tower.profile.half_z) < 1.3
+    {
+        return Err("Für die Balliste brauchst du eine breitere Plattform.".into());
+    }
     if !x.is_finite() || !z.is_finite() || !tower.roof_contains((x, z)) {
         return Err("Choose a point on the roof.".into());
+    }
+    let mut remaining = Vec::new();
+    let mut transferred = 0;
+    let structures = fort_pieces(ctx, b.game_id)
+        .into_iter()
+        .filter(|p| p.owner == b.color)
+        .collect::<Vec<_>>();
+    for mut u in units {
+        let plan = ctx
+            .db
+            .tower_occupant()
+            .unit_id()
+            .find(u.id)
+            .filter(|o| {
+                o.building_id != b.id && ctx.db.tower_travel().unit_id().find(u.id).is_none()
+            })
+            .and_then(|o| fort::roof_transfer(o.building_id, b.id, &structures).map(|r| (o, r)));
+        if let Some((mut o, route)) = plan {
+            let Some(slot) = tower
+                .sorted_slots((x, z))
+                .into_iter()
+                .find(|slot| !slot_reserved(ctx, b.id, *slot as u8, u.id))
+            else {
+                remaining.push(u);
+                continue;
+            };
+            let old = ctx.db.building().id().find(o.building_id).unwrap();
+            let old_roof = tower_geometry(ctx, &old);
+            let Some(mut points) = old_roof.roof_path((u.x, u.z), (route[0].x, route[0].z)) else {
+                remaining.push(u);
+                continue;
+            };
+            let mut modes = vec![4; points.len()];
+            for step in route.into_iter().skip(1) {
+                points.push((step.x, step.y, step.z));
+                modes.push(step.mode);
+            }
+            let tail = tower
+                .roof_path(tower.hatch(), tower.slot(slot))
+                .ok_or("Der Dachzugang ist blockiert.")?;
+            modes.extend(vec![0; tail.len()]);
+            points.extend(tail);
+            store_travel(ctx, &u, b.id, points, modes, false, false);
+            o.next_building = Some(b.id);
+            o.next_slot = slot as u8;
+            o.door = 0;
+            ctx.db.tower_occupant().unit_id().update(o);
+            ctx.db.unit_order().unit_id().delete(u.id);
+            u.target_x = tower.slot(slot).0;
+            u.target_z = tower.slot(slot).1;
+            ctx.db.army_unit().id().update(u);
+            transferred += 1;
+        } else {
+            remaining.push(u);
+        }
+    }
+    let mut units = remaining;
+    if units.is_empty() && transferred > 0 {
+        start_tick(ctx);
+        return Ok(());
     }
     if is_wall(&b) {
         return move_to_wall(ctx, units, &b, (x, z));

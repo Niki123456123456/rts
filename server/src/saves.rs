@@ -351,6 +351,7 @@ pub fn save_game(ctx: &ReducerContext, title: String) -> Result<(), String> {
             .id
     };
     save_civic_world(ctx, id, p.game_id);
+    save_industry(ctx, id, p.game_id);
     let catalog = SaveCatalog {
         id,
         owner: ctx.sender,
@@ -656,6 +657,12 @@ pub fn load_game(ctx: &ReducerContext, save_id: u64) -> Result<(), String> {
         .predator_revision()
         .insert(PredatorRevision { game_id: game.id });
     restore_civic_world(ctx, save_id, game.id, &bids, &owners);
+    restore_industry(ctx, save_id, game.id, &bids);
+    if ctx.db.industry_save().id().find(save_id).is_some() {
+        ctx.db
+            .fort_height_revision()
+            .insert(FortHeightRevision { game_id: game.id });
+    }
     claim_restored_player(ctx, game.id, connection)?;
     for u in ctx
         .db

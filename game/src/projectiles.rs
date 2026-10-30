@@ -11,6 +11,7 @@ pub(crate) fn sync_arrows(
     time: Res<Time>,
     multiplayer: Res<Multiplayer>,
     assets: Res<combat_units::CombatAssets>,
+    industry: Res<crate::industry::IndustryAssets>,
     mut visuals: Query<(Entity, &mut ArrowVisual, &mut Transform)>,
 ) {
     let Some(scene) = &assets.arrow_scene else {
@@ -47,11 +48,19 @@ pub(crate) fn sync_arrows(
                 Visibility::default(),
             ))
             .with_children(|parent| {
-                parent.spawn((
-                    WorldAssetRoot(scene.clone()),
-                    Transform::from_xyz(-2.416 * 0.006, -67.25 * 0.006, 0.)
-                        .with_scale(Vec3::splat(0.006)),
-                ));
+                if arrow.kind == "onager" {
+                    parent.spawn((
+                        Mesh3d(industry.stone_mesh.clone()),
+                        MeshMaterial3d(industry.stone_material.clone()),
+                        Transform::from_scale(Vec3::splat(0.22)),
+                    ));
+                } else {
+                    parent.spawn((
+                        WorldAssetRoot(scene.clone()),
+                        Transform::from_xyz(-2.416 * 0.006, -67.25 * 0.006, 0.)
+                            .with_scale(Vec3::splat(0.006)),
+                    ));
+                }
             });
     }
 }
@@ -68,9 +77,9 @@ fn arrow_transform(arrow: &network::Arrow, age: f32, snapshot: &network::Snapsho
             .unwrap_or((arrow.end_x, arrow.end_y, arrow.end_z))
     };
     let progress = (age / arrow.flight_seconds).clamp(0., 1.);
-    let point = ranged::arrow_point(start, end, progress);
-    let before = ranged::arrow_point(start, end, (progress - 0.01).max(0.));
-    let after = ranged::arrow_point(start, end, (progress + 0.01).min(1.));
+    let point = ranged::projectile_point(start, end, progress, &arrow.kind);
+    let before = ranged::projectile_point(start, end, (progress - 0.01).max(0.), &arrow.kind);
+    let after = ranged::projectile_point(start, end, (progress + 0.01).min(1.), &arrow.kind);
     let direction =
         Vec3::new(after.0 - before.0, after.1 - before.1, after.2 - before.2).normalize_or_zero();
     Transform::from_xyz(point.0, point.1, point.2).with_rotation(
@@ -87,11 +96,16 @@ pub(crate) fn range_preview(
     mut gizmos: Gizmos,
 ) {
     for (entity, u, transform) in &units {
-        if !u.owned || u.kind != "archer" || !selected.0.contains(&entity) {
+        if !u.owned
+            || !matches!(u.kind.as_str(), "archer" | "ballista" | "onager")
+            || !selected.0.contains(&entity)
+        {
             continue;
         }
         let origin = transform.translation;
-        let range = ranged::bow_range(origin.y);
+        let range = stronghold_map::units::UnitKind::from_name(&u.kind)
+            .unwrap()
+            .ranged_range(origin.y);
         gizmos.linestrip(
             (0..=96).map(|i| {
                 let angle = i as f32 * std::f32::consts::TAU / 96.;
@@ -110,6 +124,7 @@ mod tests {
     #[test]
     fn arrow_visual_follows_the_arc_and_points_along_its_flight() {
         let arrow = network::Arrow {
+            kind: "archer".into(),
             id: 1,
             target_id: 2,
             building: false,

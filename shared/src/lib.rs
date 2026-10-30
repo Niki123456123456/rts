@@ -52,7 +52,13 @@ impl BuildingKind {
             StoneWallLow => (0, 1, 0),
             StoneWall => (0, 2, 0),
             StoneWallHigh => (0, 3, 0),
-            StoneWallCrenellated => (0, 3, 0),
+            StoneWallCrenellated
+            | StoneWallCrenellatedLow
+            | StoneWallCrenellatedMedium
+            | StoneWallCrenellatedWoodHeight => (0, 3, 0),
+            Stable => (18, 8, 2),
+            SiegeWorkshop => (24, 16, 6),
+            Harbor => (20, 12, 4),
             GatehouseWooden => (14, 0, 2),
             GatehouseSmall => (8, 18, 3),
             GatehouseMedium => (12, 28, 4),
@@ -87,6 +93,9 @@ impl BuildingKind {
                 | Self::StoneWallLow
                 | Self::StoneWallHigh
                 | Self::StoneWallCrenellated
+                | Self::StoneWallCrenellatedLow
+                | Self::StoneWallCrenellatedMedium
+                | Self::StoneWallCrenellatedWoodHeight
                 | Self::WoodenWall
         )
     }
@@ -612,7 +621,7 @@ mod tests {
                 .iter()
                 .filter(|kind| kind.category() == "fortifications")
                 .count(),
-            25
+            28
         );
         for (index, kind) in BuildingKind::ALL.into_iter().enumerate() {
             assert_eq!(kind.index(), index);
@@ -772,5 +781,17 @@ impl BuildingKind {
     }
     pub fn is_anchor(self) -> bool {
         self.is_tower() || self.is_gate()
+    }
+}
+
+impl BuildingKind {
+    pub fn is_crenellated(self) -> bool {
+        matches!(
+            self,
+            Self::StoneWallCrenellated
+                | Self::StoneWallCrenellatedLow
+                | Self::StoneWallCrenellatedMedium
+                | Self::StoneWallCrenellatedWoodHeight
+        )
     }
 }

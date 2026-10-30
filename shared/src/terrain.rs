@@ -176,6 +176,10 @@ pub fn buildable(kind: crate::BuildingKind, x: f32, z: f32) -> bool {
     let terrain = biome(x, z);
     match kind {
         crate::BuildingKind::Fishpond => terrain == Biome::River,
+        crate::BuildingKind::Harbor => {
+            !matches!(terrain, Biome::Mountain | Biome::Stone | Biome::Iron)
+        }
+        crate::BuildingKind::WheatFarm => matches!(terrain, Biome::Grassland | Biome::Forest),
         crate::BuildingKind::SawPit => terrain == Biome::Forest,
         crate::BuildingKind::OxTether => !matches!(terrain, Biome::River | Biome::Mountain),
         crate::BuildingKind::Quarry => terrain == Biome::Stone,
@@ -189,6 +193,32 @@ pub fn buildable(kind: crate::BuildingKind, x: f32, z: f32) -> bool {
 
 /// A level foundation supports buildings even on gently undulating sand.
 pub fn construction_height(kind: crate::BuildingKind, x: f32, z: f32, rotation: u8) -> Option<f32> {
+    if kind == crate::BuildingKind::Harbor {
+        let local = |p| crate::fortifications::world((x, z), rotation, p);
+        let land = [(-2.8, -3.8), (0., -3.8), (2.8, -3.8)];
+        let water = [(-2.8, 3.8), (0., 3.8), (2.8, 3.8)];
+        if land.iter().any(|p| {
+            let q = local(*p);
+            matches!(
+                biome(q.0, q.1),
+                Biome::River | Biome::Mountain | Biome::Iron | Biome::Stone
+            )
+        }) || water.iter().any(|p| {
+            let q = local(*p);
+            biome(q.0, q.1) != Biome::River
+        }) {
+            return None;
+        }
+        return Some(
+            land.iter()
+                .map(|p| {
+                    let q = local(*p);
+                    height(q.0, q.1)
+                })
+                .fold(0., f32::max),
+        );
+    }
+
     if kind == crate::BuildingKind::DrawbridgeGate {
         if (0..=23).any(|i| {
             let p = crate::fortifications::world((x, z), rotation, (0., -10. + i as f32 * 2.));
@@ -430,5 +460,31 @@ mod tests {
                 .all(|(px, pz)| buildable(mine, px, pz)
                     && (height(px, pz) - height(x, z)).abs() <= 0.05));
         }
+    }
+}
+
+#[cfg(test)]
+mod harbor_tests {
+    use super::*;
+    #[test]
+    fn harbor_requires_land_and_river_in_the_right_orientation() {
+        use crate::BuildingKind::Harbor;
+        assert!(construction_height(Harbor, 25., 25., 0).is_none());
+        assert!(construction_height(Harbor, river_center(0.), 0., 0).is_none());
+        let mut found = None;
+        'scan: for z in (-20..20).step_by(2) {
+            for x in 65..100 {
+                for r in 0..4 {
+                    let (x, z) = Harbor.snap_position(x as f32, z as f32);
+                    if construction_height(Harbor, x, z, r).is_some() {
+                        found = Some((x, z, r));
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        let (x, z, r) = found.expect("river must have a buildable shore");
+        assert!(construction_height(Harbor, x, z, (r + 2) % 4).is_none());
+        println!("harbor test position {x},{z},rotation{r}");
     }
 }

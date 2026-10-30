@@ -1,7 +1,13 @@
 use crate::*;
 use stronghold_map::BuildingKind;
 
-pub(crate) const BUILD_MENU: [BuildingKind; 33] = [
+pub(crate) const BUILD_MENU: [BuildingKind; 39] = [
+    BuildingKind::Stable,
+    BuildingKind::SiegeWorkshop,
+    BuildingKind::Harbor,
+    BuildingKind::WheatFarm,
+    BuildingKind::Windmill,
+    BuildingKind::Bakery,
     BuildingKind::WoodenWall,
     BuildingKind::TowerWooden,
     BuildingKind::Market,
@@ -137,11 +143,27 @@ pub(crate) fn building_button(
     kind: BuildingKind,
     active: bool,
 ) -> egui::Response {
+    if matches!(
+        kind,
+        BuildingKind::Stable
+            | BuildingKind::SiegeWorkshop
+            | BuildingKind::Harbor
+            | BuildingKind::Windmill
+            | BuildingKind::Bakery
+    ) {
+        return industry_button(ui, kind, active);
+    }
     if kind.is_wall() {
         return wall_button(ui, kind, active);
     }
     use BuildingKind::*;
     let (row, column) = match kind {
+        Stable => (3, 16),
+        SiegeWorkshop => (2, 7),
+        Harbor => (2, 11),
+        StoneWallCrenellatedLow | StoneWallCrenellatedMedium | StoneWallCrenellatedWoodHeight => {
+            (1, 6)
+        }
         Housing => (6, 5),
         Barracks => (2, 7),
         Stockpile => (4, 5),
@@ -243,7 +265,9 @@ fn wall_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui::Res
     } else {
         let height = match kind {
             BuildingKind::StoneWallLow => 10.,
-            BuildingKind::StoneWallHigh => 26.,
+            BuildingKind::StoneWallHigh | BuildingKind::StoneWallCrenellated => 26.,
+            BuildingKind::StoneWallCrenellatedLow => 10.,
+            BuildingKind::StoneWallCrenellatedWoodHeight => 12.,
             _ => 18.,
         };
         let top = 34. - height;
@@ -289,7 +313,7 @@ fn wall_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui::Res
             row += 1;
             y -= 5.;
         }
-        if kind == BuildingKind::StoneWallCrenellated {
+        if kind.is_crenellated() {
             for x in [4., 14., 24.] {
                 p.rect_filled(
                     egui::Rect::from_min_max(point(x, top - 6.), point(x + 5., top + 1.)),
@@ -324,4 +348,85 @@ fn wall_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui::Res
         egui::StrokeKind::Inside,
     );
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn industry_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui::Response {
+    let (r, response) = ui.allocate_exact_size(egui::vec2(40., 40.), egui::Sense::click());
+    let p = ui.painter();
+    let q = |x, y| r.min + egui::vec2(x, y);
+    let stone = egui::Color32::from_rgb(197, 176, 130);
+    let wood = egui::Color32::from_rgb(152, 98, 51);
+    let red = egui::Color32::from_rgb(168, 76, 45);
+    p.rect_filled(r, 3., egui::Color32::from_rgb(39, 33, 25));
+    match kind {
+        BuildingKind::Harbor => {
+            for y in [27., 31., 35.] {
+                p.line_segment(
+                    [q(3., y), q(37., y)],
+                    egui::Stroke::new(2., egui::Color32::from_rgb(57, 133, 160)),
+                );
+            }
+            p.rect_filled(egui::Rect::from_min_max(q(5., 14.), q(24., 28.)), 1., stone);
+            p.line_segment([q(8., 27.), q(36., 27.)], egui::Stroke::new(4., wood));
+            p.line_segment([q(30., 27.), q(30., 10.)], egui::Stroke::new(2., wood));
+            p.line_segment([q(24., 11.), q(36., 11.)], egui::Stroke::new(2., wood));
+        }
+        BuildingKind::Stable => {
+            p.rect_filled(egui::Rect::from_min_max(q(5., 15.), q(23., 33.)), 1., stone);
+            p.add(egui::Shape::convex_polygon(
+                vec![q(3., 16.), q(14., 7.), q(26., 16.)],
+                red,
+                egui::Stroke::NONE,
+            ));
+            p.circle_filled(q(29., 22.), 4., wood);
+            p.line_segment([q(28., 22.), q(34., 14.)], egui::Stroke::new(4., wood));
+            p.circle_filled(q(35., 13.), 3., wood);
+            for x in [26., 31.] {
+                p.line_segment([q(x, 24.), q(x, 34.)], egui::Stroke::new(2., wood));
+            }
+        }
+        BuildingKind::SiegeWorkshop => {
+            p.line_segment([q(9., 30.), q(31., 30.)], egui::Stroke::new(4., wood));
+            p.line_segment([q(20., 29.), q(20., 11.)], egui::Stroke::new(4., wood));
+            p.line_segment([q(5., 17.), q(35., 17.)], egui::Stroke::new(3., stone));
+            p.line_segment([q(6., 17.), q(20., 24.)], egui::Stroke::new(1., stone));
+            p.line_segment([q(34., 17.), q(20., 24.)], egui::Stroke::new(1., stone));
+            for x in [9., 31.] {
+                p.circle_filled(q(x, 32.), 4., wood);
+            }
+        }
+        BuildingKind::Windmill => {
+            p.rect_filled(egui::Rect::from_min_max(q(5., 29.), q(35., 34.)), 1., stone);
+            p.circle_filled(q(20., 24.), 10., stone);
+            p.circle_stroke(q(20., 24.), 7., egui::Stroke::new(2., wood));
+            p.line_segment([q(8., 10.), q(32., 10.)], egui::Stroke::new(3., wood));
+            p.line_segment([q(20., 10.), q(20., 22.)], egui::Stroke::new(3., wood));
+        }
+        _ => {
+            p.rect_filled(egui::Rect::from_min_max(q(4., 22.), q(36., 34.)), 1., stone);
+            p.circle_filled(q(20., 22.), 14., red);
+            p.rect_filled(egui::Rect::from_min_max(q(4., 22.), q(36., 34.)), 1., red);
+            p.rect_filled(
+                egui::Rect::from_min_max(q(13., 21.), q(27., 34.)),
+                3.,
+                egui::Color32::from_rgb(32, 23, 17),
+            );
+            p.circle_filled(q(19., 29.), 3., egui::Color32::GOLD);
+            p.circle_filled(q(23., 30.), 2., egui::Color32::from_rgb(240, 117, 26));
+        }
+    }
+    p.rect_stroke(
+        r.shrink(1.),
+        2.,
+        egui::Stroke::new(
+            if active || response.hovered() { 2. } else { 1. },
+            if active {
+                egui::Color32::GOLD
+            } else {
+                egui::Color32::from_gray(95)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    response
 }

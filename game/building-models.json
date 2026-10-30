@@ -340,15 +340,16 @@
   {
     "variant": "WheatFarm",
     "id": "wheat_farm",
-    "label": "Getreidefarm",
+    "label": "Kornfeld",
     "category": "supply",
-    "source": "farm_wheat",
-    "collision": "farm_wheat_collision",
+    "source": null,
+    "collision": null,
     "folder": "wheat_farm",
     "grid": [
-      2,
-      1
-    ]
+      6,
+      5
+    ],
+    "procedural": "roman_industry"
   },
   {
     "variant": "HopsFarm",
@@ -484,28 +485,30 @@
   {
     "variant": "Windmill",
     "id": "windmill",
-    "label": "Mühle",
+    "label": "Kornmühle · Mola",
     "category": "supply",
-    "source": "windmill_closed",
-    "collision": "windmill_collision",
+    "source": null,
+    "collision": null,
     "folder": "windmill",
     "grid": [
-      2,
-      2
-    ]
+      4,
+      4
+    ],
+    "procedural": "roman_industry"
   },
   {
     "variant": "Bakery",
     "id": "bakery",
-    "label": "Bäckerei",
+    "label": "Bäckerei · Pistrinum",
     "category": "supply",
-    "source": "workshop_bakery_closed",
-    "collision": "workshop_bakery_collision",
+    "source": null,
+    "collision": null,
     "folder": "bakery",
     "grid": [
-      2,
-      2
-    ]
+      4,
+      4
+    ],
+    "procedural": "roman_industry"
   },
   {
     "variant": "Brewery",
@@ -830,7 +833,7 @@
   {
     "variant": "StoneWallCrenellated",
     "id": "stone_wall_crenellated",
-    "label": "Zinnenmauer (7 m)",
+    "label": "Zinnenmauer (10 m)",
     "grid": [
       1,
       1
@@ -866,6 +869,90 @@
     "category": "fortifications",
     "folder": "wooden_wall",
     "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneWallCrenellatedLow",
+    "id": "stone_wall_crenellated_low",
+    "label": "Zinnenmauer (3 m)",
+    "category": "fortifications",
+    "folder": "stone_wall_crenellated_low",
+    "grid": [
+      1,
+      1
+    ],
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneWallCrenellatedMedium",
+    "id": "stone_wall_crenellated_medium",
+    "label": "Zinnenmauer (7 m)",
+    "category": "fortifications",
+    "folder": "stone_wall_crenellated_medium",
+    "grid": [
+      1,
+      1
+    ],
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneWallCrenellatedWoodHeight",
+    "id": "stone_wall_crenellated_wood_height",
+    "label": "Zinnenmauer (4 m)",
+    "category": "fortifications",
+    "folder": "stone_wall_crenellated_wood_height",
+    "grid": [
+      1,
+      1
+    ],
+    "procedural": "fortification",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Stable",
+    "id": "stable",
+    "label": "Pferdestall · Equile",
+    "category": "supply",
+    "folder": "stable",
+    "grid": [
+      6,
+      5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "SiegeWorkshop",
+    "id": "siege_workshop",
+    "label": "Fabrica · Belagerungswerkstatt",
+    "category": "military",
+    "folder": "siege_workshop",
+    "grid": [
+      5,
+      4
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Harbor",
+    "id": "harbor",
+    "label": "Portus · Hafen",
+    "category": "supply",
+    "folder": "harbor",
+    "grid": [
+      4,
+      5
+    ],
+    "procedural": "roman_industry",
     "source": null,
     "collision": null
   }

@@ -192,6 +192,13 @@ mod tests {
 pub const PREDATOR_START_DISTANCE: f32 = 160.;
 pub const CART_RANGE: f32 = 80.;
 pub fn production_seconds(kind: &str) -> u32 {
+    if kind == "wheat_farm" {
+        return 6;
+    }
+    if kind == "windmill" || kind == "bakery" {
+        return 4;
+    }
+
     match kind {
         "saw_pit" => 6,
         "quarry" => 6,

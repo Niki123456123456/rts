@@ -148,6 +148,7 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
             continue;
         }
         ensure_ecology(ctx, keep.game_id);
+        migrate_fort_heights(ctx, keep.game_id);
         let population = map::population::Population::from_buildings(
             ctx.db
                 .building()
@@ -157,6 +158,7 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
         );
         state.seconds = state.seconds.saturating_add(1);
         civic_tick(ctx, &keep, state.seconds);
+        age_horses(ctx, keep.game_id, keep.owner);
         let employed = employed_peasants(ctx, keep.owner);
         state.arrived = state.arrived.max(employed);
         if state.seconds % 30 == 0 {

@@ -69,6 +69,12 @@ pub enum BuildingKind {
     StoneWallCrenellated,
     DrawbridgeGate,
     WoodenWall,
+    StoneWallCrenellatedLow,
+    StoneWallCrenellatedMedium,
+    StoneWallCrenellatedWoodHeight,
+    Stable,
+    SiegeWorkshop,
+    Harbor,
 }
 struct Definition {
     name: &'static str,
@@ -80,7 +86,7 @@ struct Definition {
     max: [f32; 3],
     grid: [u16; 2],
 }
-const DEFINITIONS: [Definition; 64] = [
+const DEFINITIONS: [Definition; 70] = [
     Definition {
         name: "granary",
         label: "Kornspeicher",
@@ -335,13 +341,13 @@ const DEFINITIONS: [Definition; 64] = [
     },
     Definition {
         name: "wheat_farm",
-        label: "Getreidefarm",
+        label: "Kornfeld",
         category: "supply",
         scene: "models/buildings/supply/wheat_farm/mesh.glb#Scene0",
         collision: "models/buildings/supply/wheat_farm/collision.glb#Mesh0/Primitive0",
-        min: [-0.46795654296875, 0.0, -224.34812927246094],
-        max: [400.16058349609375, 237.39710998535156, -17.569168090820312],
-        grid: [2, 1],
+        min: [-600.0, 0.0, -500.0],
+        max: [600.0, 480.0, 500.0],
+        grid: [6, 5],
     },
     Definition {
         name: "hops_farm",
@@ -453,23 +459,23 @@ const DEFINITIONS: [Definition; 64] = [
     },
     Definition {
         name: "windmill",
-        label: "Mühle",
+        label: "Kornmühle · Mola",
         category: "supply",
         scene: "models/buildings/supply/windmill/mesh.glb#Scene0",
         collision: "models/buildings/supply/windmill/collision.glb#Mesh0/Primitive0",
-        min: [47.85406494140625, 0.0, -391.4080810546875],
-        max: [357.242919921875, 1020.0, -9.174423217773438],
-        grid: [2, 2],
+        min: [-400.0, 0.0, -400.0],
+        max: [400.0, 480.0, 400.0],
+        grid: [4, 4],
     },
     Definition {
         name: "bakery",
-        label: "Bäckerei",
+        label: "Bäckerei · Pistrinum",
         category: "supply",
         scene: "models/buildings/supply/bakery/mesh.glb#Scene0",
         collision: "models/buildings/supply/bakery/collision.glb#Mesh0/Primitive0",
-        min: [-220.0, 0.0, -220.0],
-        max: [229.99996948242188, 365.8802490234375, 220.0],
-        grid: [2, 2],
+        min: [-400.0, 0.0, -400.0],
+        max: [400.0, 480.0, 400.0],
+        grid: [4, 4],
     },
     Definition {
         name: "brewery",
@@ -721,13 +727,13 @@ const DEFINITIONS: [Definition; 64] = [
     },
     Definition {
         name: "stone_wall_crenellated",
-        label: "Zinnenmauer (7 m)",
+        label: "Zinnenmauer (10 m)",
         category: "fortifications",
         scene: "models/buildings/fortifications/stone_wall_crenellated/mesh.glb#Scene0",
         collision:
             "models/buildings/fortifications/stone_wall_crenellated/collision.glb#Mesh0/Primitive0",
         min: [-107.0, 0.0, -107.0],
-        max: [107.0, 796.3, 107.0],
+        max: [107.0, 1130.0, 107.0],
         grid: [1, 1],
     },
     Definition {
@@ -746,13 +752,19 @@ const DEFINITIONS: [Definition; 64] = [
         category: "fortifications",
         scene: "models/buildings/fortifications/wooden_wall/mesh.glb#Scene0",
         collision: "models/buildings/fortifications/wooden_wall/collision.glb#Mesh0/Primitive0",
-        min: [-107., 0., -107.],
-        max: [107., 480., 107.],
+        min: [-107.0, 0.0, -107.0],
+        max: [107.0, 480.0, 107.0],
         grid: [1, 1],
     },
+    Definition { name: "stone_wall_crenellated_low", label: "Zinnenmauer (3 m)", category: "fortifications", scene: "models/buildings/fortifications/stone_wall_crenellated_low/mesh.glb#Scene0", collision: "models/buildings/fortifications/stone_wall_crenellated_low/collision.glb#Mesh0/Primitive0", min: [-107.0, 0.0, -107.0], max: [107.0, 340.0, 107.0], grid: [1, 1] },
+    Definition { name: "stone_wall_crenellated_medium", label: "Zinnenmauer (7 m)", category: "fortifications", scene: "models/buildings/fortifications/stone_wall_crenellated_medium/mesh.glb#Scene0", collision: "models/buildings/fortifications/stone_wall_crenellated_medium/collision.glb#Mesh0/Primitive0", min: [-107.0, 0.0, -107.0], max: [107.0, 676.3, 107.0], grid: [1, 1] },
+    Definition { name: "stone_wall_crenellated_wood_height", label: "Zinnenmauer (4 m)", category: "fortifications", scene: "models/buildings/fortifications/stone_wall_crenellated_wood_height/mesh.glb#Scene0", collision: "models/buildings/fortifications/stone_wall_crenellated_wood_height/collision.glb#Mesh0/Primitive0", min: [-107.0, 0.0, -107.0], max: [107.0, 419.99999999999994, 107.0], grid: [1, 1] },
+    Definition { name: "stable", label: "Pferdestall · Equile", category: "supply", scene: "models/buildings/supply/stable/mesh.glb#Scene0", collision: "models/buildings/supply/stable/collision.glb#Mesh0/Primitive0", min: [-600.0, 0.0, -500.0], max: [600.0, 480.0, 500.0], grid: [6, 5] },
+    Definition { name: "siege_workshop", label: "Fabrica · Belagerungswerkstatt", category: "military", scene: "models/buildings/military/siege_workshop/mesh.glb#Scene0", collision: "models/buildings/military/siege_workshop/collision.glb#Mesh0/Primitive0", min: [-500.0, 0.0, -400.0], max: [500.0, 500.0, 400.0], grid: [5, 4] },
+    Definition { name: "harbor", label: "Portus · Hafen", category: "supply", scene: "models/buildings/supply/harbor/mesh.glb#Scene0", collision: "models/buildings/supply/harbor/collision.glb#Mesh0/Primitive0", min: [-400.0, 0.0, -500.0], max: [400.0, 480.0, 500.0], grid: [4, 5] },
 ];
 impl BuildingKind {
-    pub const ALL: [Self; 64] = [
+    pub const ALL: [Self; 70] = [
         Self::Granary,
         Self::Barracks,
         Self::Stockpile,
@@ -817,6 +829,12 @@ impl BuildingKind {
         Self::StoneWallCrenellated,
         Self::DrawbridgeGate,
         Self::WoodenWall,
+        Self::StoneWallCrenellatedLow,
+        Self::StoneWallCrenellatedMedium,
+        Self::StoneWallCrenellatedWoodHeight,
+        Self::Stable,
+        Self::SiegeWorkshop,
+        Self::Harbor,
     ];
     pub fn index(self) -> usize {
         self as usize

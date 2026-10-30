@@ -30,6 +30,8 @@ pub(crate) fn portrait(
         UnitKind::Archer => (2., 0.),
         UnitKind::LightSwordsman => (4., 0.),
         UnitKind::LightCavalry => (0., 1.),
+        UnitKind::Ballista => (5., 2.),
+        UnitKind::Onager => (6., 2.),
     };
     let uv = egui::Rect::from_min_max(
         egui::pos2(column * 57. / 512., row * 92. / 512.),
