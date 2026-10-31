@@ -5,8 +5,8 @@ pub const RATION_LABELS: [&str; 8] = [
     "Knappe Rationen",
     "Reduzierte Rationen",
     "Normale Rationen",
-    "Großzügige Rationen",
-    "Üppige Rationen",
+    "GroÃŸzÃ¼gige Rationen",
+    "Ãœppige Rationen",
     "Festmahl",
 ];
 pub const RATION_QUARTERS: [u32; 8] = [0, 1, 2, 3, 4, 5, 6, 8];
@@ -16,7 +16,7 @@ pub const TAX_LABELS: [&str; 8] = [
     "Sehr niedrig",
     "Niedrig",
     "Normal",
-    "Erhöht",
+    "ErhÃ¶ht",
     "Hoch",
     "Sehr hoch",
     "Extrem",
@@ -24,7 +24,7 @@ pub const TAX_LABELS: [&str; 8] = [
 pub const TAX_RATES: [u64; 8] = [0, 1, 2, 3, 4, 6, 8, 12];
 pub const TAX_HAPPINESS: [i32; 8] = [12, 8, 4, 0, -6, -12, -20, -30];
 pub const GOODS: [&str; 8] = [
-    "Holz", "Stein", "Eisen", "Äpfel", "Brot", "Käse", "Fleisch", "Fisch",
+    "Holz", "Stein", "Eisen", "Ã„pfel", "Brot", "KÃ¤se", "Fleisch", "Fisch",
 ];
 pub const BASE_PRICES: [i64; 8] = [3, 4, 6, 2, 3, 4, 5, 3];
 pub const STARTING_GOLD: u64 = 120;
@@ -114,13 +114,40 @@ mod tests {
     }
 }
 
-/// Net recurring balance per 30-second round. Trading is a one-off transaction.
+/// Net recurring balance per game day. Tax rates are quarter-sesterces.
 pub fn net_per_round(residents: u32, taxes: u8) -> i64 {
-    i64::from(residents) * TAX_RATES[taxes.min(7) as usize] as i64
+    i64::from(residents) * TAX_RATES[taxes.min(7) as usize] as i64 / 4
 }
 
 pub fn horse_quote(pressure: i32, amount: u32) -> u64 {
     (0..amount.min(8))
         .map(|i| (36 * (100 + (pressure - i as i32).clamp(-60, 300)) as u64 * 85 / 10000).max(1))
         .sum()
+}
+
+/// A game day is thirty simulation seconds; paused worlds do not advance.
+pub const DAY_SECONDS: u32 = 30;
+pub fn calendar(seconds: u32) -> String {
+    let mut days = seconds / DAY_SECONDS;
+    let mut year = 100u32;
+    loop { let length = if year % 4 == 0 {366} else {365}; if days < length {break;} days -= length; year += 1; }
+    let lengths = [31, if year % 4 == 0 {29} else {28},31,30,31,30,31,31,30,31,30,31];
+    let mut month = 0;
+    while days >= lengths[month] {days -= lengths[month]; month += 1;}
+    format!("{:02}.{:02}.{} n. Chr.",days+1,month+1,year)
+}
+#[cfg(test)]
+mod calendar_tests {
+    use super::*;
+    #[test] fn days_months_and_julian_leap_years() {
+        assert_eq!(calendar(0),"01.01.100 n. Chr.");
+        assert_eq!(calendar(29),calendar(0));
+        assert_eq!(calendar(30),"02.01.100 n. Chr.");
+        assert_eq!(calendar(59*30),"29.02.100 n. Chr.");
+        assert_eq!(calendar(366*30),"01.01.101 n. Chr.");
+    }
+    #[test] fn taxes_are_reduced_for_every_level() {
+        for level in 0..8 {assert_eq!(net_per_round(20,level),5*TAX_RATES[level as usize] as i64);}
+        assert_eq!(net_per_round(4,3),3);
+    }
 }

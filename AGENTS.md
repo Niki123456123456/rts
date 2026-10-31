@@ -254,3 +254,10 @@ and procedural silhouettes for new Roman structures. Run roman-industry,
 roman-goods, roman-hospital-alerts, roman-transport, roman-siege,
 roman-heavy-siege and roman-horses tests against stronghold-roman-test; run
 sounds.test.ts, cache.test.ts, shared tests and native asset/collision tests.
+
+The civic calendar starts on 1 January AD 100, uses Julian leap years and a
+30-simulation-second day. Display recurring finances and food use per day.
+TAX_RATES are quarter-sesterces: net_per_round (legacy helper name) divides the
+population total by four. Server tax payments and HUD must use this same helper;
+politics research is applied afterward. Existing saved simulation seconds remain
+compatible. shared civic calendar_tests covers dates and the reduced tax levels.

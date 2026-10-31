@@ -287,7 +287,7 @@ fn civic_tick(ctx: &ReducerContext, b: &Building, seconds: u32) {
         }
     }
     apply_gate_closures(ctx, b.owner);
-    if seconds % 30 == 0 {
+    if seconds % civic::DAY_SECONDS == 0 {
         let pop = ctx
             .db
             .keep_population()
@@ -298,7 +298,7 @@ fn civic_tick(ctx: &ReducerContext, b: &Building, seconds: u32) {
             t.gold = t
                 .gold
                 .saturating_add(tech::taxes(
-                    u64::from(pop) * civic::TAX_RATES[policy.taxes as usize],
+                    civic::net_per_round(pop, policy.taxes).max(0) as u64,
                     technology(ctx, b.owner).politics,
                 ))
                 .min(1_000_000_000_000);

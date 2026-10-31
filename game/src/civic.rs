@@ -38,10 +38,12 @@ pub(crate) fn ui(
                             format!("{} Sesterzen", net.snapshot.gold.unwrap_or(0)),
                         );
 
+                        let elapsed=net.snapshot.keep_population.iter().map(|p|p.seconds).max().unwrap_or(0);
+                        ui.label(civic::calendar(elapsed)).on_hover_text("Spielkalender · ein Tag entspricht 30 Sekunden aktiver Spielzeit.");
                         let policy=net.snapshot.buildings.iter().find(|b|b.owned&&b.kind=="keep").and_then(|b| net.snapshot.policies.iter().find(|p|p.building_id==b.id));
                         let residents=policy.and_then(|p|net.snapshot.keep_population.iter().find(|k|k.building_id==p.building_id)).map_or(0,|p|p.arrived);
                         let level=net.snapshot.research.iter().find(|r|net.snapshot.buildings.iter().any(|b|b.owned&&b.id==r.keep_id)).map_or(0,|r|r.politics);let balance=stronghold_map::advancement::taxes(civic::net_per_round(residents,policy.map_or(3,|p|p.taxes)).max(0) as u64,level) as i64;
-                        ui.colored_label(if balance>=0 {egui::Color32::LIGHT_GREEN}else{egui::Color32::LIGHT_RED},format!("{balance:+} / Runde")).on_hover_text("Netto je 30 Sekunden: Steuereinnahmen abzüglich laufender Ausgaben. Aktuell fallen keine Grundausgaben an.");
+                        ui.colored_label(if balance>=0 {egui::Color32::LIGHT_GREEN}else{egui::Color32::LIGHT_RED},format!("{balance:+} / Tag")).on_hover_text("Netto pro Spieltag: Steuereinnahmen abzüglich laufender Ausgaben. Aktuell fallen keine Grundausgaben an.");
                         let pending = net
                             .snapshot
                             .requests
@@ -121,7 +123,7 @@ pub(crate) fn ui(
                     )
                     .changed();
                 ui.label(format!(
-                    "Verbrauch: {} % · etwa {:.2} Waren je 30 Sekunden",
+                    "Verbrauch: {} % · etwa {:.2} Waren pro Tag",
                     civic::RATION_QUARTERS[rations as usize] * 25,
                     pop as f32 * civic::RATION_QUARTERS[rations as usize] as f32 / 16.
                 ));
@@ -145,9 +147,9 @@ pub(crate) fn ui(
                     )
                     .changed();
                 ui.label(format!(
-                    "{} Sesterzen pro Bewohner · {} je 30 Sekunden",
-                    civic::TAX_RATES[taxes as usize],
-                    civic::TAX_RATES[taxes as usize] * u64::from(pop)
+                    "{:.2} Sesterzen pro Bewohner und Tag · {} insgesamt",
+                    civic::TAX_RATES[taxes as usize] as f32 / 4.,
+                    civic::net_per_round(pop, taxes)
                 ));
                 ui.label(format!(
                     "Zufriedenheit: {:+} Punkte",
