@@ -193,6 +193,32 @@ pub fn buildable(kind: crate::BuildingKind, x: f32, z: f32) -> bool {
 
 /// A level foundation supports buildings even on gently undulating sand.
 pub fn construction_height(kind: crate::BuildingKind, x: f32, z: f32, rotation: u8) -> Option<f32> {
+    if kind.is_road() {
+        if !x.is_finite() || !z.is_finite() {
+            return None;
+        }
+        let samples = kind
+            .rotated_build_samples(x, z, rotation)
+            .collect::<Vec<_>>();
+        if samples.iter().any(|q| {
+            matches!(
+                biome(q.0, q.1),
+                Biome::Mountain | Biome::Stone | Biome::Iron
+            ) || kind != crate::BuildingKind::RomanBridge && biome(q.0, q.1) == Biome::River
+        }) {
+            return None;
+        }
+        return Some(if kind == crate::BuildingKind::RomanBridge {
+            0.15
+        } else {
+            samples
+                .iter()
+                .map(|q| height(q.0, q.1))
+                .fold(f32::NEG_INFINITY, f32::max)
+                + 0.02
+        });
+    }
+
     if kind == crate::BuildingKind::Harbor {
         let local = |p| crate::fortifications::world((x, z), rotation, p);
         let land = [(-2.8, -3.8), (0., -3.8), (2.8, -3.8)];

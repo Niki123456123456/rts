@@ -228,3 +228,29 @@ neighbouring tower material and world UV scale onto solid joints and door frames
 keep original meshes/materials unchanged. Run industry.test.ts,
 siege-industry.test.ts and tower-doors.test.ts against stronghold-industry-test,
 plus shared tests and native material/horse/catalog tests.
+
+Roman expansion uses shared/server/game advancement.rs, server/workshops.rs,
+server/infrastructure.rs and server/siege.rs. ArsenalStock, ResearchState,
+ResearchOrder, WorkshopStock, WorkshopRecipe and SiegeAccess are additive tables.
+AdvancedSave and SiegeClimberSave are private save sidecars; never change the
+original SavedWorld wire shape. Remap all building/unit IDs when restoring.
+Wine and oil are real workshop cargo, consumed optionally from population 16;
+tools wear out during work. Weapon stock discounts recruitment materials once.
+MercenaryCamp recruits for gold without consuming the peasant pool. Hospital
+requires a worker and heals nearby own units up to their actual maximum health.
+
+Transport uses build_wall_kind with dirt_road, stone_road or roman_bridge.
+Roads are nonblocking, have paid/idempotent segments, and change real server
+movement speed. Bridges require dry endpoints and cut river collision only at
+their footprints. Aqueduct piers stay solid while arches remain walkable.
+Ladders/towers establish SiegeAccess at enemy fortifications; assault_roof and
+SiegeClimber provide continuous entry and return travel. Siege crews and research
+requirements are defined in shared units/advancement, not hard-coded as two crew.
+
+AttackAlert tracks actual damage and expires after combat. Browser horn/warning
+synthesis is in game/web/src/sounds.ts, with input-triggered audio unlock. Minimap
+alerts only reveal owned targets. The build menu uses eight two-column groups
+and procedural silhouettes for new Roman structures. Run roman-industry,
+roman-goods, roman-hospital-alerts, roman-transport, roman-siege,
+roman-heavy-siege and roman-horses tests against stronghold-roman-test; run
+sounds.test.ts, cache.test.ts, shared tests and native asset/collision tests.

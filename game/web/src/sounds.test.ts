@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import {unlockAudio,playCornu,playAttackWarning} from './sounds';
+const tones:any[]=[];let resumes=0,contexts=0;const param=()=>({value:0,setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}});
+class Context{currentTime=5;destination={};constructor(){contexts++}resume(){resumes++;return Promise.resolve()}createOscillator(){const t={type:'sine',frequency:param(),startAt:0,stopAt:0,connect(){},start(x:number){this.startAt=x},stop(x:number){this.stopAt=x}};tones.push(t);return t}createGain(){return{gain:param(),connect(){}}}createBiquadFilter(){return{type:'',frequency:param(),connect(){}}}}
+Object.assign(globalThis,{AudioContext:Context});unlockAudio();playCornu();assert.equal(tones.length,3);assert.ok(tones.every(t=>t.type==='sawtooth'&&t.stopAt-t.startAt>.5));playAttackWarning();assert.equal(tones.length,6);assert.ok(tones.slice(3).every(t=>t.type==='triangle'&&t.stopAt-t.startAt<.2));assert.equal(contexts,1);assert.ok(resumes>=3);console.log('PASS: shared audio context unlocks on interaction, three-note Roman horn, distinct short attack warning and scheduled oscillator cleanup.');

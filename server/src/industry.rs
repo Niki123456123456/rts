@@ -36,6 +36,11 @@ fn can_store_cargo(ctx: &ReducerContext, s: &WarehouseStock, r: Commodity, n: u3
     if !r.is_intermediate() {
         return economy::can_store(s.amounts(), r, n);
     }
+    if r as u8 >= 11 {
+        return goods_value(&goods_stock(ctx, s.building_id, s.game_id), r)
+            .checked_add(n)
+            .is_some_and(|n| n <= 120);
+    }
     let stock = ctx.db.industry_stock().building_id().find(s.building_id);
     let old = stock.map_or(0, |s| {
         if r == Commodity::Wheat {
@@ -71,6 +76,12 @@ fn deliver_intermediate(
     {
         return false;
     }
+    if r as u8 >= 11 {
+        let mut s = goods_stock(ctx, id, u.game_id);
+        goods_add(&mut s, r, amount as i32);
+        put_goods(ctx, s);
+        return true;
+    }
     let old = ctx.db.industry_stock().building_id().find(id);
     let mut row = old.clone().unwrap_or(IndustryStock {
         building_id: id,
@@ -91,6 +102,9 @@ fn deliver_intermediate(
     true
 }
 fn consume_intermediate(ctx: &ReducerContext, b: &Building, r: Commodity, amount: u32) -> bool {
+    if r as u8 >= 11 {
+        return consume_goods(ctx, b, r, amount);
+    }
     let mut stores = ctx
         .db
         .industry_stock()
@@ -194,9 +208,15 @@ pub fn queue_siege(ctx: &ReducerContext, building_id: u64, kind: String) -> Resu
     if ctx.db.factory_order().building_id().find(b.id).is_some() {
         return Err("Die Fabrica bearbeitet bereits einen Auftrag.".into());
     }
+    if let Some(item) = Equipment::parse(&kind) {
+        return queue_equipment(ctx, &b, &p, item);
+    }
     let k = map::units::UnitKind::from_name(&kind)
         .filter(|k| k.is_siege())
-        .ok_or("Wähle eine Balliste oder einen Onager.")?;
+        .ok_or("Wähle ein Belagerungsgerät.")?;
+    if tech::advanced(k) && technology(ctx, b.owner).weapons == 0 {
+        return Err("Dafür wird Waffenforschung Stufe 1 benötigt.".into());
+    }
     let keep = ctx
         .db
         .building()
@@ -213,23 +233,19 @@ pub fn queue_siege(ctx: &ReducerContext, building_id: u64, kind: String) -> Resu
     if pop
         .arrived
         .saturating_sub(employed_peasants(ctx, p.connection_id))
-        < 2
+        < k.crew()
     {
-        return Err("Zwei freie Bauern werden als Bedienmannschaft benötigt.".into());
+        return Err(format!("{} freie Bauern werden als Bedienmannschaft benötigt.", k.crew()));
     }
     debit_cost(ctx, &p, k.cost())?;
-    pop.arrived -= 2;
+    pop.arrived -= k.crew();
     ctx.db.keep_population().building_id().update(pop);
     ctx.db.factory_order().insert(FactoryOrder {
         building_id: b.id,
         game_id: p.game_id,
         kind,
         progress: 0,
-        duration: if k == map::units::UnitKind::Ballista {
-            30
-        } else {
-            50
-        },
+        duration: k.manufacture_seconds(),
     });
     start_production(ctx);
     Ok(())
@@ -262,6 +278,10 @@ fn produce_industry(ctx: &ReducerContext, b: &Building, p: &mut Producer) {
     let Some(mut order) = ctx.db.factory_order().building_id().find(b.id) else {
         return;
     };
+    if let Some(item) = Equipment::parse(&order.kind) {
+        produce_equipment(ctx, b, &mut order, item);
+        return;
+    }
     order.progress = (order.progress + 1).min(order.duration);
     p.progress = order.progress;
     if order.progress >= order.duration {
@@ -334,6 +354,13 @@ fn remove_industry_building(ctx: &ReducerContext, id: u64) {
     {
         ctx.db.stable_horse().id().delete(horse.id);
     }
+    let crew = ctx
+        .db
+        .factory_order()
+        .building_id()
+        .find(id)
+        .and_then(|o| map::units::UnitKind::from_name(&o.kind))
+        .map_or(0, |k| k.crew());
     if ctx.db.factory_order().building_id().delete(id) {
         if let Some(b) = ctx.db.building().id().find(id) {
             if let Some(keep) = ctx
@@ -344,7 +371,7 @@ fn remove_industry_building(ctx: &ReducerContext, id: u64) {
                 .find(|b| b.kind == "keep")
             {
                 if let Some(mut p) = ctx.db.keep_population().building_id().find(keep.id) {
-                    p.arrived += 2;
+                    p.arrived += crew;
                     ctx.db.keep_population().building_id().update(p);
                 }
             }

@@ -48,7 +48,7 @@ pub(crate) fn sync_arrows(
                 Visibility::default(),
             ))
             .with_children(|parent| {
-                if arrow.kind == "onager" {
+                if matches!(arrow.kind.as_str(), "onager" | "stone_ballista") {
                     parent.spawn((
                         Mesh3d(industry.stone_mesh.clone()),
                         MeshMaterial3d(industry.stone_material.clone()),
@@ -97,7 +97,7 @@ pub(crate) fn range_preview(
 ) {
     for (entity, u, transform) in &units {
         if !u.owned
-            || !matches!(u.kind.as_str(), "archer" | "ballista" | "onager")
+            || !stronghold_map::units::UnitKind::from_name(&u.kind).is_some_and(|k| k.is_ranged())
             || !selected.0.contains(&entity)
         {
             continue;

@@ -660,7 +660,24 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
                 && map::distance((unit.x, unit.z), shape.closest((unit.x, unit.z)))
                     <= map::ATTACK_RANGE
             {
-                building.health = (building.health - 0.05 * TICK_SECONDS).max(0.0);
+                if deploy_access(ctx, &unit, &building) {
+                    continue;
+                }
+                alert_attack(
+                    ctx,
+                    building.game_id,
+                    building.owner,
+                    building.id,
+                    true,
+                    building.x,
+                    building.z,
+                );
+                building.health = (building.health
+                    - tech::damage(
+                        combat_kind(ctx, &unit).building_dps(),
+                        technology(ctx, unit.owner).weapons,
+                    ) * TICK_SECONDS)
+                    .max(0.0);
                 if building.health <= 0.0 {
                     delete_building(ctx, id);
                     changed_games.insert(building.game_id);
@@ -685,7 +702,9 @@ pub fn move_units(ctx: &ReducerContext, tick: MovementTick) -> Result<(), String
             .map(|u| (u.x, u.z))
             .collect::<Vec<_>>();
         let obstacles = worker_obstacles(ctx, &unit);
-        let mut budget = unit_speed(ctx, &unit) * TICK_SECONDS;
+        let mut budget = unit_speed(ctx, &unit)
+            * transport_speed(ctx, unit.game_id, (unit.x, unit.z))
+            * TICK_SECONDS;
         while order.waypoints.len() >= 2 && budget > 0.00001 {
             while order.waypoints.len() >= 4
                 && can_skip_corner(
@@ -794,6 +813,7 @@ fn delete_building(ctx: &ReducerContext, building_id: u64) {
         .building_operation()
         .building_id()
         .delete(building_id);
+    remove_advanced_building(ctx, building_id);
     remove_industry_building(ctx, building_id);
     remove_fort_building(ctx, building_id);
     remove_ecology_building(ctx, building_id);
@@ -1047,6 +1067,9 @@ fn place_building_for(
         return Err("Rotation must be 0, 1, 2 or 3 quarter turns.".into());
     }
     let kind = map::BuildingKind::from_name(&building).ok_or("Unknown building type.")?;
+    if kind.is_road() {
+        return Err("Ziehe Wege und Brücken mit gedrückter Maustaste als Strecke.".into());
+    }
     if kind == map::BuildingKind::Keep
         && ctx
             .db
@@ -1099,6 +1122,7 @@ fn place_building_for(
         .building()
         .game_id()
         .filter(player.game_id)
+        .filter(|b| !map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_road()))
         .collect::<Vec<_>>();
     if kind.is_wall()
         && existing.iter().any(|b| {
@@ -1151,7 +1175,10 @@ fn place_building_for(
         .building()
         .game_id()
         .filter(player.game_id)
-        .filter(|b| map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_wall()) == wall)
+        .filter(|b| {
+            map::BuildingKind::from_name(&b.kind)
+                .is_some_and(|k| !k.is_road() && k.is_wall() == wall)
+        })
         .count()
         >= limit
     {
@@ -1283,6 +1310,15 @@ fn place_building_for(
         quarter_turns,
     });
     register_logistics_building(ctx, &placed)?;
+    if kind == map::BuildingKind::Arsenal {
+        ctx.db.arsenal_stock().insert(ArsenalStock {
+            building_id: placed.id,
+            game_id: placed.game_id,
+            bows: 0,
+            swords: 0,
+            shields: 0,
+        });
+    }
     if kind.is_gate() {
         ctx.db.gate_state().insert(GateState {
             building_id: placed.id,
@@ -1320,6 +1356,16 @@ pub fn remove_building(ctx: &ReducerContext, building_id: u64) -> Result<(), Str
     if b.owner != player.connection_id || b.game_id != player.game_id {
         return Err("You can only remove your own buildings.".into());
     }
+    if b.kind == "roman_bridge"
+        && ctx
+            .db
+            .army_unit()
+            .game_id()
+            .filter(b.game_id)
+            .any(|u| building_shape(ctx, &b).contains((u.x, u.z), map::CLEARANCE))
+    {
+        return Err("Bewege zuerst alle Einheiten von der Brücke.".into());
+    }
     delete_building(ctx, building_id);
     replan(ctx, player.game_id);
     Ok(())
@@ -1341,6 +1387,32 @@ pub fn attack_building(
         .ok_or("Unknown building.")?;
     if b.game_id != player.game_id || b.owner == player.connection_id {
         return Err("Choose an enemy building in your game.".into());
+    }
+    for unit in &units {
+        let k = combat_kind(ctx, unit);
+        if matches!(
+            k,
+            map::units::UnitKind::AssaultLadder | map::units::UnitKind::SiegeTower
+        ) {
+            let profile = map::BuildingKind::from_name(&b.kind)
+                .filter(|k| k.is_wall() || k.is_tower() || k.is_gate())
+                .and_then(|k| k.roof_profile())
+                .ok_or("Leitern und Belagerungstürme benötigen einen gegnerischen Wehrgang.")?;
+            let limit = if k == map::units::UnitKind::AssaultLadder {
+                8.5
+            } else {
+                12.5
+            };
+            if b.y + profile.height - terrain_height(unit.x, unit.z) > limit {
+                return Err("Dieser Wehrgang ist für das Belagerungsgerät zu hoch.".into());
+            }
+        }
+        if k == map::units::UnitKind::Pluteus {
+            return Err(
+                "Der Schutzschirm schützt Truppen vor Geschossen und kann selbst nicht angreifen."
+                    .into(),
+            );
+        }
     }
     let mut melee_units = Vec::new();
     for mut unit in units {
@@ -1395,6 +1467,9 @@ pub fn build_wall_kind(
     kind: String,
 ) -> Result<(), String> {
     let p = participant(ctx)?;
+    if let Some(k) = map::BuildingKind::from_name(&kind).filter(|k| k.is_road()) {
+        return build_transport(ctx, &p, k, (start_x, start_z), (end_x, end_z));
+    }
     let k = map::BuildingKind::from_name(&kind)
         .filter(|k| k.is_wall())
         .ok_or("Ungültige Mauerart.")?;
@@ -1423,3 +1498,13 @@ include!("saves.rs");
 include!("civic.rs");
 
 include!("industry.rs");
+
+include!("advancement.rs");
+
+include!("siege.rs");
+
+include!("workshops.rs");
+
+include!("alerts.rs");
+
+include!("infrastructure.rs");

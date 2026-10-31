@@ -35,6 +35,7 @@ fn world_position(rect: egui::Rect, position: egui::Pos2) -> Vec2 {
 pub(crate) fn minimap_ui(
     mut contexts: EguiContexts,
     multiplayer: Res<Multiplayer>,
+    time: Res<Time>,
     mut camera: Single<(&mut RtsCamera, &Camera, &GlobalTransform)>,
     mut controls: Query<&mut RtsCameraControls>,
     mut texture: Local<Option<egui::TextureHandle>>,
@@ -165,6 +166,15 @@ pub(crate) fn minimap_ui(
                         (color.blue * 255.0) as u8,
                     ),
                 );
+            }
+            let blink = (time.elapsed_secs() * 4.).sin() > 0.;
+            for alert in multiplayer.snapshot.alerts.iter().filter(|a| a.owned) {
+                let p = map_position(rect, alert.x, alert.z);
+                let radius = if blink { 8. } else { 5. };
+                painter.circle_stroke(p, radius, egui::Stroke::new(2.5, egui::Color32::RED));
+                if blink {
+                    painter.circle_filled(p, 3., egui::Color32::from_rgb(255, 50, 35));
+                }
             }
             // Project the camera's screen corners onto the ground plane to show
             // its actual visible footprint, including camera rotation and zoom.

@@ -40,7 +40,7 @@ pub(crate) fn ui(
 
                         let policy=net.snapshot.buildings.iter().find(|b|b.owned&&b.kind=="keep").and_then(|b| net.snapshot.policies.iter().find(|p|p.building_id==b.id));
                         let residents=policy.and_then(|p|net.snapshot.keep_population.iter().find(|k|k.building_id==p.building_id)).map_or(0,|p|p.arrived);
-                        let balance=civic::net_per_round(residents,policy.map_or(3,|p|p.taxes));
+                        let level=net.snapshot.research.iter().find(|r|net.snapshot.buildings.iter().any(|b|b.owned&&b.id==r.keep_id)).map_or(0,|r|r.politics);let balance=stronghold_map::advancement::taxes(civic::net_per_round(residents,policy.map_or(3,|p|p.taxes)).max(0) as u64,level) as i64;
                         ui.colored_label(if balance>=0 {egui::Color32::LIGHT_GREEN}else{egui::Color32::LIGHT_RED},format!("{balance:+} / Runde")).on_hover_text("Netto je 30 Sekunden: Steuereinnahmen abzüglich laufender Ausgaben. Aktuell fallen keine Grundausgaben an.");
                         let pending = net
                             .snapshot

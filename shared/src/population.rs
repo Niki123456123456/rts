@@ -56,6 +56,14 @@ mod tests {
                     | BuildingKind::Bakery
                     | BuildingKind::Stable
                     | BuildingKind::SiegeWorkshop
+                    | BuildingKind::ResearchCenter
+                    | BuildingKind::WeaponSmith
+                    | BuildingKind::ToolSmith
+                    | BuildingKind::Hospital
+                    | BuildingKind::Vineyard
+                    | BuildingKind::VintnersWorkshop
+                    | BuildingKind::OliveGrove
+                    | BuildingKind::OlivePress
             ));
             assert_eq!(kind.peasant_cost(), expected, "{}", kind.name());
             assert_eq!(

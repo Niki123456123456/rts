@@ -1,7 +1,16 @@
+import {playCornu,playAttackWarning,unlockAudio} from './sounds';
 import {prepareCaches} from './cache';
 import { DbConnection, type ReducerEventContext } from './module_bindings';
 
+let lastWarning=0;
+if(typeof document!=="undefined"){document.addEventListener("pointerdown",unlockAudio,{once:true});document.addEventListener("keydown",unlockAudio,{once:true});}
+
 type Action =
+ | {action:'sell_horses';stable_id:string;amount:number}
+ | {action:'start_research';building_id:string;branch:string}
+ | {action:'set_workshop_recipe';building_id:string;item:string}
+ | {action:'sell_workshop_goods';resource:number;amount:number}
+ | {action:'assault_roof';unit_ids:string[];access_id:string}
  | {action:'queue_siege';building_id:string;kind:string}
  | {action:'market_exchange';sell:number;amount:number;buy:number}
  | {action:'set_civic_policy';rations:number;taxes:number}|{action:'palace_alarm';active:boolean}|{action:'close_all_gates'}
@@ -129,6 +138,7 @@ function connect(uri: string, database: string) {
   connection.reducers.onHuntAnimal(result);
   connection.reducers.onCreateGame(result);
   connection.reducers.onSaveGame(result);
+  connection.reducers.onSellHorses(result);  connection.reducers.onStartResearch(result);  connection.reducers.onSetWorkshopRecipe(result);  connection.reducers.onSellWorkshopGoods(result);  connection.reducers.onAssaultRoof(result);
   connection.reducers.onQueueSiege(result);connection.reducers.onSetCivicPolicy(result);connection.reducers.onPalaceAlarm(result);connection.reducers.onCloseAllGates(result);connection.reducers.onMarketTrade(result);connection.reducers.onMarketExchange(result);connection.reducers.onRequestGoods(result);connection.reducers.onRespondRequest(result);
   connection.reducers.onLoadGame(result);
   connection.reducers.onJoinGame(result);
@@ -164,6 +174,11 @@ export const strongholdNetwork = {
       case 'set_civic_policy':conn.reducers.setCivicPolicy(action.rations,action.taxes);break;
       case 'palace_alarm':conn.reducers.palaceAlarm(action.active);if(action.active)playCornu();break;
       case 'close_all_gates':conn.reducers.closeAllGates();break;
+      case 'sell_horses':conn.reducers.sellHorses(BigInt(action.stable_id),action.amount);break;
+      case 'start_research':conn.reducers.startResearch(BigInt(action.building_id),action.branch);break;
+      case 'set_workshop_recipe':conn.reducers.setWorkshopRecipe(BigInt(action.building_id),action.item);break;
+      case 'sell_workshop_goods':conn.reducers.sellWorkshopGoods(action.resource,action.amount);break;
+      case 'assault_roof':conn.reducers.assaultRoof(action.unit_ids.map(BigInt),BigInt(action.access_id));break;
       case 'queue_siege':conn.reducers.queueSiege(BigInt(action.building_id),action.kind);break;
       case 'market_exchange':conn.reducers.marketExchange(action.sell,action.amount,action.buy);break;
       case 'market_trade':conn.reducers.marketTrade(action.resource,action.amount,action.buy);break;
@@ -204,9 +219,17 @@ export const strongholdNetwork = {
       activeGame = gameId;
       unitSubscription = gameId === undefined ? undefined : conn.subscriptionBuilder()
         .onError((ctx) => { error = String(ctx.event); })
-        .subscribe([`SELECT * FROM projectile_style WHERE game_id = ${gameId}`,`SELECT * FROM industry_stock WHERE game_id = ${gameId}`,`SELECT * FROM stable_horse WHERE game_id = ${gameId}`,`SELECT * FROM factory_order WHERE game_id = ${gameId}`,`SELECT * FROM civic_policy WHERE game_id = ${gameId}`,`SELECT * FROM treasury WHERE game_id = ${gameId}`,`SELECT * FROM market_pressure WHERE game_id = ${gameId}`,`SELECT * FROM diplomatic_request WHERE game_id = ${gameId}`,`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
+        .subscribe([`SELECT * FROM arsenal_stock WHERE game_id = ${gameId}`,`SELECT * FROM research_state WHERE game_id = ${gameId}`,`SELECT * FROM research_order WHERE game_id = ${gameId}`,`SELECT * FROM workshop_stock WHERE game_id = ${gameId}`,`SELECT * FROM workshop_recipe WHERE game_id = ${gameId}`,`SELECT * FROM siege_access WHERE game_id = ${gameId}`,`SELECT * FROM attack_alert WHERE game_id = ${gameId}`,`SELECT * FROM projectile_style WHERE game_id = ${gameId}`,`SELECT * FROM industry_stock WHERE game_id = ${gameId}`,`SELECT * FROM stable_horse WHERE game_id = ${gameId}`,`SELECT * FROM factory_order WHERE game_id = ${gameId}`,`SELECT * FROM civic_policy WHERE game_id = ${gameId}`,`SELECT * FROM treasury WHERE game_id = ${gameId}`,`SELECT * FROM market_pressure WHERE game_id = ${gameId}`,`SELECT * FROM diplomatic_request WHERE game_id = ${gameId}`,`SELECT * FROM army_unit WHERE game_id = ${gameId}`, `SELECT * FROM building WHERE game_id = ${gameId}`, `SELECT * FROM terrain_clearing WHERE game_id = ${gameId}`, `SELECT * FROM keep_population WHERE game_id = ${gameId}`, `SELECT * FROM settlement_needs WHERE game_id = ${gameId}`, `SELECT * FROM building_operation WHERE game_id = ${gameId}`, `SELECT * FROM resource_node WHERE game_id = ${gameId}`,`SELECT * FROM gate_state WHERE game_id = ${gameId}`,`SELECT * FROM moat WHERE game_id = ${gameId}`,`SELECT * FROM wall_stair WHERE game_id = ${gameId}`, `SELECT * FROM wildlife WHERE game_id = ${gameId}`, `SELECT * FROM ox_cart WHERE game_id = ${gameId}`, `SELECT * FROM fish_stock WHERE game_id = ${gameId}`, `SELECT * FROM building_rotation WHERE game_id = ${gameId}`, `SELECT * FROM tower_occupant WHERE game_id = ${gameId}`, `SELECT * FROM player_resources WHERE game_id = ${gameId}`, `SELECT * FROM warehouse_stock WHERE game_id = ${gameId}`, `SELECT * FROM granary_stock WHERE game_id = ${gameId}`, `SELECT * FROM worker WHERE game_id = ${gameId}`, `SELECT * FROM producer WHERE game_id = ${gameId}`, `SELECT * FROM unit_profile WHERE game_id = ${gameId}`, `SELECT * FROM arrow_projectile WHERE game_id = ${gameId}`]);
     }
+    if(ready&&connected&&conn&&gameId!==undefined){const active=Array.from(conn.db.attackAlert.iter()).some(a=>a.gameId===gameId&&a.owner.toHexString()===conn!.connectionId.toHexString());if(active&&Date.now()-lastWarning>10000){playAttackWarning();lastWarning=Date.now();}}
     return JSON.stringify({
+      arsenals:ready&&connected&&conn?Array.from(conn.db.arsenalStock.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),bows:r.bows,swords:r.swords,shields:r.shields})):[],
+      research:ready&&connected&&conn?Array.from(conn.db.researchState.iter()).filter(r=>r.gameId===gameId).map(r=>({keep_id:r.keepId.toString(),weapons:r.weapons,economy:r.economy,politics:r.politics})):[],
+      research_orders:ready&&connected&&conn?Array.from(conn.db.researchOrder.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),branch:r.branch,level:r.level,progress:r.progress,duration:r.duration})):[],
+      workshop_stocks:ready&&connected&&conn?Array.from(conn.db.workshopStock.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),tools:r.tools,grapes:r.grapes,olives:r.olives,wine:r.wine,oil:r.oil})):[],
+      workshop_recipes:ready&&connected&&conn?Array.from(conn.db.workshopRecipe.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),item:r.item})):[],
+      siege_access:ready&&connected&&conn?Array.from(conn.db.siegeAccess.iter()).filter(r=>r.gameId===gameId).map(r=>({unit_id:r.unitId.toString(),building_id:r.buildingId.toString(),owned:conn!.db.armyUnit.id.find(r.unitId)?.owner.toHexString()===conn!.connectionId.toHexString()})):[],
+      alerts:ready&&connected&&conn?Array.from(conn.db.attackAlert.iter()).filter(r=>r.gameId===gameId).map(r=>({id:r.id.toString(),x:r.x,z:r.z,owned:r.owner.toHexString()===conn!.connectionId.toHexString()})):[],
       industry_stocks:ready&&connected&&conn?Array.from(conn.db.industryStock.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),wheat:r.wheat,flour:r.flour})):[],
       horses:ready&&connected&&conn?Array.from(conn.db.stableHorse.iter()).filter(r=>r.gameId===gameId).map(r=>({id:r.id.toString(),stable_id:r.stableId.toString(),age:r.age})):[],
       factory_orders:ready&&connected&&conn?Array.from(conn.db.factoryOrder.iter()).filter(r=>r.gameId===gameId).map(r=>({building_id:r.buildingId.toString(),kind:r.kind,progress:r.progress,duration:r.duration})):[],
@@ -259,6 +282,3 @@ export const strongholdNetwork = {
 };
 
 Object.assign(globalThis, { strongholdNetwork });
-
-let hornContext:AudioContext|undefined;
-function playCornu(){try{const ctx=hornContext??=new AudioContext();void ctx.resume();for(const [delay,pitch,length] of [[0,110,0.55],[0.65,146.83,0.55],[1.3,110,1.25]]){const tone=ctx.createOscillator();const gain=ctx.createGain();const filter=ctx.createBiquadFilter();tone.type='sawtooth';tone.frequency.setValueAtTime(pitch*0.92,ctx.currentTime+delay);tone.frequency.exponentialRampToValueAtTime(pitch,ctx.currentTime+delay+0.12);filter.type='lowpass';filter.frequency.value=1100;gain.gain.setValueAtTime(0,ctx.currentTime+delay);gain.gain.linearRampToValueAtTime(0.12,ctx.currentTime+delay+0.08);gain.gain.linearRampToValueAtTime(0.09,ctx.currentTime+delay+length-0.1);gain.gain.linearRampToValueAtTime(0,ctx.currentTime+delay+length);tone.connect(filter);filter.connect(gain);gain.connect(ctx.destination);tone.start(ctx.currentTime+delay);tone.stop(ctx.currentTime+delay+length+0.02);}}catch{/* Audio may be unavailable; the authoritative alarm remains active. */}}

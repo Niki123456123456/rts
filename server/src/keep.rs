@@ -159,10 +159,16 @@ pub fn arrive_at_keep(ctx: &ReducerContext, _tick: MigrationTick) -> Result<(), 
         state.seconds = state.seconds.saturating_add(1);
         civic_tick(ctx, &keep, state.seconds);
         age_horses(ctx, keep.game_id, keep.owner);
+        refresh_access(ctx);
+        clear_old_alerts(ctx);
         let employed = employed_peasants(ctx, keep.owner);
         state.arrived = state.arrived.max(employed);
         if state.seconds % 30 == 0 {
             feed_population(ctx, &keep, state.arrived, state.seconds / 30);
+            if state.arrived >= 16 {
+                consume_goods(ctx, &keep, Commodity::Wine, 1);
+                consume_goods(ctx, &keep, Commodity::Oil, 1);
+            }
         }
         let satisfaction = settlement_satisfaction(ctx, &keep, state.arrived);
         let old_progress = ctx.db.settlement_progress().building_id().find(keep.id);

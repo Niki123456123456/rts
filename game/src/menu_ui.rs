@@ -1,7 +1,27 @@
 use crate::*;
 use stronghold_map::BuildingKind;
 
-pub(crate) const BUILD_MENU: [BuildingKind; 39] = [
+pub(crate) const BUILD_MENU: [BuildingKind; 59] = [
+    BuildingKind::Hospital,
+    BuildingKind::MercenaryCamp,
+    BuildingKind::Theater,
+    BuildingKind::OliveGrove,
+    BuildingKind::OlivePress,
+    BuildingKind::Vineyard,
+    BuildingKind::VintnersWorkshop,
+    BuildingKind::DirtRoad,
+    BuildingKind::StoneRoad,
+    BuildingKind::RomanBridge,
+    BuildingKind::Aqueduct,
+    BuildingKind::Colosseum,
+    BuildingKind::Statue,
+    BuildingKind::Library,
+    BuildingKind::WeaponSmith,
+    BuildingKind::ToolSmith,
+    BuildingKind::Baths,
+    BuildingKind::Temple,
+    BuildingKind::ResearchCenter,
+    BuildingKind::Arsenal,
     BuildingKind::Stable,
     BuildingKind::SiegeWorkshop,
     BuildingKind::Harbor,
@@ -88,29 +108,36 @@ pub(crate) fn image_button(
 
 pub(crate) fn category_button(
     ui: &mut egui::Ui,
-    texture: egui::TextureId,
+    _texture: egui::TextureId,
     category: &str,
     active: bool,
 ) -> bool {
-    if category == "services" {
-        return image_button(ui, texture, tile(2, 14), egui::vec2(28., 20.), active)
-            .on_hover_text("Bedürfnisse: Brunnen, Apotheke, Wirtshaus und Garten")
-            .clicked();
-    }
-    let (x, y, label) = match category {
-        "fortifications" => (81., 932., "Befestigungen"),
-        "military" => (115., 960., "Militär"),
-        _ => (115., 932., "Versorgung"),
+    let label = match category {
+        "fortifications" => "Befestigung",
+        "military" => "Militär",
+        "resources" => "Rohstoffe",
+        "food" => "Nahrung",
+        "supply" => "Siedlung",
+        "infrastructure" => "Wege",
+        "services" => "Stadtleben",
+        _ => "Wunder",
     };
-    image_button(
-        ui,
-        texture,
-        uv(x, y, 34., 28.),
-        egui::vec2(28., 20.),
-        active,
+    ui.add_sized(
+        egui::vec2(86., 22.),
+        egui::Button::new(label).selected(active),
     )
-    .on_hover_text(label)
     .clicked()
+}
+pub(crate) fn group(kind: BuildingKind) -> &'static str {
+    use BuildingKind::*;
+    match kind {
+        SawPit | Quarry | IronMine | OxTether | ToolSmith => "resources",
+        AppleFarm | DairyFarm | WheatFarm | Windmill | Bakery | HuntersPost | Fishpond
+        | Vineyard | VintnersWorkshop | OliveGrove | OlivePress => "food",
+        DirtRoad | StoneRoad | RomanBridge => "infrastructure",
+        Aqueduct | Colosseum | Theater | Statue | Library => "wonders",
+        _ => kind.category(),
+    }
 }
 
 pub(crate) fn leave_button(ui: &mut egui::Ui, texture: egui::TextureId) -> bool {
@@ -153,11 +180,54 @@ pub(crate) fn building_button(
     ) {
         return industry_button(ui, kind, active);
     }
+    if matches!(
+        kind,
+        BuildingKind::ResearchCenter
+            | BuildingKind::Arsenal
+            | BuildingKind::DirtRoad
+            | BuildingKind::StoneRoad
+            | BuildingKind::RomanBridge
+            | BuildingKind::Aqueduct
+            | BuildingKind::Colosseum
+            | BuildingKind::Theater
+            | BuildingKind::Statue
+            | BuildingKind::Library
+            | BuildingKind::WeaponSmith
+            | BuildingKind::ToolSmith
+            | BuildingKind::Baths
+            | BuildingKind::Temple
+            | BuildingKind::Hospital
+            | BuildingKind::MercenaryCamp
+            | BuildingKind::OliveGrove
+            | BuildingKind::OlivePress
+            | BuildingKind::Vineyard
+            | BuildingKind::VintnersWorkshop
+    ) {
+        return roman_button(ui, kind, active);
+    }
     if kind.is_wall() {
         return wall_button(ui, kind, active);
     }
     use BuildingKind::*;
     let (row, column) = match kind {
+        Hospital => (5, 14),
+        MercenaryCamp => (5, 14),
+        Theater => (5, 14),
+        OliveGrove => (5, 14),
+        OlivePress => (5, 14),
+        DirtRoad => (5, 14),
+        StoneRoad => (5, 14),
+        RomanBridge => (5, 14),
+        Aqueduct => (5, 14),
+        Colosseum => (5, 14),
+        Statue => (5, 14),
+        Library => (5, 14),
+        WeaponSmith => (5, 14),
+        ToolSmith => (5, 14),
+        Baths => (5, 14),
+        Temple => (5, 14),
+        ResearchCenter => (5, 14),
+        Arsenal => (2, 5),
         Stable => (3, 16),
         SiegeWorkshop => (2, 7),
         Harbor => (2, 11),
@@ -424,6 +494,187 @@ fn industry_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui:
                 egui::Color32::GOLD
             } else {
                 egui::Color32::from_gray(95)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    response
+}
+
+fn roman_button(ui: &mut egui::Ui, kind: BuildingKind, active: bool) -> egui::Response {
+    use BuildingKind::*;
+    let (r, response) = ui.allocate_exact_size(egui::vec2(40., 40.), egui::Sense::click());
+    let p = ui.painter();
+    let q = |x, y| r.min + egui::vec2(x, y);
+    let stone = egui::Color32::from_rgb(208, 187, 143);
+    let oak = egui::Color32::from_rgb(157, 104, 52);
+    let roof = egui::Color32::from_rgb(176, 76, 44);
+    let blue = egui::Color32::from_rgb(59, 147, 172);
+    let green = egui::Color32::from_rgb(89, 127, 57);
+    p.rect_filled(r, 3., egui::Color32::from_rgb(39, 33, 25));
+    let rect =
+        |x, y, w, h, c| p.rect_filled(egui::Rect::from_min_size(q(x, y), egui::vec2(w, h)), 1., c);
+    let line = |a, b, w, c| p.line_segment([a, b], egui::Stroke::new(w, c));
+    match kind {
+        DirtRoad | StoneRoad => {
+            rect(3., 3., 34., 34., green);
+            rect(
+                11.,
+                1.,
+                18.,
+                38.,
+                if kind == DirtRoad { oak } else { stone },
+            );
+            if kind == StoneRoad {
+                for y in [6., 14., 22., 30.] {
+                    line(q(11., y), q(29., y), 1., oak);
+                    line(q(20., y), q(20., y + 7.), 1., oak);
+                }
+            }
+        }
+        RomanBridge | Aqueduct => {
+            if kind == RomanBridge {
+                for y in [27., 32., 36.] {
+                    line(q(2., y), q(38., y), 2., blue);
+                }
+            }
+            let y = if kind == Aqueduct { 12. } else { 21. };
+            rect(3., y, 34., 5., stone);
+            for x in [5., 17., 29.] {
+                rect(x, y + 4., 4., 16., stone);
+            }
+            for x in [13., 25.] {
+                p.circle_stroke(q(x, y + 8.), 5., egui::Stroke::new(2., stone));
+            }
+        }
+        Arsenal | WeaponSmith | ToolSmith => {
+            if kind == Arsenal {
+                rect(5., 27., 30., 5., oak);
+                for x in [11., 20., 29.] {
+                    line(q(x, 8.), q(x, 28.), 3., stone);
+                    line(q(x - 4., 21.), q(x + 4., 21.), 2., oak);
+                }
+            } else {
+                rect(8., 24., 25., 7., stone);
+                line(q(12., 18.), q(31., 9.), 5., stone);
+                line(q(20., 14.), q(27., 29.), 3., oak);
+                p.circle_filled(q(9., 14.), 5., roof);
+                if kind == ToolSmith {
+                    line(q(4., 6.), q(14., 22.), 2., oak);
+                }
+            }
+        }
+        Colosseum | Theater => {
+            for radius in [15., 11., 7.] {
+                p.circle_stroke(q(20., 20.), radius, egui::Stroke::new(2.5, stone));
+            }
+            if kind == Theater {
+                rect(1., 20., 38., 17., egui::Color32::from_rgb(39, 33, 25));
+                rect(3., 23., 34., 5., roof);
+            } else {
+                for x in [9., 16., 23., 30.] {
+                    rect(x, 23., 3., 8., oak);
+                }
+            }
+        }
+        Statue => {
+            rect(8., 31., 24., 5., stone);
+            rect(12., 26., 16., 5., stone);
+            p.circle_filled(q(20., 9.), 4., stone);
+            line(q(20., 14.), q(20., 26.), 6., stone);
+            line(q(17., 17.), q(10., 24.), 3., stone);
+            line(q(23., 17.), q(29., 8.), 3., stone);
+            line(q(30., 7.), q(30., 29.), 1., egui::Color32::GOLD);
+        }
+        MercenaryCamp => {
+            p.add(egui::Shape::convex_polygon(
+                vec![q(3., 33.), q(20., 7.), q(37., 33.)],
+                roof,
+                egui::Stroke::new(1., stone),
+            ));
+            p.add(egui::Shape::convex_polygon(
+                vec![q(13., 33.), q(20., 18.), q(27., 33.)],
+                egui::Color32::from_rgb(39, 33, 25),
+                egui::Stroke::NONE,
+            ));
+            line(q(20., 3.), q(20., 13.), 2., oak);
+        }
+        Vineyard | OliveGrove => {
+            for x in [10., 29.] {
+                line(q(x, 18.), q(x, 33.), 3., oak);
+                p.circle_filled(q(x, 15.), 9., green);
+                for d in [-3., 2.] {
+                    p.circle_filled(
+                        q(x + d, 17. + d),
+                        2.,
+                        if kind == Vineyard {
+                            egui::Color32::from_rgb(131, 76, 134)
+                        } else {
+                            egui::Color32::GOLD
+                        },
+                    );
+                }
+            }
+        }
+        OlivePress | VintnersWorkshop => {
+            rect(6., 29., 28., 5., stone);
+            for x in [9., 29.] {
+                rect(x, 8., 3., 22., oak);
+            }
+            rect(7., 8., 26., 4., oak);
+            line(q(21., 12.), q(21., 24.), 3., stone);
+            rect(
+                13.,
+                22.,
+                16.,
+                5.,
+                if kind == OlivePress {
+                    egui::Color32::GOLD
+                } else {
+                    egui::Color32::from_rgb(128, 63, 98)
+                },
+            );
+        }
+        _ => {
+            rect(4., 30., 32., 5., stone);
+            for x in [8., 18., 28.] {
+                rect(x, 15., 4., 15., stone);
+            }
+            p.add(egui::Shape::convex_polygon(
+                vec![q(3., 15.), q(20., 5.), q(37., 15.)],
+                roof,
+                egui::Stroke::NONE,
+            ));
+            let badge = match kind {
+                ResearchCenter => "F",
+                Hospital => "V",
+                Baths => "~",
+                Temple => "T",
+                Library => "B",
+                _ => "",
+            };
+            if kind == Baths {
+                rect(8., 24., 24., 7., blue);
+            } else {
+                p.text(
+                    q(20., 23.),
+                    egui::Align2::CENTER_CENTER,
+                    badge,
+                    egui::FontId::proportional(13.),
+                    egui::Color32::GOLD,
+                );
+            }
+        }
+    }
+    p.rect_stroke(
+        r.shrink(1.),
+        2.,
+        egui::Stroke::new(
+            if active || response.hovered() { 2. } else { 1. },
+            if active {
+                egui::Color32::GOLD
+            } else {
+                egui::Color32::from_gray(105)
             },
         ),
         egui::StrokeKind::Inside,

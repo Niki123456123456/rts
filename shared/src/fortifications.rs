@@ -293,11 +293,12 @@ fn join_bounds(piece: Structure) -> Obstacle {
 pub fn joins(pieces: &[Structure]) -> Vec<FortJoin> {
     let mut result = Vec::new();
     for (i, a) in pieces.iter().enumerate() {
-        if a.kind.is_wall() {
+        if a.kind.is_wall() || a.kind.is_road() {
             continue;
         }
         for (j, b) in pieces.iter().enumerate() {
-            if i == j
+            if b.kind.is_road()
+                || i == j
                 || (!b.kind.is_wall() && (j < i || !a.kind.is_anchor() || !b.kind.is_anchor()))
             {
                 continue;

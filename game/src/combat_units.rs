@@ -89,7 +89,9 @@ pub(crate) fn sync_combat_visuals(
         }
     }
     for (owner, u) in units.iter().filter(|(e, u)| {
-        !u.worker && !matches!(u.kind.as_str(), "ballista" | "onager") && !existing.contains(e)
+        !u.worker
+            && !stronghold_map::units::UnitKind::from_name(&u.kind).is_some_and(|k| k.is_siege())
+            && !existing.contains(e)
     }) {
         let kind = kind_index(&u.kind);
         let Some(model) = assets.models.get(kind) else {

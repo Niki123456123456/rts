@@ -57,7 +57,10 @@ pub(crate) fn obstacles(s: &network::Snapshot) -> Vec<map::Obstacle> {
                 decks.push(fort::bridge_span((b.x, b.z), b.rotation));
             }
         } else {
-            result.push(k.rotated_obstacle(b.x, b.z, b.rotation));
+            result.extend(k.ground_solids(b.x, b.z, b.rotation));
+            if k == BuildingKind::RomanBridge {
+                decks.push(k.rotated_obstacle(b.x, b.z, b.rotation));
+            }
         }
     }
     result.extend(fort::joins(&pieces(s)).into_iter().map(|j| j.shape));
@@ -484,7 +487,11 @@ pub(crate) fn piece(b: &network::Building) -> fort::Structure {
     }
 }
 pub(crate) fn pieces(s: &network::Snapshot) -> Vec<fort::Structure> {
-    s.buildings.iter().map(piece).collect()
+    s.buildings
+        .iter()
+        .filter(|b| !BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_road()))
+        .map(piece)
+        .collect()
 }
 pub(crate) fn candidate(
     s: &network::Snapshot,

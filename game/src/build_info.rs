@@ -20,7 +20,7 @@ pub(crate) fn ui(
         ui.separator();
         ui.strong("Baukosten");
         resources::cost_icons(ui, texture, kind.cost());
-        if kind.is_wall() {
+        if (kind.is_wall() || kind.is_road()) {
             ui.small("Je Mauerabschnitt");
             if state.wall_start.is_some() {
                 let c = kind.cost();
@@ -55,7 +55,7 @@ _=>"Auf geeignetem Land. Rote Flächen sind blockiert. Direkt an Nachbarn anschl
         }
         ui.separator();
         ui.strong("Steuerung");
-        ui.label(if kind.is_wall() {
+        ui.label(if (kind.is_wall() || kind.is_road()) {
             "Linksklick: Startpunkt und Endpunkt\nRechtsklick / Esc: abbrechen"
         } else {
             "Linksklick: platzieren\nR: um 90° drehen\nRechtsklick / Esc: abbrechen"
@@ -76,6 +76,26 @@ _=>"Auf geeignetem Land. Rote Flächen sind blockiert. Direkt an Nachbarn anschl
 fn description(kind: BuildingKind) -> &'static str {
     use BuildingKind::*;
     match kind {
+DirtRoad=>"Erdweg: +20 % Bewegungstempo. Wie eine Mauer mit Start- und Endpunkt ziehen.",
+StoneRoad=>"Gepflasterte römische Straße: +50 % Bewegungstempo. Gilt für alle Einheiten auf der Straße.",
+RomanBridge=>"Begehbare Steinbrücke über Flüsse: +35 % Tempo. Von einem trockenen Ufer zum anderen ziehen.",
+Arsenal=>"Waffenlager für je 40 Bögen, Schwerter und Schilde. Waffenschmiede liefern hierher; die Kaserne verwendet eingelagerte Ausrüstung.",
+ResearchCenter=>"Erforscht Waffen, Wirtschaft und Politiken in drei Stufen. Ein Gelehrter wird automatisch zugewiesen.",
+WeaponSmith=>"Stellt Bögen, Schwerter oder Schilde automatisch her. Benötigt Rohstoffe, einen Bauern und ein geöffnetes Waffenlager.",
+ToolSmith=>"Stellt Werkzeuge aus Holz und Eisen her. Werkzeuge beschleunigen Betriebe und verschleißen bei der Arbeit.",
+Hospital=>"Valetudinarium: Ein Sanitäter heilt nahe eigene Einheiten und verbessert die Gesundheitsversorgung.",
+MercenaryCamp=>"Wirbt Bogenschützen und Schwertkämpfer gegen Sesterzen an. Söldner benötigen keine freien Bauern.",
+Baths=>"Römische Thermen: Hygiene, Gesundheit und +4 Zufriedenheit (einmal pro Siedlung).",
+Temple=>"Römischer Tempel: Religion, Freizeit und +5 Zufriedenheit (einmal pro Siedlung).",
+Aqueduct=>"Versorgt die Siedlung mit Wasser. Einheiten können durch die Bögen gehen.",
+Colosseum=>"Großes Amphitheater: Unterhaltung und +7 Zufriedenheit (einmal pro Siedlung).",
+Theater=>"Römisches Theater: erweitert die Freizeitversorgung.",
+Library=>"Bibliotheca: beschleunigt die Forschung um 25 %. Mehrere Bibliotheken verstärken diesen Bonus nicht.",
+Statue=>"Römische Triumphstatue: +3 Zufriedenheit (einmal pro Siedlung).",
+Vineyard=>"Erntet Trauben und liefert sie ins Rohstofflager.",
+VintnersWorkshop=>"Verarbeitet zwei Trauben zu Wein. Handel und +2 Zufriedenheit solange vorhanden; Verbrauch ab 16 Bewohnern.",
+OliveGrove=>"Erntet Oliven und liefert sie ins Rohstofflager.",
+OlivePress=>"Verarbeitet zwei Oliven zu Olivenöl. Handel und +2 Zufriedenheit solange vorhanden; Verbrauch ab 16 Bewohnern.",
  Housing=>"Bietet vier weitere Wohnplätze und ermöglicht zusätzlichen Zuzug.",
 Stockpile=>"Lagert auch Korn und Mehl sowie Holz, Stein und Eisen. Arbeiter und Karren liefern ihre Rohstoffe hier ab.",
 Granary=>"Lagert Lebensmittel für die Bevölkerung. Rationen werden im Palast festgelegt.",

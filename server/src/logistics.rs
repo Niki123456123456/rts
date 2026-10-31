@@ -505,13 +505,27 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         if !staffed {
             continue;
         }
+        if matches!(
+            building.kind.as_str(),
+            "weapon_smith" | "tool_smith" | "hospital"
+        ) {
+            produce_special(ctx, &building, &mut p);
+            ctx.db.producer().building_id().update(p);
+            continue;
+        }
+        if building.kind == "research_center" {
+            research_tick(ctx, &building);
+            continue;
+        }
         if building.kind == "stable" || building.kind == "siege_workshop" {
-            produce_industry(ctx, &building, &mut p);
+            for _ in 0..advanced_work(ctx, &building, &p) {
+                produce_industry(ctx, &building, &mut p);
+            }
             ctx.db.producer().building_id().update(p);
             continue;
         }
         if p.buffer < economy::PRODUCTION_BUFFER {
-            p.progress += 1;
+            p.progress += advanced_work(ctx, &building, &p);
             if p.progress >= nature::production_seconds(&building.kind) {
                 p.buffer += take_harvest(ctx, &building);
                 p.progress = 0;
@@ -536,7 +550,13 @@ pub fn produce_resources(ctx: &ReducerContext, tick: ProductionTick) -> Result<(
         let Some(source) = ctx.db.building().id().find(w.source_building) else {
             continue;
         };
-        if source.kind == "stable" || source.kind == "siege_workshop" {
+        if source.kind == "stable"
+            || source.kind == "siege_workshop"
+            || matches!(
+                source.kind.as_str(),
+                "research_center" | "weapon_smith" | "tool_smith" | "hospital"
+            )
+        {
             if !at_work_site(ctx, &source, &u) {
                 route_to_work(ctx, &source, &mut u);
             }

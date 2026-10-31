@@ -68,7 +68,10 @@ fn fort_obstacles(ctx: &ReducerContext, game: u64) -> Vec<Obstacle> {
                 decks.push(fort::bridge_span((b.x, b.z), r));
             }
         } else {
-            solids.push(building_shape(ctx, &b));
+            solids.extend(k.ground_solids(b.x, b.z, r));
+            if k == map::BuildingKind::RomanBridge {
+                decks.push(k.rotated_obstacle(b.x, b.z, r));
+            }
         }
     }
     solids.extend(
@@ -383,6 +386,21 @@ fn access_door(ctx: &ReducerContext, u: u64, b: &Building, door: u8) -> Option<m
 }
 
 fn ground_height(ctx: &ReducerContext, game: u64, x: f32, z: f32) -> f32 {
+    if let Some(b) = ctx
+        .db
+        .building()
+        .game_id()
+        .filter(game)
+        .filter(|b| map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_road()))
+        .find(|b| building_shape(ctx, b).contains((x, z), 0.))
+    {
+        return b.y
+            + match b.kind.as_str() {
+                "roman_bridge" => 0.18,
+                "stone_road" => 0.08,
+                _ => 0.05,
+            };
+    }
     ctx.db
         .building()
         .game_id()
@@ -420,6 +438,7 @@ fn fort_pieces(ctx: &ReducerContext, game: u64) -> Vec<fort::Structure> {
         .building()
         .game_id()
         .filter(game)
+        .filter(|b| !map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_road()))
         .map(|b| fort_piece(ctx, &b))
         .collect()
 }

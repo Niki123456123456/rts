@@ -35,7 +35,7 @@ pub fn shot_clear(
     projectile_clear(start, end, blocks, ignored, terrain, "archer")
 }
 pub fn projectile_point(start: Position, end: Position, progress: f32, kind: &str) -> Position {
-    if kind != "onager" && kind != "ballista" {
+    if kind != "onager" && kind != "ballista" && kind != "stone_ballista" && kind != "scorpion" {
         return arrow_point(start, end, progress);
     }
     let t = progress.clamp(0., 1.);

@@ -252,6 +252,53 @@ fn satisfaction_details(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
             map::civic::TAX_HAPPINESS[p.taxes as usize]
         ));
     }
+    let own = |id| {
+        multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .any(|b| b.id == id && b.owned)
+    };
+    let wonder = map::infrastructure::wonder_happiness(
+        multiplayer
+            .snapshot
+            .buildings
+            .iter()
+            .filter(|b| {
+                b.owned
+                    && !multiplayer
+                        .snapshot
+                        .building_operations
+                        .iter()
+                        .any(|o| o.building_id == b.id && o.closed)
+            })
+            .filter_map(|b| BuildingKind::from_name(&b.kind)),
+    );
+    let politics = multiplayer
+        .snapshot
+        .research
+        .iter()
+        .find(|r| own(r.keep_id))
+        .map_or(0, |r| r.politics)
+        * 2;
+    let wine = multiplayer
+        .snapshot
+        .workshop_stocks
+        .iter()
+        .any(|s| own(s.building_id) && s.wine > 0);
+    let oil = multiplayer
+        .snapshot
+        .workshop_stocks
+        .iter()
+        .any(|s| own(s.building_id) && s.oil > 0);
+    ui.label(format!(
+        "Stadtbauten / Wunder: {wonder:+} · Politikforschung: +{politics}"
+    ));
+    ui.label(format!(
+        "Wein: +{} · Olivenöl: +{}",
+        if wine { 2 } else { 0 },
+        if oil { 2 } else { 0 }
+    ));
     ui.small("Mit wachsender Bevölkerung steigen die Ansprüche.");
     ui.separator();
     egui::Grid::new("needs_factors")
@@ -260,11 +307,11 @@ fn satisfaction_details(ui: &mut egui::Ui, multiplayer: &Multiplayer) {
             for (name, points, threshold) in [
                 ("Nahrung", n.food, 0),
                 ("Wohnraum", n.housing, 0),
-                ("Wasser · Brunnen", n.water, 8),
+                ("Wasser · Brunnen / Aquädukt", n.water, 8),
                 ("Nahrungsvielfalt", n.variety, 16),
                 ("Arbeitsplätze", n.employment, 16),
-                ("Gesundheit · Apotheke", n.health, 24),
-                ("Freizeit · Wirtshaus / Garten", n.leisure, 32),
+                ("Gesundheit · Apotheke / Therme / Lazarett", n.health, 24),
+                ("Freizeit · Garten / Theater / Tempel", n.leisure, 32),
                 ("Warenbestände", n.goods, 40),
             ] {
                 let active = count >= threshold;

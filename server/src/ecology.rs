@@ -472,6 +472,15 @@ fn animal_damaged(ctx: &ReducerContext, mut a: Wildlife, damage: f32) {
     ctx.db.wildlife().id().update(a);
 }
 fn take_harvest(ctx: &ReducerContext, b: &Building) -> u32 {
+    if b.kind == "vineyard" || b.kind == "olive_grove" {
+        return 2;
+    }
+    if b.kind == "vintners_workshop" {
+        return u32::from(consume_intermediate(ctx, b, Commodity::Grapes, 2));
+    }
+    if b.kind == "olive_press" {
+        return u32::from(consume_intermediate(ctx, b, Commodity::Olives, 2));
+    }
     if b.kind == "windmill" {
         return u32::from(consume_intermediate(ctx, b, Commodity::Wheat, 1));
     }
@@ -811,6 +820,15 @@ pub fn update_ecology(ctx: &ReducerContext, tick: EcologyTick) -> Result<(), Str
                     let d = map::distance((a.x, a.z), (u.x, u.z));
                     if d < 1.6 {
                         if let Some(mut target) = ctx.db.army_unit().id().find(u.id) {
+                            alert_attack(
+                                ctx,
+                                target.game_id,
+                                target.owner,
+                                target.id,
+                                false,
+                                target.x,
+                                target.z,
+                            );
                             target.health =
                                 (target.health - if a.species == 4 { 0.12 } else { 0.045 }).max(0.);
                             if target.health <= 0. {

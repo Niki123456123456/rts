@@ -32,6 +32,7 @@ pub(crate) fn portrait(
         UnitKind::LightCavalry => (0., 1.),
         UnitKind::Ballista => (5., 2.),
         UnitKind::Onager => (6., 2.),
+        _ => (5., 2.),
     };
     let uv = egui::Rect::from_min_max(
         egui::pos2(column * 57. / 512., row * 92. / 512.),
@@ -41,7 +42,25 @@ pub(crate) fn portrait(
     // shift the horizontal row and push the image below the panel's clip edge.
     let (id, space) = ui.allocate_space(egui::vec2(70., 88.));
     let rect = egui::Rect::from_min_size(space.min + egui::vec2(2., 10.), egui::vec2(48., 78.));
-    ui.painter().image(texture, rect, uv, egui::Color32::WHITE);
+    if kind.is_siege() {
+        ui.painter()
+            .rect_filled(rect, 3., egui::Color32::from_rgb(55, 40, 25));
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            match kind {
+                UnitKind::AssaultLadder => "LEITER",
+                UnitKind::SiegeTower => "TURM",
+                UnitKind::Ram | UnitKind::CoveredRam => "RAM",
+                UnitKind::Pluteus => "SCHUTZ",
+                _ => "ARTILL.",
+            },
+            egui::FontId::proportional(11.),
+            egui::Color32::GOLD,
+        );
+    } else {
+        ui.painter().image(texture, rect, uv, egui::Color32::WHITE);
+    }
     let response = ui
         .interact(
             rect,

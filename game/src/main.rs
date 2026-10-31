@@ -1,5 +1,6 @@
 //! Multiplayer terrain scene. Unit positions are authoritative SpacetimeDB state.
 
+mod advancement;
 mod build_info;
 mod buildings;
 mod civic;
@@ -154,6 +155,7 @@ fn main() {
                 minimap::minimap_ui,
                 build_info::ui,
                 industry::ui,
+                advancement::ui,
                 selection_rectangle_ui,
                 buildings::attack_hover_ui,
             )
@@ -926,7 +928,7 @@ fn selection_ui(
     let response = egui::Panel::bottom("selected_units")
         .resizable(false)
         .exact_size(if building_interaction.selected.and_then(|id|multiplayer.snapshot.buildings.iter().find(|b|b.id==id))
-            .is_some_and(|b|matches!(b.kind.as_str(),"quarry"|"iron_mine"|"saw_pit"|"fishpond"|"hunters_post")){172.}else if building_interaction.category==Some("fortifications"){132.}else{110.})
+            .is_some_and(|b|matches!(b.kind.as_str(),"quarry"|"iron_mine"|"saw_pit"|"fishpond"|"hunters_post")){172.}else if building_interaction.category==Some("fortifications"){138.}else{138.})
         .show(&mut viewport_ui, |ui| {
             ui.add_space(8.0);
             ui.horizontal_top(|ui| {
@@ -936,19 +938,19 @@ fn selection_ui(
                 ui.separator();
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.;
-                    for category in ["fortifications", "supply", "military", "services"] {
-                        let active = building_interaction.category.unwrap_or("supply") == category;
-                        if menu_ui::category_button(ui, menu_texture, category, active) {
-                            building_interaction.category = Some(category);
-                        }
-                    }
+                    egui::Grid::new("building_categories").num_columns(2).spacing(egui::vec2(3.,2.)).show(ui,|ui|{
+                    for (i,category) in ["fortifications","military","resources","food","supply","infrastructure","services","wonders"].into_iter().enumerate(){
+                     let active=building_interaction.category.unwrap_or("supply")==category;
+                     if menu_ui::category_button(ui,menu_texture,category,active){building_interaction.category=Some(category);}
+                     if i%2==1{ui.end_row();}
+                    }});
                 });
                 ui.vertical(|ui| {
                     let category = building_interaction.category.unwrap_or("supply");
                     if category=="fortifications" {ui.horizontal(|ui|{for (tool,label)in [(0,"Graben ziehen"),(1,"Mauertreppe ziehen")] {if ui.selectable_label(building_interaction.fort_tool==Some(tool),label).clicked(){building_interaction.placing=None;building_interaction.fort_tool=Some(tool);building_interaction.fort_start=None;building_interaction.selected=None;}}});}
 
                     let buildings = menu_ui::BUILD_MENU.into_iter()
-                        .filter(|kind| kind.category() == category)
+                        .filter(|kind| menu_ui::group(*kind) == category)
                         .collect::<Vec<_>>();
                     let columns = buildings.len().div_ceil(2).max(1);
                     egui::Grid::new("building_palette")
@@ -1026,7 +1028,7 @@ fn selection_ui(
                             .iter()
                             .find(|p| p.building_id == building.id)
                         {
-                            let resource = if building.kind=="stable"{"Pferdezucht"}else if building.kind=="siege_workshop"{"Fertigung"}else{match producer.resource {
+                            let resource = if building.kind=="stable"{"Pferdezucht"}else if matches!(building.kind.as_str(),"siege_workshop"|"weapon_smith"|"tool_smith"){"Fertigung"}else if building.kind=="research_center"{"Forschung"}else if building.kind=="hospital"{"Heilung"}else{match producer.resource {
                                 0 => "Holz",
                                 1 => "Stein",
                                 5 => "Käse",
@@ -1036,6 +1038,7 @@ fn selection_ui(
                                 4 => "Brot",
                                 8 => "Korn",
                                 9 => "Mehl",
+                                11=>"Werkzeuge",12=>"Trauben",13=>"Oliven",14=>"Wein",15=>"Olivenöl",
                                 _ => "Eisen",
                             }};
                             let cargo: u32 = multiplayer
@@ -1100,9 +1103,10 @@ fn selection_ui(
                             });
                         }
                     });
-                    if building.owned && building.kind == "barracks" {
+                    if building.owned && matches!(building.kind.as_str(),"barracks"|"mercenary_camp") {
                         for kind in [stronghold_map::units::UnitKind::ArmedPeasant, stronghold_map::units::UnitKind::Archer,stronghold_map::units::UnitKind::LightSwordsman,stronghold_map::units::UnitKind::LightCavalry] {
-                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).on_hover_ui(|ui|{ui.strong(kind.label());resources::cost_icons(ui,menu_texture,kind.cost());ui.small("1 freier Bauer · Linksklick: rekrutieren");}).clicked() {
+                            if building.kind=="mercenary_camp"&&!matches!(kind,stronghold_map::units::UnitKind::Archer|stronghold_map::units::UnitKind::LightSwordsman){continue;}
+                            if unit_ui::portrait(ui,portrait_texture,kind,None,true).on_hover_ui(|ui|{ui.strong(kind.label());if building.kind=="mercenary_camp"{ui.label(format!("{} Sesterzen · kein Bauer nötig",if kind==stronghold_map::units::UnitKind::Archer{35}else{45}));}else{resources::cost_icons(ui,menu_texture,kind.cost());}ui.small(if building.kind=="mercenary_camp"{"Auswärtiger Söldner · kein Bauer nötig"}else if kind==stronghold_map::units::UnitKind::LightCavalry{"1 ausgewachsenes Pferd + 1 freier Bauer · Linksklick: rekrutieren"}else{"1 freier Bauer · Waffen aus dem Waffenlager werden angerechnet"});}).clicked() {
                                 multiplayer.send(Action::RecruitUnit {building_id:building.id,kind:kind.name().into()});
                             }
                         }
@@ -1120,6 +1124,14 @@ fn selection_ui(
                                     stronghold_map::units::UnitKind::LightCavalry,
                                     stronghold_map::units::UnitKind::Ballista,
                                     stronghold_map::units::UnitKind::Onager,
+                                    stronghold_map::units::UnitKind::StoneBallista,
+                                    stronghold_map::units::UnitKind::Scorpion,
+                                    stronghold_map::units::UnitKind::Ram,
+                                    stronghold_map::units::UnitKind::CoveredRam,
+                                    stronghold_map::units::UnitKind::SiegeTower,
+                                    stronghold_map::units::UnitKind::AssaultLadder,
+                                    stronghold_map::units::UnitKind::Pluteus,
+
                                 ] {
                                     let count = selected
                                         .0

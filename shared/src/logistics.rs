@@ -52,6 +52,11 @@ pub enum Commodity {
     Fish = 7,
     Wheat = 8,
     Flour = 9,
+    Tools = 11,
+    Grapes = 12,
+    Olives = 13,
+    Wine = 14,
+    Oil = 15,
 }
 impl Commodity {
     pub fn from_u8(value: u8) -> Option<Self> {
@@ -66,6 +71,11 @@ impl Commodity {
             7 => Some(Self::Fish),
             8 => Some(Self::Wheat),
             9 => Some(Self::Flour),
+            11 => Some(Self::Tools),
+            12 => Some(Self::Grapes),
+            13 => Some(Self::Olives),
+            14 => Some(Self::Wine),
+            15 => Some(Self::Oil),
             _ => None,
         }
     }
@@ -77,7 +87,13 @@ impl Commodity {
             Self::Apples | Self::Bread | Self::Cheese | Self::Meat | Self::Fish => {
                 FOOD_CAPACITY_PER_KIND
             }
-            Self::Wheat | Self::Flour => 120,
+            Self::Wheat
+            | Self::Flour
+            | Self::Tools
+            | Self::Grapes
+            | Self::Olives
+            | Self::Wine
+            | Self::Oil => 120,
         }
     }
     pub fn is_food(self) -> bool {
@@ -90,7 +106,17 @@ impl Commodity {
 impl BuildingKind {
     pub fn produces(self) -> Option<Commodity> {
         match self {
-            Self::SawPit | Self::Stable | Self::SiegeWorkshop => Some(Commodity::Wood),
+            Self::SawPit
+            | Self::Stable
+            | Self::SiegeWorkshop
+            | Self::ResearchCenter
+            | Self::WeaponSmith
+            | Self::ToolSmith
+            | Self::Hospital => Some(Commodity::Wood),
+            Self::Vineyard => Some(Commodity::Grapes),
+            Self::OliveGrove => Some(Commodity::Olives),
+            Self::VintnersWorkshop => Some(Commodity::Wine),
+            Self::OlivePress => Some(Commodity::Oil),
             Self::WheatFarm => Some(Commodity::Wheat),
             Self::Windmill => Some(Commodity::Flour),
             Self::Bakery => Some(Commodity::Bread),
@@ -247,7 +273,16 @@ mod tests {
 
 impl Commodity {
     pub fn is_intermediate(self) -> bool {
-        matches!(self, Self::Wheat | Self::Flour)
+        matches!(
+            self,
+            Self::Wheat
+                | Self::Flour
+                | Self::Tools
+                | Self::Grapes
+                | Self::Olives
+                | Self::Wine
+                | Self::Oil
+        )
     }
     pub fn label(self) -> &'static str {
         match self {
@@ -261,6 +296,11 @@ impl Commodity {
             Self::Fish => "Fisch",
             Self::Wheat => "Korn",
             Self::Flour => "Mehl",
+            Self::Tools => "Werkzeuge",
+            Self::Grapes => "Trauben",
+            Self::Olives => "Oliven",
+            Self::Wine => "Wein",
+            Self::Oil => "Olivenöl",
         }
     }
 }

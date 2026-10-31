@@ -13,11 +13,18 @@ struct Model {
     graph: Option<Handle<AnimationGraph>>,
     clips: Vec<AnimationNodeIndex>,
 }
-const PATHS: [&str; 4] = [
+const PATHS: [&str; 11] = [
     "models/animals/horse/mesh.glb",
     "models/units/ballista/mesh.glb",
     "models/units/onager/mesh.glb",
     "models/industry/wheat_patch/mesh.glb",
+    "models/units/stone_ballista/mesh.glb",
+    "models/units/scorpion/mesh.glb",
+    "models/units/ram/mesh.glb",
+    "models/units/covered_ram/mesh.glb",
+    "models/units/siege_tower/mesh.glb",
+    "models/units/assault_ladder/mesh.glb",
+    "models/units/pluteus/mesh.glb",
 ];
 pub(crate) fn setup(
     mut assets: ResMut<IndustryAssets>,
@@ -171,18 +178,87 @@ pub(crate) fn visuals(
             commands.entity(entity).despawn();
             continue;
         };
-        if !matches!(u.kind.as_str(), "ballista" | "onager") {
+        if !stronghold_map::units::UnitKind::from_name(&u.kind).is_some_and(|k| k.is_siege()) {
             commands.entity(entity).despawn();
             continue;
         }
         shown.insert(v.owner);
-        t.rotation = Quat::from_rotation_y(u.facing.x.atan2(u.facing.y));
+        let yaw = Quat::from_rotation_y(u.facing.x.atan2(u.facing.y));
+        t.rotation = yaw;
+        t.translation = Vec3::new(0., -0.75, 0.);
+        t.scale = Vec3::splat(0.01);
+        if u.kind == "siege_tower" {
+            if let Some(b) = net
+                .snapshot
+                .siege_access
+                .iter()
+                .find(|a| a.unit_id == u.id)
+                .and_then(|a| {
+                    net.snapshot
+                        .buildings
+                        .iter()
+                        .find(|b| b.id == a.building_id)
+                })
+            {
+                if let Some(row) = net.snapshot.units.iter().find(|r| r.id == u.id) {
+                    let height = b.y
+                        + stronghold_map::BuildingKind::from_name(&b.kind)
+                            .and_then(|k| k.roof_profile())
+                            .map_or(9.7, |p| p.height)
+                        - (row.y - 0.75);
+                    t.scale.y = 0.01 * height.max(1.0) / 9.7;
+                }
+            }
+        }
+        if u.kind == "assault_ladder" {
+            if let Some(b) = net
+                .snapshot
+                .siege_access
+                .iter()
+                .find(|a| a.unit_id == u.id)
+                .and_then(|a| {
+                    net.snapshot
+                        .buildings
+                        .iter()
+                        .find(|b| b.id == a.building_id)
+                })
+            {
+                let row = net.snapshot.units.iter().find(|r| r.id == u.id);
+                if let Some(row) = row {
+                    let height = b.y
+                        + stronghold_map::BuildingKind::from_name(&b.kind)
+                            .and_then(|k| k.roof_profile())
+                            .map_or(0., |p| p.height)
+                        - (row.y - 0.75);
+                    let distance = Vec2::new(b.x - row.x, b.z - row.z)
+                        .length()
+                        .min(4.5)
+                        .max(1.);
+                    let angle = height.atan2(distance);
+                    t.rotation = yaw * Quat::from_rotation_x(-angle);
+                    t.scale.z = height.hypot(distance) / 8. * 0.01;
+                    t.translation = yaw * Vec3::new(0., height * 0.5 - 0.75, distance * 0.5);
+                }
+            }
+        }
     }
     for (owner, u) in &units {
-        if !matches!(u.kind.as_str(), "ballista" | "onager") || shown.contains(&owner) {
+        if !stronghold_map::units::UnitKind::from_name(&u.kind).is_some_and(|k| k.is_siege())
+            || shown.contains(&owner)
+        {
             continue;
         }
-        let index = if u.kind == "ballista" { 1 } else { 2 };
+        let index = match u.kind.as_str() {
+            "ballista" => 1,
+            "onager" => 2,
+            "stone_ballista" => 4,
+            "scorpion" => 5,
+            "ram" => 6,
+            "covered_ram" => 7,
+            "siege_tower" => 8,
+            "assault_ladder" => 9,
+            _ => 10,
+        };
         if let Some(model) = assets.models.get(index) {
             commands.entity(owner).with_children(|p| {
                 p.spawn((
@@ -312,6 +388,15 @@ pub(crate) fn ui(
                 .find(|p| p.building_id == b.id)
                 .map_or(0, |p| p.progress);
             ui.add(egui::ProgressBar::new(progress as f32 / 45.).text("Nächstes Fohlen"));
+            let price = stronghold_map::civic::horse_quote(
+                net.snapshot
+                    .prices
+                    .iter()
+                    .find(|p| p.resource == 10)
+                    .map_or(0, |p| p.pressure),
+                1,
+            );
+            if ui.add_enabled(horses_adult(&net,b.id)>0,egui::Button::new(format!("1 Pferd verkaufen · {price} Sesterzen"))).on_hover_text("Erfordert einen eigenen geöffneten Markt oder Hafen. Fohlen und Zuchtpferde bleiben im Stall.").clicked(){net.send(Action::SellHorses{stable_id:b.id,amount:1});}
         } else if let Some(order) = net
             .snapshot
             .factory_orders
@@ -319,28 +404,29 @@ pub(crate) fn ui(
             .find(|o| o.building_id == b.id)
         {
             let name = stronghold_map::units::UnitKind::from_name(&order.kind)
-                .unwrap()
-                .label();
+                .map(|k| k.label())
+                .or_else(|| {
+                    stronghold_map::advancement::Equipment::parse(&order.kind).map(|k| k.label())
+                })
+                .unwrap_or("Fertigung");
             ui.label(name);
             ui.add(
                 egui::ProgressBar::new(order.progress as f32 / order.duration as f32)
                     .text(format!("{} / {} Sekunden", order.progress, order.duration)),
             );
-            ui.small("Eine besetzte, geöffnete Fabrica arbeitet am Auftrag. Zwei Bauern sind bereits als Bedienmannschaft eingeplant.");
+            ui.small(format!("Eine besetzte, geöffnete Fabrica arbeitet am Auftrag. {} Bauern sind als Bedienmannschaft eingeplant.",stronghold_map::units::UnitKind::from_name(&order.kind).map_or(0,|k|k.crew())));
         } else {
             ui.label("Belagerungswaffen für Verteidigung und Angriff");
-            for kind in [
-                stronghold_map::units::UnitKind::Ballista,
-                stronghold_map::units::UnitKind::Onager,
-            ] {
+            for kind in stronghold_map::units::UnitKind::SIEGE {
                 ui.separator();
                 ui.strong(kind.label());
                 resources::cost_icons(ui, texture, kind.cost());
-                ui.small(if kind == stronghold_map::units::UnitKind::Ballista {
-                    "2 freie Bauern · 30 Sekunden · gezielte Bolzen"
-                } else {
-                    "2 freie Bauern · 50 Sekunden · schwere Steine gegen Mauern"
-                });
+                ui.small(format!(
+                    "{} freie Bauern · {} Sekunden",
+                    kind.crew(),
+                    kind.manufacture_seconds()
+                ));
+                ui.small(kind.description());
                 if ui.button("Bauauftrag erteilen").clicked() {
                     net.send(Action::QueueSiege {
                         building_id: b.id,
@@ -361,6 +447,8 @@ pub(crate) fn ui(
     .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12., 96.))
     .default_width(285.)
     .resizable(false)
+    .max_height((ctx.viewport_rect().height() - 210.).max(160.))
+    .vscroll(true)
     .show(ctx, content);
     Ok(())
 }
@@ -433,7 +521,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         loop {
             app.update();
-            if app.world().resource::<IndustryAssets>().models.len() == 4
+            if app.world().resource::<IndustryAssets>().models.len() == PATHS.len()
                 && app
                     .world_mut()
                     .query::<&AnimationPlayer>()
@@ -507,4 +595,12 @@ mod tests {
             0
         );
     }
+}
+
+fn horses_adult(net: &Multiplayer, id: u64) -> usize {
+    net.snapshot
+        .horses
+        .iter()
+        .filter(|h| h.stable_id == id && h.age >= 90)
+        .count()
 }

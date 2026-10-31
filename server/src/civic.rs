@@ -93,7 +93,9 @@ fn owner_alarm(ctx: &ReducerContext, owner: spacetimedb::ConnectionId) -> bool {
 }
 fn civic_happiness(ctx: &ReducerContext, b: &Building, food: u32) -> i32 {
     let p = policy_for(ctx, b);
-    civic::TAX_HAPPINESS[p.taxes as usize]
+    (civic::TAX_HAPPINESS[p.taxes as usize]
+        + technology(ctx, b.owner).politics as i32 * 2
+        + luxury_bonus(ctx, b))
         + if p.rations <= 4 || food > 0 {
             civic::RATION_HAPPINESS[p.rations as usize]
         } else {
@@ -295,7 +297,10 @@ fn civic_tick(ctx: &ReducerContext, b: &Building, seconds: u32) {
         if let Some(mut t) = ctx.db.treasury().connection_id().find(b.owner) {
             t.gold = t
                 .gold
-                .saturating_add(u64::from(pop) * civic::TAX_RATES[policy.taxes as usize])
+                .saturating_add(tech::taxes(
+                    u64::from(pop) * civic::TAX_RATES[policy.taxes as usize],
+                    technology(ctx, b.owner).politics,
+                ))
                 .min(1_000_000_000_000);
             ctx.db.treasury().connection_id().update(t);
         }

@@ -56,6 +56,23 @@ impl BuildingKind {
             | StoneWallCrenellatedLow
             | StoneWallCrenellatedMedium
             | StoneWallCrenellatedWoodHeight => (0, 3, 0),
+            ResearchCenter => (18, 16, 4),
+            Hospital => (18, 22, 4),
+            MercenaryCamp => (12, 0, 2),
+            Theater => (20, 45, 4),
+            OliveGrove | Vineyard => (10, 0, 0),
+            OlivePress | VintnersWorkshop => (12, 8, 2),
+            DirtRoad => (1, 0, 0),
+            StoneRoad => (0, 1, 0),
+            RomanBridge => (1, 2, 0),
+            Aqueduct => (12, 60, 4),
+            Colosseum => (30, 90, 12),
+            Statue => (0, 30, 2),
+            Library => (24, 32, 4),
+            WeaponSmith | ToolSmith => (12, 10, 4),
+            Baths => (18, 30, 3),
+            Temple => (12, 36, 3),
+            Arsenal => (12, 10, 2),
             Stable => (18, 8, 2),
             SiegeWorkshop => (24, 16, 6),
             Harbor => (20, 12, 4),
@@ -795,3 +812,7 @@ impl BuildingKind {
         )
     }
 }
+
+pub mod advancement;
+
+pub mod infrastructure;

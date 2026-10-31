@@ -15,15 +15,16 @@
   {
     "variant": "Barracks",
     "id": "barracks",
-    "label": "Steinkaserne",
+    "label": "Kaserne · Castra",
     "category": "military",
-    "source": "barrack_stone",
-    "collision": "barrack_stone_collision",
+    "source": null,
+    "collision": null,
     "folder": "barrack_stone",
     "grid": [
       6,
       5
-    ]
+    ],
+    "procedural": "roman_industry"
   },
   {
     "variant": "Stockpile",
@@ -367,15 +368,16 @@
   {
     "variant": "Vineyard",
     "id": "vineyard",
-    "label": "Weinberg",
+    "label": "Weingut",
     "category": "supply",
-    "source": "farm_grapes",
-    "collision": "farm_grapes_collision",
+    "source": null,
+    "collision": null,
     "folder": "vineyard",
     "grid": [
-      2,
-      2
-    ]
+      6,
+      5
+    ],
+    "procedural": "roman_industry"
   },
   {
     "variant": "PigFarm",
@@ -526,15 +528,16 @@
   {
     "variant": "VintnersWorkshop",
     "id": "vintners_workshop",
-    "label": "Weingut",
+    "label": "Weinpresse",
     "category": "supply",
-    "source": "vintners_workshop",
-    "collision": "vintners_workshop_collision",
+    "source": null,
+    "collision": null,
     "folder": "vintners_workshop",
     "grid": [
-      2,
-      3
-    ]
+      4,
+      4
+    ],
+    "procedural": "roman_industry"
   },
   {
     "variant": "Kitchen",
@@ -951,6 +954,258 @@
     "grid": [
       4,
       5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "ResearchCenter",
+    "id": "research_center",
+    "label": "Forschungszentrum · Academia",
+    "category": "services",
+    "folder": "research_center",
+    "grid": [
+      5,
+      5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Arsenal",
+    "id": "arsenal",
+    "label": "Waffenlager · Armamentarium",
+    "category": "military",
+    "folder": "arsenal",
+    "grid": [
+      5,
+      4
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "DirtRoad",
+    "id": "dirt_road",
+    "label": "Erdweg",
+    "category": "infrastructure",
+    "folder": "dirt_road",
+    "grid": [
+      1,
+      2
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "StoneRoad",
+    "id": "stone_road",
+    "label": "Römische Straße",
+    "category": "infrastructure",
+    "folder": "stone_road",
+    "grid": [
+      1,
+      2
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "RomanBridge",
+    "id": "roman_bridge",
+    "label": "Steinbrücke",
+    "category": "infrastructure",
+    "folder": "roman_bridge",
+    "grid": [
+      1,
+      2
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Aqueduct",
+    "id": "aqueduct",
+    "label": "Aquädukt",
+    "category": "wonders",
+    "folder": "aqueduct",
+    "grid": [
+      8,
+      2
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Colosseum",
+    "id": "colosseum",
+    "label": "Amphitheater · Kolosseum",
+    "category": "wonders",
+    "folder": "colosseum",
+    "grid": [
+      9,
+      8
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Statue",
+    "id": "statue",
+    "label": "Triumphstatue",
+    "category": "wonders",
+    "folder": "statue",
+    "grid": [
+      3,
+      3
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Library",
+    "id": "library",
+    "label": "Bibliotheca · Bibliothek",
+    "category": "wonders",
+    "folder": "library",
+    "grid": [
+      6,
+      5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "WeaponSmith",
+    "id": "weapon_smith",
+    "label": "Waffenschmied",
+    "category": "military",
+    "folder": "weapon_smith",
+    "grid": [
+      4,
+      4
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "ToolSmith",
+    "id": "tool_smith",
+    "label": "Werkzeugschmied",
+    "category": "supply",
+    "folder": "tool_smith",
+    "grid": [
+      4,
+      4
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Baths",
+    "id": "baths",
+    "label": "Thermen",
+    "category": "services",
+    "folder": "baths",
+    "grid": [
+      6,
+      5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Temple",
+    "id": "temple",
+    "label": "Tempel",
+    "category": "services",
+    "folder": "temple",
+    "grid": [
+      5,
+      6
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Hospital",
+    "id": "hospital",
+    "label": "Lazarett · Valetudinarium",
+    "category": "services",
+    "folder": "hospital",
+    "grid": [
+      6,
+      5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "MercenaryCamp",
+    "id": "mercenary_camp",
+    "label": "Söldnerzelt",
+    "category": "military",
+    "folder": "mercenary_camp",
+    "grid": [
+      4,
+      4
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "Theater",
+    "id": "theater",
+    "label": "Römisches Theater",
+    "category": "wonders",
+    "folder": "theater",
+    "grid": [
+      7,
+      6
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "OliveGrove",
+    "id": "olive_grove",
+    "label": "Olivenhain",
+    "category": "supply",
+    "folder": "olive_grove",
+    "grid": [
+      6,
+      5
+    ],
+    "procedural": "roman_industry",
+    "source": null,
+    "collision": null
+  },
+  {
+    "variant": "OlivePress",
+    "id": "olive_press",
+    "label": "Olivenpresse",
+    "category": "supply",
+    "folder": "olive_press",
+    "grid": [
+      4,
+      4
     ],
     "procedural": "roman_industry",
     "source": null,

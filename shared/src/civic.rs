@@ -118,3 +118,9 @@ mod tests {
 pub fn net_per_round(residents: u32, taxes: u8) -> i64 {
     i64::from(residents) * TAX_RATES[taxes.min(7) as usize] as i64
 }
+
+pub fn horse_quote(pressure: i32, amount: u32) -> u64 {
+    (0..amount.min(8))
+        .map(|i| (36 * (100 + (pressure - i as i32).clamp(-60, 300)) as u64 * 85 / 10000).max(1))
+        .sum()
+}

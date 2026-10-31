@@ -346,6 +346,9 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
     let units = combatants(ctx);
     // Only idle combatants acquire targets; a new explicit move order wins.
     for u in &units {
+        if combat_kind(ctx, u).is_support() {
+            continue;
+        }
         if ctx.db.unit_engagement().unit_id().find(u.id).is_some()
             || ctx
                 .db
@@ -499,7 +502,12 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
                 .unit_id()
                 .find(u.id)
                 .and_then(|p| map::units::UnitKind::from_name(&p.kind))
-                .map(|k| k.melee_dps())
+                .map(|k| {
+                    tech::damage(
+                        if k.is_support() { 0. } else { k.melee_dps() },
+                        technology(ctx, u.owner).weapons,
+                    )
+                })
                 .unwrap_or(0.);
             *damage.entry(enemy.id).or_default() += dps * melee::SCAN_SECONDS;
         } else if ctx.db.tower_travel().unit_id().find(u.id).is_none()
@@ -513,6 +521,9 @@ pub fn scan_combat(ctx: &ReducerContext, tick: CombatTick) -> Result<(), String>
     // Resolve every strike from the same tick before removing casualties.
     for (id, damage) in damage {
         if let Some(mut u) = ctx.db.army_unit().id().find(id) {
+            if damage > 0. {
+                alert_attack(ctx, u.game_id, u.owner, u.id, false, u.x, u.z);
+            }
             u.health = (u.health - damage).max(0.);
             if u.health <= 0. {
                 kill_combat_unit(ctx, id);

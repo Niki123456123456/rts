@@ -55,7 +55,7 @@ fn is_archer(ctx: &ReducerContext, u: &ArmyUnit) -> bool {
         .unit_profile()
         .unit_id()
         .find(u.id)
-        .is_some_and(|p| matches!(p.kind.as_str(), "archer" | "ballista" | "onager"))
+        .is_some_and(|p| map::units::UnitKind::from_name(&p.kind).is_some_and(|k| k.is_ranged()))
 }
 enum BowTarget {
     Unit(ArmyUnit),
@@ -99,6 +99,44 @@ fn shot_blocks(ctx: &ReducerContext, game: u64) -> Vec<bow::ShotBlock> {
         let Some(kind) = map::BuildingKind::from_name(&b.kind) else {
             continue;
         };
+        if kind.is_road() {
+            continue;
+        }
+        if kind == map::BuildingKind::Aqueduct {
+            for shape in kind.ground_solids(b.x, b.z, rotation(ctx, b.id)) {
+                result.push(bow::ShotBlock {
+                    id: b.id,
+                    shape,
+                    base: b.y,
+                    top: b.y + 4.3,
+                });
+            }
+            result.push(bow::ShotBlock {
+                id: b.id,
+                shape: fort::rect((b.x, b.z), rotation(ctx, b.id), (0., 0.), 7., 0.7),
+                base: b.y + 5.,
+                top: b.y + 6.4,
+            });
+            for c in [-4., 0., 4.] {
+                for i in 0..18 {
+                    let a = std::f32::consts::PI * (i as f32 + 0.5) / 18.;
+                    let h = 3.3 + 1.7 * a.sin();
+                    result.push(bow::ShotBlock {
+                        id: b.id,
+                        shape: fort::rect(
+                            (b.x, b.z),
+                            rotation(ctx, b.id),
+                            (c + 1.7 * a.cos(), 0.),
+                            0.22,
+                            0.3,
+                        ),
+                        base: b.y + h - 0.25,
+                        top: b.y + h + 0.25,
+                    });
+                }
+            }
+            continue;
+        }
         let height = kind
             .roof_profile()
             .map(|p| p.height)
@@ -146,16 +184,49 @@ fn shot_blocks(ctx: &ReducerContext, game: u64) -> Vec<bow::ShotBlock> {
             }
         }
     }
+    for u in ctx
+        .db
+        .army_unit()
+        .game_id()
+        .filter(game)
+        .filter(|u| combat_kind(ctx, u) == map::units::UnitKind::Pluteus)
+    {
+        let p = ctx.db.unit_profile().unit_id().find(u.id).unwrap();
+        let (hx, hz) = if p.facing_x.abs() > p.facing_z.abs() {
+            (0.18, 1.3)
+        } else {
+            (1.3, 0.18)
+        };
+        result.push(bow::ShotBlock {
+            id: u64::MAX - u.id,
+            shape: Obstacle {
+                x: u.x,
+                z: u.z,
+                half_x: hx,
+                half_z: hz,
+            },
+            base: u.y - 0.75,
+            top: u.y + 2.3,
+        });
+    }
     result
 }
-fn arrow_origin(u: &ArmyUnit, end: bow::Position) -> bow::Position {
+fn arrow_origin(ctx: &ReducerContext, u: &ArmyUnit, end: bow::Position) -> bow::Position {
+    let kind = combat_kind(ctx, u);
+    let height = match kind {
+        map::units::UnitKind::Onager => 2.75,
+        map::units::UnitKind::Scorpion => 1.3,
+        map::units::UnitKind::Ballista | map::units::UnitKind::StoneBallista => 0.85,
+        _ => 0.56,
+    };
+    let forward = if kind.is_siege() { 0.9 } else { 0.45 };
     let length = map::distance((u.x, u.z), (end.0, end.2)).max(0.001);
     let dx = (end.0 - u.x) / length;
     let dz = (end.2 - u.z) / length;
     (
-        u.x + dx * 0.45 + dz * 0.13,
-        u.y + 0.56,
-        u.z + dz * 0.45 - dx * 0.13,
+        u.x + dx * forward + dz * 0.13,
+        u.y + height,
+        u.z + dz * forward - dx * 0.13,
     )
 }
 fn bow_contact(ctx: &ReducerContext, u: &ArmyUnit, target: &BowTarget) -> bool {
@@ -163,7 +234,7 @@ fn bow_contact(ctx: &ReducerContext, u: &ArmyUnit, target: &BowTarget) -> bool {
     let range = combat_kind(ctx, u).ranged_range(u.y);
     map::distance((u.x, u.z), (end.0, end.2)) <= range
         && bow::projectile_clear(
-            arrow_origin(u, end),
+            arrow_origin(ctx, u, end),
             end,
             &shot_blocks(ctx, u.game_id),
             target.ignored(),
@@ -191,7 +262,7 @@ fn launch_arrow(ctx: &ReducerContext, u: &ArmyUnit, target: &BowTarget) {
         return;
     }
     let end = target.aim(u, ctx);
-    let start = arrow_origin(u, end);
+    let start = arrow_origin(ctx, u, end);
     ctx.db.archer_cooldown().unit_id().delete(u.id);
     ctx.db.archer_cooldown().insert(ArcherCooldown {
         unit_id: u.id,
@@ -283,7 +354,10 @@ fn step_arrows(ctx: &ReducerContext) {
         ) {
             continue;
         }
-        if kind == map::units::UnitKind::Onager {
+        if matches!(
+            kind,
+            map::units::UnitKind::Onager | map::units::UnitKind::StoneBallista
+        ) {
             for mut victim in ctx
                 .db
                 .army_unit()
@@ -296,6 +370,15 @@ fn step_arrows(ctx: &ReducerContext) {
                 })
                 .collect::<Vec<_>>()
             {
+                alert_attack(
+                    ctx,
+                    victim.game_id,
+                    victim.owner,
+                    victim.id,
+                    false,
+                    victim.x,
+                    victim.z,
+                );
                 victim.health = (victim.health - 0.25).max(0.);
                 if victim.health <= 0. {
                     kill_combat_unit(ctx, victim.id);
@@ -306,7 +389,17 @@ fn step_arrows(ctx: &ReducerContext) {
         }
         match target {
             BowTarget::Unit(mut v) => {
-                v.health = (v.health - kind.shot_damage(false)).max(0.);
+                alert_attack(ctx, v.game_id, v.owner, v.id, false, v.x, v.z);
+                v.health = (v.health
+                    - tech::damage(
+                        kind.shot_damage(false),
+                        technology(ctx, arrow.owner).weapons,
+                    ) * if combat_kind(ctx, &v) == map::units::UnitKind::CoveredRam {
+                        0.55
+                    } else {
+                        1.
+                    })
+                .max(0.);
                 if v.health <= 0. {
                     kill_combat_unit(ctx, v.id);
                 } else {
@@ -314,7 +407,10 @@ fn step_arrows(ctx: &ReducerContext) {
                 }
             }
             BowTarget::Building(mut b) => {
-                b.health = (b.health - kind.shot_damage(true)).max(0.);
+                alert_attack(ctx, b.game_id, b.owner, b.id, true, b.x, b.z);
+                b.health = (b.health
+                    - tech::damage(kind.shot_damage(true), technology(ctx, arrow.owner).weapons))
+                .max(0.);
                 if b.health <= 0. {
                     delete_building(ctx, b.id);
                     replan(ctx, b.game_id);

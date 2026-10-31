@@ -88,15 +88,32 @@ fn settlement_satisfaction(
                     && map::BuildingKind::from_name(&b.kind).is_some_and(|k| k.produces().is_some())
             })
             .count() as u32,
-        water: buildings.iter().any(|b| b.kind == "well"),
-        healthcare: buildings.iter().any(|b| b.kind == "apothecary"),
+        water: buildings
+            .iter()
+            .any(|b| matches!(b.kind.as_str(), "well" | "aqueduct") && building_open(ctx, b.id)),
+        healthcare: buildings.iter().any(|b| {
+            matches!(b.kind.as_str(), "apothecary" | "hospital" | "baths")
+                && building_open(ctx, b.id)
+        }),
         leisure: buildings
             .iter()
-            .filter(|b| b.kind == "inn" || b.kind == "gardeners_hut")
+            .filter(|b| {
+                matches!(
+                    b.kind.as_str(),
+                    "inn" | "gardeners_hut" | "theater" | "colosseum" | "temple"
+                ) && building_open(ctx, b.id)
+            })
             .count() as u32,
     });
-    value.happiness = (value.happiness as i32 + civic_happiness(ctx, keep, food.iter().sum()))
-        .clamp(0, 100) as u32;
+    value.happiness = (value.happiness as i32
+        + civic_happiness(ctx, keep, food.iter().sum())
+        + map::infrastructure::wonder_happiness(
+            buildings
+                .iter()
+                .filter(|b| building_open(ctx, b.id))
+                .filter_map(|b| map::BuildingKind::from_name(&b.kind)),
+        ))
+    .clamp(0, 100) as u32;
     value.immigration_seconds = civic::immigration(value.happiness);
     let row = SettlementNeeds {
         building_id: keep.id,

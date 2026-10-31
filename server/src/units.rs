@@ -91,9 +91,20 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
         .id()
         .find(building_id)
         .filter(|b| {
-            b.game_id == player.game_id && b.owner == player.connection_id && b.kind == "barracks"
+            b.game_id == player.game_id
+                && b.owner == player.connection_id
+                && matches!(b.kind.as_str(), "barracks" | "mercenary_camp")
         })
         .ok_or("Recruit at your own barracks.")?;
+    let mercenary = b.kind == "mercenary_camp";
+    if mercenary
+        && !matches!(
+            kind,
+            map::units::UnitKind::Archer | map::units::UnitKind::LightSwordsman
+        )
+    {
+        return Err("Im Söldnerzelt gibt es Bogenschützen und Schwertkämpfer.".into());
+    }
     let army = ctx
         .db
         .army_unit()
@@ -153,15 +164,35 @@ pub fn recruit_unit(ctx: &ReducerContext, building_id: u64, kind: String) -> Res
         .building_id()
         .find(keep.id)
         .ok_or("Keine Bauern vorhanden.")?;
-    if population.arrived <= employed_peasants(ctx, player.connection_id) {
+    if !mercenary && population.arrived <= employed_peasants(ctx, player.connection_id) {
         return Err("Kein freier Bauer für die Rekrutierung. Schließe einen Betrieb oder warte auf Zuwanderer.".into());
     }
     if kind == map::units::UnitKind::LightCavalry {
         take_adult_horse(ctx, &player)?;
     }
-    debit_cost(ctx, &player, kind.cost())?;
-    population.arrived -= 1;
-    ctx.db.keep_population().building_id().update(population);
+    if mercenary {
+        let price = if kind == map::units::UnitKind::Archer {
+            35
+        } else {
+            45
+        };
+        let mut t = ctx
+            .db
+            .treasury()
+            .connection_id()
+            .find(player.connection_id)
+            .ok_or("Schatzkammer fehlt.")?;
+        if t.gold < price {
+            return Err("Nicht genug Sesterzen für diesen Söldner.".into());
+        }
+        t.gold -= price;
+        ctx.db.treasury().connection_id().update(t);
+    } else {
+        let cost = equip_recruit(ctx, &player, kind);
+        debit_cost(ctx, &player, cost)?;
+        population.arrived -= 1;
+        ctx.db.keep_population().building_id().update(population);
+    }
     let u = ctx.db.army_unit().insert(ArmyUnit {
         id: 0,
         game_id: player.game_id,

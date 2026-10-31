@@ -352,6 +352,8 @@ pub fn save_game(ctx: &ReducerContext, title: String) -> Result<(), String> {
     };
     save_civic_world(ctx, id, p.game_id);
     save_industry(ctx, id, p.game_id);
+    save_advanced(ctx, id, p.game_id);
+    save_climbers(ctx, id, p.game_id);
     let catalog = SaveCatalog {
         id,
         owner: ctx.sender,
@@ -658,6 +660,8 @@ pub fn load_game(ctx: &ReducerContext, save_id: u64) -> Result<(), String> {
         .insert(PredatorRevision { game_id: game.id });
     restore_civic_world(ctx, save_id, game.id, &bids, &owners);
     restore_industry(ctx, save_id, game.id, &bids);
+    restore_advanced(ctx, save_id, game.id, &bids, &uids);
+    restore_climbers(ctx, save_id, game.id, &bids, &uids);
     if ctx.db.industry_save().id().find(save_id).is_some() {
         ctx.db
             .fort_height_revision()

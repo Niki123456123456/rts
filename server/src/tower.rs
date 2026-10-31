@@ -11,6 +11,7 @@ fn tower_geometry(ctx: &ReducerContext, b: &Building) -> BuildingRoof {
     .expect("Roof reservations only reference buildings with a roof profile")
 }
 fn clear_tower(ctx: &ReducerContext, id: u64) {
+    ctx.db.siege_climber().unit_id().delete(id);
     ctx.db.wall_entry().unit_id().delete(id);
     ctx.db.tower_travel().unit_id().delete(id);
     ctx.db.tower_occupant().unit_id().delete(id);
@@ -197,10 +198,13 @@ pub fn move_to_roof(
         return Err("Choose the roof of your own walkable tower.".into());
     }
     let tower = tower_geometry(ctx, &b);
-    if units
-        .iter()
-        .any(|u| combat_kind(ctx, u) == map::units::UnitKind::Onager)
-    {
+    if units.iter().any(|u| {
+        combat_kind(ctx, u).is_siege()
+            && !matches!(
+                combat_kind(ctx, u),
+                map::units::UnitKind::Ballista | map::units::UnitKind::Scorpion
+            )
+    }) {
         return Err("Onager werden auf festem Boden aufgestellt.".into());
     }
     if units.iter().any(|u| combat_kind(ctx, u).is_siege())
@@ -399,6 +403,9 @@ pub fn move_to_roof(
 
 /// Walk to the hatch, then teleport to the door before a ground/attack order.
 fn depart_tower(ctx: &ReducerContext, u: &ArmyUnit) -> Result<map::Point, String> {
+    if let Some(c) = ctx.db.siege_climber().unit_id().find(u.id) {
+        return depart_assault(ctx, u, c);
+    }
     let Some(mut o) = ctx.db.tower_occupant().unit_id().find(u.id) else {
         return Ok((u.x, u.z));
     };
@@ -556,7 +563,7 @@ fn step_tower_travel(ctx: &ReducerContext) -> std::collections::HashSet<u64> {
         t.active = true;
         let tower = tower_geometry(ctx, &b);
         let points = travel_points(&t);
-        let mut budget = UNIT_SPEED * TICK_SECONDS;
+        let mut budget = unit_speed(ctx, &u) * TICK_SECONDS;
         while (t.next as usize) < points.len() && budget > 0.00001 {
             if unit_combat_facing(ctx, &u).is_some() {
                 break;

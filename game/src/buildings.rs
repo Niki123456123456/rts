@@ -242,7 +242,7 @@ pub(crate) fn sync_buildings(
                     .map(|(px, pz)| terrain_height(px, pz))
                     .fold(row.y, f32::min);
                 let depth = row.y - bottom;
-                if depth > 0.05 {
+                if depth > 0.05 && !kind.is_road() {
                     let (width, length) = kind.grid_size();
                     parent.spawn((
                         Mesh3d(assets.foundation_mesh.clone()),
@@ -314,6 +314,19 @@ fn placement_valid(
     rotation: u8,
     multiplayer: &Multiplayer,
 ) -> bool {
+    if kind.is_road() {
+        let shape = kind.construction_bounds(x, z, rotation);
+        return shape.in_build_area()
+            && map::terrain::construction_height(kind, x, z, rotation).is_some()
+            && !multiplayer.snapshot.buildings.iter().any(|b| {
+                BuildingKind::from_name(&b.kind).is_some_and(|k| {
+                    !k.is_road()
+                        && k.ground_solids(b.x, b.z, b.rotation)
+                            .iter()
+                            .any(|s| s.overlaps(shape))
+                })
+            });
+    }
     let required = match kind {
         BuildingKind::Quarry => Some(1),
         BuildingKind::IronMine => Some(2),
@@ -367,13 +380,20 @@ fn placement_valid(
             )
         })
         && !multiplayer.snapshot.buildings.iter().any(|b| {
-            shape.overlaps(
-                BuildingKind::from_name(&b.kind)
-                    .unwrap_or_default()
-                    .construction_bounds(b.x, b.z, b.rotation),
-            ) && !(b.owned
-                && (map::fortifications::replaced_wall(candidate, crate::fortifications::piece(b))
-                    || map::fortifications::may_join(candidate, crate::fortifications::piece(b))))
+            !BuildingKind::from_name(&b.kind).is_some_and(|k| k.is_road())
+                && shape.overlaps(
+                    BuildingKind::from_name(&b.kind)
+                        .unwrap_or_default()
+                        .construction_bounds(b.x, b.z, b.rotation),
+                )
+                && !(b.owned
+                    && (map::fortifications::replaced_wall(
+                        candidate,
+                        crate::fortifications::piece(b),
+                    ) || map::fortifications::may_join(
+                        candidate,
+                        crate::fortifications::piece(b),
+                    )))
         })
         && !multiplayer.snapshot.units.iter().any(|u| {
             ((u.y - terrain_height(u.x, u.z) - map::building_roof::UNIT_CENTER_HEIGHT).abs() < 0.1
@@ -539,17 +559,21 @@ pub(crate) fn building_input(
         return;
     };
     if let Some(kind) = state.placing {
-        if kind.is_wall() {
+        if kind.is_wall() || kind.is_road() {
             let end = kind.snap_position(hit.point.x, hit.point.z);
             let start = state.wall_start.unwrap_or(end);
             let line = map::walls::wall_line(start, end);
             let existing = |x: f32, z: f32| {
                 multiplayer.snapshot.buildings.iter().any(|b| {
                     b.owned
-                        && map::fortifications::covered_wall(
-                            (x, z),
-                            crate::fortifications::piece(b),
-                        )
+                        && ((kind.is_road()
+                            && b.kind == kind.name()
+                            && map::distance((b.x, b.z), (x, z)) < 0.2)
+                            || (!kind.is_road()
+                                && map::fortifications::covered_wall(
+                                    (x, z),
+                                    crate::fortifications::piece(b),
+                                )))
                 })
             };
             let wall_count = multiplayer
@@ -609,6 +633,16 @@ pub(crate) fn building_input(
                     assets.wall_previews.push(entity);
                 }
                 let mut preview_model = model_transform(kind);
+                let preview_rotation = if kind.is_road() {
+                    let q = line
+                        .iter()
+                        .find(|q| map::distance(**q, (x, z)) > 0.2)
+                        .copied()
+                        .unwrap_or((x + 2., z));
+                    u8::from((q.1 - z).abs() > (q.0 - x).abs())
+                } else {
+                    0
+                };
                 if kind.is_crenellated() {
                     let p = map::fortifications::Structure {
                         id: u64::MAX,
@@ -636,7 +670,7 @@ pub(crate) fn building_input(
                             .unwrap_or_else(|| terrain_height(x, z))
                             + 0.01,
                         z,
-                        0,
+                        preview_rotation,
                     )
                     .mul_transform(preview_model),
                     MeshMaterial3d(material.clone()),
@@ -1611,6 +1645,9 @@ fn overlap_regions(
         .iter()
         .filter_map(|b| {
             let k = BuildingKind::from_name(&b.kind)?;
+            if k.is_road() {
+                return None;
+            }
             let candidate = crate::fortifications::candidate(&net.snapshot, kind, x, z, rotation);
             let other_piece = crate::fortifications::piece(b);
             if b.owned

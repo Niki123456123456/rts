@@ -4,6 +4,21 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Deserialize)]
 pub struct Snapshot {
     #[serde(default)]
+    pub arsenals: Vec<ArsenalView>,
+    #[serde(default)]
+    pub research: Vec<ResearchView>,
+    #[serde(default)]
+    pub research_orders: Vec<ResearchOrderView>,
+    #[serde(default)]
+    pub workshop_stocks: Vec<WorkshopStockView>,
+    #[serde(default)]
+    pub workshop_recipes: Vec<WorkshopRecipeView>,
+    #[serde(default)]
+    pub siege_access: Vec<SiegeAccessView>,
+    #[serde(default)]
+    pub alerts: Vec<AlertView>,
+
+    #[serde(default)]
     pub industry_stocks: Vec<IndustryStockView>,
     #[serde(default)]
     pub horses: Vec<HorseView>,
@@ -388,9 +403,92 @@ pub struct FactoryView {
     pub progress: u32,
     pub duration: u32,
 }
+#[derive(Clone, Deserialize)]
+pub struct ArsenalView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub bows: u32,
+    pub swords: u32,
+    pub shields: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct ResearchView {
+    #[serde(deserialize_with = "id")]
+    pub keep_id: u64,
+    pub weapons: u32,
+    pub economy: u32,
+    pub politics: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct ResearchOrderView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub branch: String,
+    pub level: u32,
+    pub progress: u32,
+    pub duration: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct WorkshopStockView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub tools: u32,
+    pub grapes: u32,
+    pub olives: u32,
+    pub wine: u32,
+    pub oil: u32,
+}
+#[derive(Clone, Deserialize)]
+pub struct WorkshopRecipeView {
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub item: String,
+}
+#[derive(Clone, Deserialize)]
+pub struct SiegeAccessView {
+    #[serde(deserialize_with = "id")]
+    pub unit_id: u64,
+    #[serde(deserialize_with = "id")]
+    pub building_id: u64,
+    pub owned: bool,
+}
+#[derive(Clone, Deserialize)]
+pub struct AlertView {
+    #[serde(deserialize_with = "id")]
+    pub id: u64,
+    pub x: f32,
+    pub z: f32,
+    pub owned: bool,
+}
 #[derive(Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
+    SellHorses {
+        #[serde(serialize_with = "serialize_id")]
+        stable_id: u64,
+        amount: u32,
+    },
+    StartResearch {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+        branch: String,
+    },
+    SetWorkshopRecipe {
+        #[serde(serialize_with = "serialize_id")]
+        building_id: u64,
+        item: String,
+    },
+    SellWorkshopGoods {
+        resource: u8,
+        amount: u32,
+    },
+    AssaultRoof {
+        #[serde(serialize_with = "serialize_ids")]
+        unit_ids: Vec<u64>,
+        #[serde(serialize_with = "serialize_id")]
+        access_id: u64,
+    },
+
     QueueSiege {
         #[serde(serialize_with = "serialize_id")]
         building_id: u64,
@@ -720,6 +818,21 @@ mod backend {
                     .map_err(|e| e.to_string())?;
                 let errors = self.status.clone();
                 conn.reducers
+                    .on_sell_horses(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_start_research(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_set_workshop_recipe(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_sell_workshop_goods(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
+                    .on_assault_roof(move |ctx, _, _| record_status(&errors, ctx));
+                let errors = self.status.clone();
+                conn.reducers
                     .on_queue_siege(move |ctx, _, _| record_status(&errors, ctx));
                 let errors = self.status.clone();
                 conn.reducers
@@ -854,6 +967,23 @@ mod backend {
                 } => conn
                     .reducers
                     .build_wall_kind(start_x, start_z, end_x, end_z, kind),
+                Action::SellHorses { stable_id, amount } => {
+                    conn.reducers.sell_horses(stable_id, amount)
+                }
+                Action::StartResearch {
+                    building_id,
+                    branch,
+                } => conn.reducers.start_research(building_id, branch),
+                Action::SetWorkshopRecipe { building_id, item } => {
+                    conn.reducers.set_workshop_recipe(building_id, item)
+                }
+                Action::SellWorkshopGoods { resource, amount } => {
+                    conn.reducers.sell_workshop_goods(resource, amount)
+                }
+                Action::AssaultRoof {
+                    unit_ids,
+                    access_id,
+                } => conn.reducers.assault_roof(unit_ids, access_id),
                 Action::QueueSiege { building_id, kind } => {
                     conn.reducers.queue_siege(building_id, kind)
                 }
@@ -1007,6 +1137,13 @@ mod backend {
                             })
                             .subscribe([
                                 format!("SELECT * FROM civic_policy WHERE game_id = {id}"),
+                                format!("SELECT * FROM arsenal_stock WHERE game_id = {id}"),
+                                format!("SELECT * FROM research_state WHERE game_id = {id}"),
+                                format!("SELECT * FROM research_order WHERE game_id = {id}"),
+                                format!("SELECT * FROM workshop_stock WHERE game_id = {id}"),
+                                format!("SELECT * FROM workshop_recipe WHERE game_id = {id}"),
+                                format!("SELECT * FROM siege_access WHERE game_id = {id}"),
+                                format!("SELECT * FROM attack_alert WHERE game_id = {id}"),
                                 format!("SELECT * FROM industry_stock WHERE game_id = {id}"),
                                 format!("SELECT * FROM stable_horse WHERE game_id = {id}"),
                                 format!("SELECT * FROM factory_order WHERE game_id = {id}"),
@@ -1040,6 +1177,95 @@ mod backend {
                     );
                 }
             }
+            snapshot.arsenals = conn
+                .db
+                .arsenal_stock()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::ArsenalView {
+                    building_id: r.building_id,
+                    bows: r.bows,
+                    swords: r.swords,
+                    shields: r.shields,
+                })
+                .collect();
+            snapshot.research = conn
+                .db
+                .research_state()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::ResearchView {
+                    keep_id: r.keep_id,
+                    weapons: r.weapons,
+                    economy: r.economy,
+                    politics: r.politics,
+                })
+                .collect();
+            snapshot.research_orders = conn
+                .db
+                .research_order()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::ResearchOrderView {
+                    building_id: r.building_id,
+                    branch: r.branch,
+                    level: r.level,
+                    progress: r.progress,
+                    duration: r.duration,
+                })
+                .collect();
+            snapshot.workshop_stocks = conn
+                .db
+                .workshop_stock()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::WorkshopStockView {
+                    building_id: r.building_id,
+                    tools: r.tools,
+                    grapes: r.grapes,
+                    olives: r.olives,
+                    wine: r.wine,
+                    oil: r.oil,
+                })
+                .collect();
+            snapshot.workshop_recipes = conn
+                .db
+                .workshop_recipe()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::WorkshopRecipeView {
+                    building_id: r.building_id,
+                    item: r.item,
+                })
+                .collect();
+            snapshot.siege_access = conn
+                .db
+                .siege_access()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::SiegeAccessView {
+                    unit_id: r.unit_id,
+                    building_id: r.building_id,
+                    owned: conn
+                        .db
+                        .army_unit()
+                        .id()
+                        .find(&r.unit_id)
+                        .is_some_and(|u| u.owner == conn.connection_id()),
+                })
+                .collect();
+            snapshot.alerts = conn
+                .db
+                .attack_alert()
+                .iter()
+                .filter(|r| Some(r.game_id) == snapshot.game_id)
+                .map(|r| super::AlertView {
+                    id: r.id,
+                    x: r.x,
+                    z: r.z,
+                    owned: r.owner == conn.connection_id(),
+                })
+                .collect();
             snapshot.industry_stocks = conn
                 .db
                 .industry_stock()
